@@ -24,9 +24,16 @@ scenarios/*
 *.webm
 *.mp4
 
-# Per-machine Claude Code permission overrides. Anything under .claude/skills/ is
-# meant to be shared and stays tracked; this file is not.
+# Claude Code. `.claude/settings.json` is the shared, reviewable part and stays tracked -
+# it is the permission allowlist for the commands this repository documents. What follows
+# is per-machine state that would only conflict between checkouts.
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
+# Working files from the codex-cross-review skill: review bodies and raw CLI logs.
+# Audit material for one pull request, not part of the tool.
+.codex-review/
 
 *.log
 npm-debug.log*

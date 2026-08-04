@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run check:config)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(npm run build:single:*)",
+      "Bash(npm run format)",
+      "Bash(npm run check:secrets)",
+      "Bash(npx vitest run:*)",
+      "Bash(npx eslint --print-config:*)",
+      "Bash(npx tsc -p tsconfig.json --showConfig)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git filter-repo:*)"
+    ]
+  }
+}
