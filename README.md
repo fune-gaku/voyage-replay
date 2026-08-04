@@ -113,21 +113,15 @@ by default; pass another with `?scenario=/your-file.voyage.json`.
 `check:config` exists because a rule that is not enabled reports nothing — see
 [`docs/verifying-config.md`](docs/verifying-config.md).
 
-## Use as a library
+## What you cannot do yet
 
-```ts
-import {
-  parseScenario, prepareActor, closestPointOfApproach,
-  visibleLights, describeAspect, checkPlausibility,
-} from "voyage-replay";
+**There is no CLI**, and the package **is not importable as a library**. `package.json`
+declares no `bin`, `main`, `exports` or `types`, so `npx voyage-replay …` and
+`import … from "voyage-replay"` both fail today. Working from a clone is the only route.
 
-const scenario = parseScenario(JSON.parse(await readFile("case.voyage.json", "utf8")));
-const [a, b] = scenario.actors.map((actor) => prepareActor(actor, scenario.origin));
-
-closestPointOfApproach(a, b);                 // → { epochSeconds, metres }
-checkPlausibility(a, scenario.actors[0].vessel); // → findings, empty if the data is sane
-describeAspect(visibleLights(vessel, 45));    // → "starboard side visible"
-```
+The pieces those would be built on exist and are tested — `src/index.ts` re-exports
+`parseScenario`, `prepareActor`, `closestPointOfApproach`, `visibleLights`, `describeAspect`
+and `checkPlausibility` — but nothing is wired up for consumption outside this repository yet.
 
 ## Roadmap
 
