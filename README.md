@@ -97,7 +97,9 @@ reconstruction that looks fine and is wrong:
 
 ## Install and run
 
-Requires Node 20 or later. Nothing else — npm ships with it.
+Requires Node 20.19 or later, or 22.12 or later — the floor Vite sets, declared in
+`package.json` so npm says so rather than the build failing obscurely. Nothing else; npm ships
+with Node.
 
 ```bash
 npm install
