@@ -17,6 +17,8 @@
     "replay"
   ],
   "scripts": {
+    "// prepare": "Runs automatically after npm install. Points git at the version-controlled .githooks so the pre-commit secret scan needs no separate install step. Tolerant of failure because an install that dies where git is absent is worse than a missing local hook - CI scans as well.",
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
@@ -25,7 +27,6 @@
     "lint": "eslint .",
     "check:config": "node scripts/check-config.mjs",
     "check:secrets": "gitleaks git --no-banner --redact --exit-code 1 && gitleaks dir . --no-banner --redact --exit-code 1",
-    "hooks:install": "bash scripts/install-hooks.sh",
     "format": "prettier --write ."
   },
   "dependencies": {

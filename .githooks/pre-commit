@@ -1,0 +1,29 @@
+#!/bin/sh
+# Blocks a commit that carries a credential.
+#
+# This file is version-controlled, unlike .git/hooks, so it is reviewable in a pull
+# request and identical on every machine. `npm install` points git at this directory
+# through the `prepare` script, so there is no separate install step.
+#
+# CI scans too, but only after a push - by which time the credential is on a server and
+# rotating it is the only real remedy. Here, deleting a line is the whole fix.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed." >&2
+  echo "  brew install gitleaks" >&2
+  exit 1
+fi
+
+# --staged scans exactly what is about to be committed. --redact keeps a finding from
+# printing the secret into a terminal scrollback that outlives the commit.
+gitleaks git --staged --no-banner --redact
+if [ $? -ne 0 ]; then
+  echo "" >&2
+  echo "pre-commit: a credential looks like it is in the staged changes." >&2
+  echo "  If it is real, rotate it - rewriting history does not un-publish anything." >&2
+  echo "  If it is a false positive, add its fingerprint to .gitleaksignore." >&2
+  echo "  --no-verify only moves the finding to CI." >&2
+  exit 1
+fi
+
+exit 0

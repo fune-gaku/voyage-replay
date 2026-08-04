@@ -26,13 +26,20 @@ CI は同じものを順に流すだけ。ローカルで通れば CI も通る�
 
 ## 認証情報（gitleaks）
 
-CI は push のたびに **全履歴 + 作業ツリー**を gitleaks で走査する。ただしそれは最後の砦で、
-CI が動く頃には認証情報は既にサーバ上にある。ローカルで止めるには checkout ごとに1回:
+2層ある。
+
+- **コミット前**: `.githooks/pre-commit` が staged 差分を走査する。**`.git/hooks` ではなく
+  git 追跡下に置いてある**ので、PR でレビューでき、どのマシンでも同一になる。
+  `npm install` の `prepare` が `core.hooksPath` を `.githooks` に向けるので、
+  手でやることは `brew install gitleaks` だけ
+- **push 後**: CI が **全履歴 + 作業ツリー**を走査する。ただしこれは最後の砦で、
+  CI が動く頃には認証情報は既にサーバ上にある
 
 ```
-npm run hooks:install   # pre-commit フックを入れる（gitleaks が PATH に必要）
 npm run check:secrets   # 手動で履歴と作業ツリーを走査
 ```
+
+誤検知は `.gitleaksignore` にフィンガープリントを、理由コメント付きで追加する。
 
 **負のテストをするときは AWS の例示キー `AKIAIOSFODNN7EXAMPLE` を使わないこと。**
 gitleaks が公式ドキュメントの例として許可リストに入れているので検知されず、

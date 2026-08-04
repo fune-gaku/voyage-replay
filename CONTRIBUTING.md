@@ -55,19 +55,29 @@ example derived from a new source, and record what you found in the file's `meta
 
 ## Secrets
 
-CI scans the full history and the working tree with gitleaks on every push. That is the backstop,
-not the first line — by the time CI runs, a credential is already on a server and revoking it is
-the only real remedy.
+Two layers, and they catch different things.
 
-Install the local hook once per checkout, which catches it while it is still staged:
+**Before the commit.** [`.githooks/pre-commit`](.githooks/pre-commit) runs gitleaks over the
+staged changes. `npm install` points git at that directory for you — the `prepare` script sets
+`core.hooksPath` — so the only thing to do by hand is install gitleaks itself:
 
 ```bash
-npm run hooks:install     # needs gitleaks on PATH: brew install gitleaks
-npm run check:secrets     # scan history and working tree by hand
+brew install gitleaks     # the hook refuses to run without it
+npm run check:secrets     # scan history and working tree on demand
 ```
 
-`--no-verify` does not help; it just moves the finding to CI. If a real credential does get
-committed, rotate it. Rewriting history does not un-publish anything.
+The hook lives under version control rather than in `.git/hooks` so that it is reviewable in a
+pull request and identical on every machine.
+
+**After the push.** CI scans the full history and the working tree. This is the backstop, not
+the gate that matters: by the time it runs, the credential is on a server, and rotating it is
+the only real remedy. `--no-verify` does not avoid the problem, it just moves the finding here.
+
+False positives go in `.gitleaksignore` as a fingerprint, with a comment saying why.
+
+Note for anyone testing the hook: **do not probe it with `AKIAIOSFODNN7EXAMPLE`.** gitleaks
+allowlists the canonical AWS documentation key on purpose, so nothing fires and the hook looks
+broken when it is not. Use a `ghp_`-shaped token or an RSA private key header.
 
 ## Style
 
