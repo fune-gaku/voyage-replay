@@ -1,38 +1,25 @@
 /**
- * Development page.
+ * Wiring: fetch a scenario, put it on the canvas, hook up the controls.
  *
- * There is no renderer yet. What this does is the half of the job that has to be right
- * before any of it is worth drawing: load a scenario, check it against the schema, screen
- * it against physics, and work out the aspect each ship presented to the other. When the
- * 3D view lands it grows out of this file; until then, this is how you tell whether a
- * newly extracted scenario is any good.
+ * The analysis this page used to print is still here, under the picture - the 3D view
+ * shows what happened, the panels say what the data is and whether it can be trusted.
  */
 
-import { describeAspect, visibleLights } from "./actors/vessel/lights.js";
-import { bearingDegrees, distanceMetres, normaliseDegrees } from "./core/geodesy.js";
-import { checkPlausibility, type Finding } from "./core/plausibility.js";
-import {
-  closestPointOfApproach,
-  prepareActor,
-  sampleAt,
-  type PreparedTrack,
-} from "./core/track.js";
-import type { Actor, Scenario } from "./core/types.js";
+import { prepareActor } from "./core/track.js";
+import type { Scenario } from "./core/types.js";
 import { parseScenario, validateScenario } from "./core/validate.js";
+import { Replay, type ViewSelection } from "./render/player.js";
+import { CanvasRecorder, downloadRecording, isRecordingSupported } from "./render/record.js";
+import { escapeHtml, formatClock, formatDate, renderPanels, section } from "./ui/panels.js";
 
 const DEFAULT_SCENARIO = "/suo-nada-2025-11-27.voyage.json";
+const SCRUB_STEPS = 1000;
 
-interface Prepared {
-  actor: Actor;
-  track: PreparedTrack;
-}
+void main();
 
-const app = document.querySelector<HTMLElement>("#app");
-if (!app) throw new Error("#app is missing");
-
-void main(app);
-
-async function main(root: HTMLElement): Promise<void> {
+async function main(): Promise<void> {
+  const panels = must("#panels", HTMLElement);
+  const subtitle = must("#subtitle", HTMLElement);
   const url = new URLSearchParams(location.search).get("scenario") ?? DEFAULT_SCENARIO;
 
   let raw: unknown;
@@ -41,175 +28,174 @@ async function main(root: HTMLElement): Promise<void> {
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     raw = (await response.json()) as unknown;
   } catch (error) {
-    root.innerHTML = section("Load failed", `<p class="warn">${escapeHtml(String(error))}</p>`);
+    subtitle.textContent = "load failed";
+    panels.innerHTML = section("Load failed", `<p class="warn">${escapeHtml(String(error))}</p>`);
     return;
   }
 
   const validation = validateScenario(raw);
   if (!validation.valid) {
-    root.innerHTML = section(
+    subtitle.textContent = "does not match the schema";
+    panels.innerHTML = section(
       "Schema",
       `<p class="warn">${validation.errors.map(escapeHtml).join("<br>")}</p>`,
     );
     return;
   }
 
-  root.innerHTML = render(parseScenario(raw));
-}
-
-function render(scenario: Scenario): string {
-  const prepared: Prepared[] = scenario.actors.map((actor) => ({
+  const scenario = parseScenario(raw);
+  const prepared = scenario.actors.map((actor) => ({
     actor,
     track: prepareActor(actor, scenario.origin),
   }));
 
-  const findings = prepared.flatMap((p) => checkPlausibility(p.track, p.actor.vessel));
+  panels.innerHTML = renderPanels(scenario, prepared);
+  must("#stage", HTMLElement).hidden = false;
 
-  return [
-    section("Scenario", overview(scenario)),
-    section("Actors", actorTable(prepared)),
-    section("Closest approach", approach(prepared)),
-    section("What each ship showed the other", aspects(prepared)),
-    section(`Plausibility screening (${findings.length})`, findingList(findings)),
-  ].join("");
+  const replay = new Replay(must("#view", HTMLCanvasElement), scenario);
+  subtitle.textContent = `${scenario.meta.title} - ${formatDate(replay.startSeconds, scenario.meta.timeZone)}`;
+
+  wireControls(replay, scenario);
 }
 
-function overview(scenario: Scenario): string {
-  return keyValueTable([
-    ["Title", scenario.meta.title],
-    ["Occurred", scenario.meta.occurredAt],
-    ["Locality", scenario.meta.locality ?? "-"],
-    ["Light condition", scenario.environment?.lightCondition ?? "unstated"],
-    ["Source", scenario.meta.source?.citation ?? scenario.meta.source?.id ?? "-"],
-  ]);
-}
+function wireControls(replay: Replay, scenario: Scenario): void {
+  const views = must("#views", HTMLElement);
+  const playPause = must("#playPause", HTMLButtonElement);
+  const speed = must("#speed", HTMLSelectElement);
+  const clock = must("#clock", HTMLElement);
+  const scrub = must("#scrub", HTMLInputElement);
+  const record = must("#record", HTMLButtonElement);
 
-function actorTable(prepared: Prepared[]): string {
-  const head = ["id", "name", "LOA", "beam", "points", "derivation", "position at", "heading?"];
-  const rows = prepared.map(({ actor, track }) => {
-    const withHeading = track.points.filter((p) => p.headingDegreesTrue !== undefined).length;
-    return [
-      actor.id,
-      actor.name ?? "-",
-      actor.vessel ? `${actor.vessel.loaMetres} m` : "-",
-      actor.vessel ? `${actor.vessel.beamMetres} m` : "-",
-      String(track.points.length),
-      actor.track.derivation,
-      actor.track.positionAt,
-      `${withHeading}/${track.points.length}`,
-    ];
+  const span = replay.endSeconds - replay.startSeconds;
+  const viewButtons: { button: HTMLButtonElement; view: ViewSelection }[] = [];
+
+  const addView = (label: string, view: ViewSelection) => {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      replay.setView(view);
+      for (const entry of viewButtons) {
+        entry.button.setAttribute("aria-pressed", String(entry.view === view));
+      }
+    });
+    views.append(button);
+    viewButtons.push({ button, view });
+  };
+
+  addView("Overhead", { kind: "overhead" });
+  for (const id of replay.actorIds) addView(`${id} bridge`, { kind: "bridge", actorId: id });
+  viewButtons[0]?.button.setAttribute("aria-pressed", "true");
+
+  const paint = () => {
+    clock.textContent = `${formatClock(replay.timeSeconds, scenario.meta.timeZone)} local`;
+    scrub.value = String(
+      Math.round(((replay.timeSeconds - replay.startSeconds) / span) * SCRUB_STEPS),
+    );
+    playPause.textContent = replay.isPlaying ? "Pause" : "Play";
+  };
+
+  // The clock has to keep up with playback, which advances on its own animation frames -
+  // but ONLY while it is playing. An unconditional rAF loop repaints the clock sixty
+  // times a second at a standstill, which is not merely wasted work: it keeps the main
+  // thread busy enough that anything waiting for an idle moment (a screenshot, an
+  // extension, the profiler) never gets one.
+  let following = false;
+  const follow = () => {
+    paint();
+    if (replay.isPlaying) requestAnimationFrame(follow);
+    else following = false;
+  };
+  const startFollowing = () => {
+    if (following) return;
+    following = true;
+    requestAnimationFrame(follow);
+  };
+
+  playPause.addEventListener("click", () => {
+    if (replay.isPlaying) replay.pause();
+    else {
+      replay.play();
+      startFollowing();
+    }
+    paint();
   });
-  return dataTable(head, rows);
+
+  speed.addEventListener("change", () => {
+    replay.setSpeed(Number(speed.value));
+  });
+  replay.setSpeed(Number(speed.value));
+
+  scrub.max = String(SCRUB_STEPS);
+  scrub.addEventListener("input", () => {
+    replay.pause();
+    replay.seek(replay.startSeconds + (Number(scrub.value) / SCRUB_STEPS) * span);
+    paint();
+  });
+
+  window.addEventListener("resize", () => {
+    replay.resize();
+  });
+
+  paint();
+  wireRecording(record, replay, scenario, startFollowing);
 }
 
-/** The two actors a two-ship analysis needs, or null with the reason it cannot run. */
-function pair(prepared: Prepared[]): [Prepared, Prepared] | null {
-  const [first, second] = prepared;
-  return first && second ? [first, second] : null;
+function wireRecording(
+  button: HTMLButtonElement,
+  replay: Replay,
+  scenario: Scenario,
+  startFollowing: () => void,
+): void {
+  if (!isRecordingSupported()) {
+    button.disabled = true;
+    button.title = "this browser cannot record the canvas";
+    return;
+  }
+
+  const recorder = new CanvasRecorder(must("#view", HTMLCanvasElement));
+  button.addEventListener("click", () => {
+    if (recorder.isRecording) {
+      void recorder.stop().then((recording) => {
+        downloadRecording(recording, slug(scenario.meta.title));
+        button.textContent = "Record";
+        button.classList.remove("recording");
+      });
+      replay.pause();
+      return;
+    }
+
+    // Rewind first: a recording that starts halfway through is not what anyone wants,
+    // and remembering to scrub back every time is exactly the kind of step people skip.
+    replay.seek(replay.startSeconds);
+    recorder.start();
+    replay.play();
+    startFollowing();
+    button.textContent = "Stop";
+    button.classList.add("recording");
+  });
 }
 
-function approach(prepared: Prepared[]): string {
-  const both = pair(prepared);
-  if (!both) return "<p>Needs two actors.</p>";
-  const [first, second] = both;
-
-  const cpa = closestPointOfApproach(first.track, second.track);
-  if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
-
-  const offsets = first.actor.vessel?.referencePointOffsets;
-  const caveat = offsets
-    ? `Reported positions are the GPS antenna. On ${first.actor.id} the antenna sits ` +
-      `${offsets.fromBowMetres} m from the bow, so this is not the gap between hulls.`
-    : "";
-
+function slug(title: string): string {
   return (
-    keyValueTable([
-      ["Between", `${first.actor.id} and ${second.actor.id}`],
-      ["At", new Date(cpa.epochSeconds * 1000).toISOString()],
-      ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
-    ]) + (caveat ? `<p style="color:var(--muted)">${escapeHtml(caveat)}</p>` : "")
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "voyage-replay"
   );
 }
 
-function aspects(prepared: Prepared[]): string {
-  const both = pair(prepared);
-  if (!both) return "<p>Needs two actors.</p>";
-  const [first, second] = both;
-
-  const vessel = second.actor.vessel;
-  if (!vessel) return `<p>${escapeHtml(second.actor.id)} carries no vessel particulars.</p>`;
-
-  const cpa = closestPointOfApproach(first.track, second.track);
-  if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
-
-  const rows: string[][] = [];
-  for (let back = 420; back >= 0; back -= 60) {
-    const t = cpa.epochSeconds - back;
-    const here = sampleAt(first.track, t);
-    const there = sampleAt(second.track, t);
-    if (!here || !there) continue;
-
-    const clock = new Date(t * 1000).toISOString().slice(11, 19);
-    const range = distanceMetres(here.position, there.position);
-    const bearing = bearingDegrees(here.position, there.position);
-
-    // Heading is what fixes a ship's light arcs. Where the source did not supply it -
-    // a Class B transponder never does - say so rather than quietly using the course.
-    const heading = there.headingDegreesTrue;
-    const standIn = heading ?? there.cogDegreesTrue;
-    const seen =
-      standIn === undefined
-        ? "no heading and no course: cannot say"
-        : describeAspect(visibleLights(vessel, normaliseDegrees(bearing + 180 - standIn))) +
-          (heading === undefined ? " (from course over ground)" : "");
-
-    rows.push([
-      `${clock}Z`,
-      `${bearing.toFixed(1)} deg`,
-      `${range.toFixed(0)} m`,
-      `${first.actor.id} sees: ${seen}`,
-    ]);
+/**
+ * Look an element up and check it is the kind expected.
+ *
+ * The obvious version takes the type as a parameter and casts, which asserts something
+ * about the page that nothing verifies - ask for a canvas, get a div, and the failure
+ * surfaces much later as a missing method. Passing the constructor makes it a real check.
+ */
+function must<T extends Element>(selector: string, kind: new () => T): T {
+  const element = document.querySelector(selector);
+  if (!element) throw new Error(`${selector} is missing from the page`);
+  if (!(element instanceof kind)) {
+    throw new Error(`${selector} is a ${element.tagName.toLowerCase()}, not a ${kind.name}`);
   }
-  return dataTable(["time", `bearing of ${second.actor.id}`, "range", "aspect"], rows);
-}
-
-function findingList(findings: Finding[]): string {
-  if (findings.length === 0) return "<p>Nothing implausible.</p>";
-  const rows = findings.map((f) => [
-    f.actorId,
-    new Date(f.fromEpochSeconds * 1000).toISOString().slice(11, 19) + "Z",
-    f.kind,
-    f.message,
-  ]);
-  return dataTable(["actor", "from", "kind", "detail"], rows);
-}
-
-function section(title: string, body: string): string {
-  return `<section><h2>${escapeHtml(title)}</h2><div class="scroll">${body}</div></section>`;
-}
-
-function keyValueTable(rows: [string, string][]): string {
-  return `<table>${rows
-    .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`)
-    .join("")}</table>`;
-}
-
-function dataTable(head: string[], rows: string[][]): string {
-  const thead = `<tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
-  const tbody = rows
-    .map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`)
-    .join("");
-  return `<table>${thead}${tbody}</table>`;
-}
-
-const HTML_ESCAPES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
+  return element;
 }

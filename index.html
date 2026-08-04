@@ -13,6 +13,7 @@
         --panel: #ffffff;
         --line: #d7dee6;
         --warn: #9a3412;
+        --accent: #1f6feb;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -22,11 +23,15 @@
           --panel: #16202b;
           --line: #263544;
           --warn: #fca5a5;
+          --accent: #58a6ff;
         }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        padding: 2rem 1.25rem 4rem;
+        padding: 1.5rem 1.25rem 4rem;
         background: var(--bg);
         color: var(--fg);
         font:
@@ -35,26 +40,81 @@
           sans-serif;
       }
       main {
-        max-width: 60rem;
+        max-width: 64rem;
         margin: 0 auto;
       }
       h1 {
-        font-size: 1.3rem;
-        margin: 0 0 0.25rem;
+        font-size: 1.1rem;
+        margin: 0 0 1rem;
       }
-      .lede {
+      h1 small {
         color: var(--muted);
-        margin: 0 0 2rem;
+        font-weight: 400;
+        margin-left: 0.5rem;
+      }
+      #stage {
+        background: #05080e;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      #view {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.75rem;
+        align-items: center;
+        padding: 0.6rem 0.75rem;
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+      }
+      #controls .group {
+        display: flex;
+        gap: 0.25rem;
+        align-items: center;
+      }
+      button,
+      select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 0.25rem 0.6rem;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.recording {
+        background: var(--warn);
+        border-color: var(--warn);
+        color: #fff;
+      }
+      #clock {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        min-width: 9.5rem;
+      }
+      #scrub {
+        flex: 1 1 16rem;
+        min-width: 12rem;
       }
       section {
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 1rem 1.25rem;
-        margin-bottom: 1rem;
+        margin-top: 1rem;
       }
       h2 {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         color: var(--muted);
@@ -70,6 +130,7 @@
         text-align: left;
         padding: 0.3rem 0.75rem 0.3rem 0;
         border-bottom: 1px solid var(--line);
+        white-space: nowrap;
       }
       th {
         color: var(--muted);
@@ -85,12 +146,28 @@
   </head>
   <body>
     <main>
-      <h1>voyage-replay</h1>
-      <p class="lede">
-        No renderer yet. This page loads a <code>.voyage.json</code>, checks it against the schema
-        and against physics, and reports what a watchkeeper would have seen.
-      </p>
-      <div id="app">Loading&hellip;</div>
+      <h1>voyage-replay <small id="subtitle">loading&hellip;</small></h1>
+
+      <div id="stage" hidden>
+        <canvas id="view"></canvas>
+        <div id="controls">
+          <div class="group" id="views"></div>
+          <button id="playPause">Play</button>
+          <label class="group">
+            <select id="speed">
+              <option value="1">1&times;</option>
+              <option value="10">10&times;</option>
+              <option value="20" selected>20&times;</option>
+              <option value="60">60&times;</option>
+            </select>
+          </label>
+          <span id="clock">&mdash;</span>
+          <input id="scrub" type="range" min="0" max="1000" value="0" />
+          <button id="record">Record</button>
+        </div>
+      </div>
+
+      <div id="panels"></div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
