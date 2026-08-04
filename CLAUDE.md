@@ -91,15 +91,28 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 ## レイアウト
 
 ```
-spec/     .voyage.json の JSON Schema。フォーマットの正本
-src/core/ 型・測地・検証・トラック標本化・物理スクリーニング
-src/actors/vessel/  船に固有のもの（航海灯、将来は船体生成と運動モデル）
-src/extract/        報告書などからシナリオを起こす（未実装）
-examples/ 実データのシナリオ。CI が schema 検証する
-test/     Vitest
-docs/     フォーマット仕様、ドメイン知識、抽出元ごとのメモ
-plans/    1変更1設計メモ
+spec/       .voyage.json の JSON Schema。フォーマットの正本
+src/core/   型・測地・検証・トラック標本化・物理スクリーニング
+src/actors/vessel/  船に固有のもの（航海灯、将来は運動モデル）
+src/render/ three.js。シーン・船体・航海灯・カメラ・再生・録画
+src/ui/     画の下のテキストパネル
+src/extract/  報告書などからシナリオを起こす（未実装）
+examples/   参照事案 **1本だけ**。サンプルではなく回帰テスト。CI が schema 検証する
+scenarios/  作業中の事案群。**git 追跡外**（README.md のみ追跡）
+test/       Vitest
+docs/       フォーマット仕様、ドメイン知識、抽出元ごとのメモ
+plans/      1変更1設計メモ
 ```
+
+**`examples/` と `scenarios/` を混同しないこと。** `examples/` の1本は
+`test/examples.spec.ts` が最接近距離・方位の不動・灯火の見え方まで固定している回帰テストで、
+「整理」のために消してはいけない。`scenarios/` は作業場で、追跡しないのは意図的
+（データはコードと寿命が違い、出典と利用条件を各自背負い、一部は顧客のもの。MIT のツールの
+履歴に入れるべきではない）。本数が増えたら専用レポへ移す。
+
+dev サーバは `scenarios/` を配信し、かつ**監視する**（保存でページが再読込される）。
+その仕掛けは `vite.config.ts` の `scenariosPlugin`。`publicDir` は追跡外ディレクトリを
+見られないので、ミドルウェアで開けている。
 
 `core/` と `actors/vessel/` を分けているのは、将来ジャンルを広げる余地を安く残すためで、
 今すぐ汎用化する意図ではない。**`core/` に船の概念（航海灯・針路・喫水）を持ち込まないこと。**

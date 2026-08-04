@@ -3,6 +3,17 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# The working corpus of reconstructions. Untracked on purpose, and destined for a
+# repository of its own.
+#
+# Scenarios are data, not code: they accumulate one per case, they carry their own
+# attribution from whichever investigation body published the source, and some of them
+# will belong to a client rather than to the public. None of that should end up in the
+# history of an MIT-licensed tool. What stays tracked is the single reference case under
+# examples/, which is a regression test rather than a sample.
+scenarios/*
+!scenarios/README.md
+
 # Local scratch: downloaded source PDFs, extraction working files.
 # Reports are public, but we do not vendor them into the repo.
 .scratch/

@@ -110,6 +110,26 @@ npm run lint && npm run typecheck && npm run build
 `npm run dev` loads [`examples/suo-nada-2025-11-27.voyage.json`](examples/suo-nada-2025-11-27.voyage.json)
 by default; pass another with `?scenario=/your-file.voyage.json`.
 
+### Where scenarios live
+
+Put your own in [`scenarios/`](scenarios/), which is untracked. The dev server serves and
+watches it, so editing a scenario reloads the page — the loop that matters when you are
+correcting an extraction:
+
+```
+http://localhost:5173/?scenario=/scenarios/your-case.voyage.json
+```
+
+They are kept out of the repository on purpose. Scenarios are data, not code: one per case,
+each carrying its own attribution from whichever body published the source report, and some
+belonging to a client rather than to the public. None of that belongs in the history of an
+MIT-licensed tool, and the corpus will move to a repository of its own once it is large
+enough to be worth managing.
+
+The scenario under `examples/` is the exception, and it is a regression test rather than a
+sample — `test/examples.spec.ts` pins the closest approach, the steady bearing as the range
+closes, and the aspect each ship presented.
+
 ### One file you can just open
 
 You do not have to keep a dev server running to look at a reconstruction:
