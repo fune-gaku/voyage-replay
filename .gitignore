@@ -8,6 +8,21 @@ coverage/
 .scratch/
 *.pdf
 
+# What the player produces. A single recording outweighs the entire source tree,
+# and git keeps it forever even after it is deleted.
+*.webm
+*.mp4
+
+# Per-machine Claude Code permission overrides. Anything under .claude/skills/ is
+# meant to be shared and stays tracked; this file is not.
+.claude/settings.local.json
+
+*.log
+npm-debug.log*
+
 .DS_Store
+.vscode/
+.idea/
+
 .env
 .env.local
