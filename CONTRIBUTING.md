@@ -53,6 +53,22 @@ example must name its source and carry a `derivation` on each track. Reports fro
 bodies are public documents, but redistribution terms vary by body — check before adding an
 example derived from a new source, and record what you found in the file's `meta.license`.
 
+## Secrets
+
+CI scans the full history and the working tree with gitleaks on every push. That is the backstop,
+not the first line — by the time CI runs, a credential is already on a server and revoking it is
+the only real remedy.
+
+Install the local hook once per checkout, which catches it while it is still staged:
+
+```bash
+npm run hooks:install     # needs gitleaks on PATH: brew install gitleaks
+npm run check:secrets     # scan history and working tree by hand
+```
+
+`--no-verify` does not help; it just moves the finding to CI. If a real credential does get
+committed, rotate it. Rewriting history does not un-publish anything.
+
 ## Style
 
 Comments explain *why*, especially where the domain makes an obvious-looking implementation wrong.
