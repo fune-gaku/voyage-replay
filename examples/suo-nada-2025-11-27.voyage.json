@@ -14,7 +14,7 @@
       "publishedAt": "2026-06-03",
       "citation": "Japan Transport Safety Board, marine accident investigation report MA2026-6-16 (case 2025hs0129), appendix tables 1 and 2, pp.14-15"
     },
-    "license": "Derived from a public Japan Transport Safety Board investigation report. Attribute the JTSB as the source of the underlying data."
+    "license": "Reproduced under PDL1.0 (Public Data License 1.0), the terms the Japan Transport Safety Board publishes its material under. Source: marine accident investigation report MA2026-6-16 (Japan Transport Safety Board), https://jtsb.mlit.go.jp/ship/rep-acci/2026/MA2026-6-16_2025hs0129.pdf - positions, times, courses, headings and speeds transcribed from appendix tables 1 and 2 and rearranged into this format by the voyage-replay project. Edited and processed; not a JTSB publication and not endorsed by the JTSB. Keep the citation attached when redistributing."
   },
   "origin": {
     "lat": 33.905,

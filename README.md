@@ -174,10 +174,25 @@ has the measured numbers.
 
 ## Data and attribution
 
-The example ships with this repository is derived from a public Japan Transport Safety Board
-investigation report, cited in the file itself. Reports are public; check the terms of the issuing
-body before redistributing derived data, and keep the citation attached — it is what makes a
-reconstruction checkable.
+The example that ships with this repository is derived from a public Japan Transport Safety Board
+investigation report, cited in the file itself. The JTSB publishes under
+[PDL1.0](https://jtsb.mlit.go.jp/cyo.html) (Public Data License 1.0), which permits reuse on three
+conditions, all of which apply to anything you build from a report:
+
+- **Cite the source** — report number, URL and page, so a reader can check the figures against the
+  original.
+- **Say that you edited it.** Transcribing an appendix table into a scenario, and interpolating
+  between its rows, is processing. The example's `meta.license` records who did it.
+- **Do not present the result as the issuing body's own.** A 3D reconstruction carries further than
+  a table of numbers, and PDL1.0 explicitly forbids publishing processed information in a manner
+  suggesting the government produced it. Neither this tool nor anything it renders is a JTSB
+  product.
+
+The report is an inquiry into cause, not into blame — the JTSB says so at the front of every one —
+and a reconstruction should be read the same way.
+
+Other issuing bodies publish under other terms. Check before adding an example from a new source,
+and record what you found in that file's `meta.license`.
 
 No source PDFs are vendored here.
 
