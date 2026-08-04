@@ -1,0 +1,527 @@
+{
+  "$schema": "../spec/voyage.schema.json",
+  "formatVersion": "0.1",
+  "meta": {
+    "title": "Suo-nada collision, 27 November 2025",
+    "description": "Oil tanker Seitoku Maru, westbound, and the pushing unit Spinner 2 (pusher plus barge), eastbound, collided off Nojima in the Suo-nada at about 18:13 local time. Both AIS tracks are reproduced from the appendix tables of the JTSB report. The report's own analysis records that the officer of the watch on the tanker saw a white light and a green light when he first sighted the pushing unit - which is what the light arcs in this scenario produce.",
+    "occurredAt": "2025-11-27T18:13:30+09:00",
+    "timeZone": "Asia/Tokyo",
+    "locality": "Suo-nada, south-southeast of Nojima, Hofu, Yamaguchi, Japan",
+    "source": {
+      "kind": "jtsb-report",
+      "id": "MA2026-6-16_2025hs0129",
+      "url": "https://jtsb.mlit.go.jp/ship/rep-acci/2026/MA2026-6-16_2025hs0129.pdf",
+      "publishedAt": "2026-06-03",
+      "citation": "Japan Transport Safety Board, marine accident investigation report MA2026-6-16 (case 2025hs0129), appendix tables 1 and 2, pp.14-15"
+    },
+    "license": "Derived from a public Japan Transport Safety Board investigation report. Attribute the JTSB as the source of the underlying data."
+  },
+  "origin": {
+    "lat": 33.905,
+    "lon": 131.7116667
+  },
+  "environment": {
+    "lightCondition": "night",
+    "visibilityMetres": null
+  },
+  "actors": [
+    {
+      "id": "A",
+      "kind": "vessel",
+      "name": "Seitoku Maru (oil tanker)",
+      "vessel": {
+        "loaMetres": 49,
+        "beamMetres": 9.4,
+        "draughtMetres": 3.7,
+        "grossTonnage": 325,
+        "type": "tanker",
+        "referencePointOffsets": {
+          "fromBowMetres": 39,
+          "fromSternMetres": 10,
+          "fromPortMetres": 4,
+          "fromStarboardMetres": 5
+        }
+      },
+      "track": {
+        "derivation": "measured",
+        "positionAt": "gps-antenna",
+        "source": {
+          "kind": "jtsb-report",
+          "citation": "appendix table 1, p.14"
+        },
+        "note": "Length overall is taken as 49 m from the AIS reference-point offsets (39 + 10). The report's particulars give 46.00 m, which is registered length, not length overall.",
+        "points": [
+          {
+            "t": "2025-11-27T16:50:25+09:00",
+            "lat": 33.8867778,
+            "lon": 131.9541667,
+            "cogDegreesTrue": 280.7,
+            "headingDegreesTrue": 278.0,
+            "sogKnots": 9.1
+          },
+          {
+            "t": "2025-11-27T17:10:05+09:00",
+            "lat": 33.8945278,
+            "lon": 131.8955556,
+            "cogDegreesTrue": 279.4,
+            "headingDegreesTrue": 277.0,
+            "sogKnots": 8.6
+          },
+          {
+            "t": "2025-11-27T17:20:04+09:00",
+            "lat": 33.8988611,
+            "lon": 131.8666667,
+            "cogDegreesTrue": 281.7,
+            "headingDegreesTrue": 277.0,
+            "sogKnots": 8.9
+          },
+          {
+            "t": "2025-11-27T17:30:05+09:00",
+            "lat": 33.9029722,
+            "lon": 131.8366667,
+            "cogDegreesTrue": 278.6,
+            "headingDegreesTrue": 277.0,
+            "sogKnots": 9.1
+          },
+          {
+            "t": "2025-11-27T17:35:25+09:00",
+            "lat": 33.9043889,
+            "lon": 131.8207222,
+            "cogDegreesTrue": 269.7,
+            "headingDegreesTrue": 267.0,
+            "sogKnots": 9.0
+          },
+          {
+            "t": "2025-11-27T17:37:44+09:00",
+            "lat": 33.9044722,
+            "lon": 131.8137222,
+            "cogDegreesTrue": 270.8,
+            "headingDegreesTrue": 269.0,
+            "sogKnots": 9.0
+          },
+          {
+            "t": "2025-11-27T17:50:25+09:00",
+            "lat": 33.9043611,
+            "lon": 131.7763889,
+            "cogDegreesTrue": 267.3,
+            "headingDegreesTrue": 267.0,
+            "sogKnots": 8.7
+          },
+          {
+            "t": "2025-11-27T18:00:25+09:00",
+            "lat": 33.9032778,
+            "lon": 131.7475,
+            "cogDegreesTrue": 268.0,
+            "headingDegreesTrue": 265.0,
+            "sogKnots": 8.7
+          },
+          {
+            "t": "2025-11-27T18:01:45+09:00",
+            "lat": 33.9031111,
+            "lon": 131.7438889,
+            "cogDegreesTrue": 266.6,
+            "headingDegreesTrue": 265.0,
+            "sogKnots": 8.5
+          },
+          {
+            "t": "2025-11-27T18:02:05+09:00",
+            "lat": 33.9030556,
+            "lon": 131.7427778,
+            "cogDegreesTrue": 267.7,
+            "headingDegreesTrue": 265.0,
+            "sogKnots": 8.6
+          },
+          {
+            "t": "2025-11-27T18:03:25+09:00",
+            "lat": 33.9029444,
+            "lon": 131.7388889,
+            "cogDegreesTrue": 269.8,
+            "headingDegreesTrue": 268.0,
+            "sogKnots": 8.7
+          },
+          {
+            "t": "2025-11-27T18:04:25+09:00",
+            "lat": 33.9028889,
+            "lon": 131.7361111,
+            "cogDegreesTrue": 268.8,
+            "headingDegreesTrue": 268.0,
+            "sogKnots": 8.6
+          },
+          {
+            "t": "2025-11-27T18:08:04+09:00",
+            "lat": 33.9028889,
+            "lon": 131.7258333,
+            "cogDegreesTrue": 272.2,
+            "headingDegreesTrue": 272.0,
+            "sogKnots": 7.9
+          },
+          {
+            "t": "2025-11-27T18:09:45+09:00",
+            "lat": 33.9030556,
+            "lon": 131.7213889,
+            "cogDegreesTrue": 270.6,
+            "headingDegreesTrue": 272.0,
+            "sogKnots": 8.2
+          },
+          {
+            "t": "2025-11-27T18:10:24+09:00",
+            "lat": 33.9031111,
+            "lon": 131.7194444,
+            "cogDegreesTrue": 270.9,
+            "headingDegreesTrue": 272.0,
+            "sogKnots": 8.3
+          },
+          {
+            "t": "2025-11-27T18:11:04+09:00",
+            "lat": 33.9031667,
+            "lon": 131.7177778,
+            "cogDegreesTrue": 274.2,
+            "headingDegreesTrue": 274.0,
+            "sogKnots": 8.4
+          },
+          {
+            "t": "2025-11-27T18:11:25+09:00",
+            "lat": 33.9031944,
+            "lon": 131.7166667,
+            "cogDegreesTrue": 270.7,
+            "headingDegreesTrue": 276.0,
+            "sogKnots": 8.2
+          },
+          {
+            "t": "2025-11-27T18:11:50+09:00",
+            "lat": 33.9032778,
+            "lon": 131.7155556,
+            "cogDegreesTrue": 277.0,
+            "headingDegreesTrue": 280.0,
+            "sogKnots": 8.3
+          },
+          {
+            "t": "2025-11-27T18:12:04+09:00",
+            "lat": 33.9033889,
+            "lon": 131.715,
+            "cogDegreesTrue": 286.6,
+            "headingDegreesTrue": 288.0,
+            "sogKnots": 8.2
+          },
+          {
+            "t": "2025-11-27T18:12:33+09:00",
+            "lat": 33.9036944,
+            "lon": 131.7136111,
+            "cogDegreesTrue": 288.7,
+            "headingDegreesTrue": 290.0,
+            "sogKnots": 8.2
+          },
+          {
+            "t": "2025-11-27T18:13:04+09:00",
+            "lat": 33.9041389,
+            "lon": 131.7125,
+            "cogDegreesTrue": 294.9,
+            "headingDegreesTrue": 299.0,
+            "sogKnots": 8.4
+          },
+          {
+            "t": "2025-11-27T18:13:18+09:00",
+            "lat": 33.9044444,
+            "lon": 131.7116667,
+            "cogDegreesTrue": 305.2,
+            "headingDegreesTrue": 300.0,
+            "sogKnots": 8.2
+          },
+          {
+            "t": "2025-11-27T18:13:24+09:00",
+            "lat": 33.9045833,
+            "lon": 131.7116667,
+            "cogDegreesTrue": 313.6,
+            "headingDegreesTrue": 286.0,
+            "sogKnots": 8.3
+          },
+          {
+            "t": "2025-11-27T18:13:37+09:00",
+            "lat": 33.9046944,
+            "lon": 131.7113889,
+            "cogDegreesTrue": 93.3,
+            "headingDegreesTrue": 316.0,
+            "sogKnots": 0.6
+          },
+          {
+            "t": "2025-11-27T18:13:44+09:00",
+            "lat": 33.9046944,
+            "lon": 131.7113889,
+            "cogDegreesTrue": 67.1,
+            "headingDegreesTrue": 335.0,
+            "sogKnots": 0.5
+          },
+          {
+            "t": "2025-11-27T18:13:50+09:00",
+            "lat": 33.9046944,
+            "lon": 131.7113889,
+            "cogDegreesTrue": 25.5,
+            "headingDegreesTrue": 344.0,
+            "sogKnots": 1.0
+          },
+          {
+            "t": "2025-11-27T18:14:04+09:00",
+            "lat": 33.9047222,
+            "lon": 131.7116667,
+            "cogDegreesTrue": 60.0,
+            "headingDegreesTrue": 353.0,
+            "sogKnots": 1.9
+          },
+          {
+            "t": "2025-11-27T18:15:05+09:00",
+            "lat": 33.9049167,
+            "lon": 131.7122222,
+            "cogDegreesTrue": 71.7,
+            "headingDegreesTrue": 344.0,
+            "sogKnots": 2.8
+          },
+          {
+            "t": "2025-11-27T18:16:05+09:00",
+            "lat": 33.9050278,
+            "lon": 131.7127778,
+            "cogDegreesTrue": 77.3,
+            "headingDegreesTrue": 344.0,
+            "sogKnots": 1.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "B",
+      "kind": "vessel",
+      "name": "Spinner 2 (pusher and barge, rigidly connected)",
+      "vessel": {
+        "loaMetres": 121,
+        "beamMetres": 19,
+        "type": "pushing-ahead",
+        "referencePointOffsets": {
+          "fromBowMetres": 104,
+          "fromSternMetres": 17,
+          "fromPortMetres": 7,
+          "fromStarboardMetres": 12
+        }
+      },
+      "track": {
+        "derivation": "measured",
+        "positionAt": "gps-antenna",
+        "source": {
+          "kind": "jtsb-report",
+          "citation": "appendix table 2, p.15"
+        },
+        "note": "No heading is recorded: the report states this unit's simplified (Class B) AIS does not transmit heading. Course over ground is present throughout and must not be used in its place. Dimensions are those of the pushing unit as a whole - the pusher is 24 m, the barge 111 m.",
+        "points": [
+          {
+            "t": "2025-11-27T17:20:01+09:00",
+            "lat": 33.8866667,
+            "lon": 131.5126167,
+            "cogDegreesTrue": 85.4,
+            "sogKnots": 11.0
+          },
+          {
+            "t": "2025-11-27T17:30:01+09:00",
+            "lat": 33.88935,
+            "lon": 131.5498667,
+            "cogDegreesTrue": 85.3,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T17:40:02+09:00",
+            "lat": 33.89205,
+            "lon": 131.5874333,
+            "cogDegreesTrue": 84.8,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T17:50:11+09:00",
+            "lat": 33.8947333,
+            "lon": 131.6254,
+            "cogDegreesTrue": 85.5,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T17:51:01+09:00",
+            "lat": 33.8949833,
+            "lon": 131.6285333,
+            "cogDegreesTrue": 84.0,
+            "sogKnots": 11.1
+          },
+          {
+            "t": "2025-11-27T17:55:02+09:00",
+            "lat": 33.8963667,
+            "lon": 131.6433167,
+            "cogDegreesTrue": 83.2,
+            "sogKnots": 11.1
+          },
+          {
+            "t": "2025-11-27T18:00:02+09:00",
+            "lat": 33.89825,
+            "lon": 131.6617833,
+            "cogDegreesTrue": 83.5,
+            "sogKnots": 11.1
+          },
+          {
+            "t": "2025-11-27T18:01:02+09:00",
+            "lat": 33.8986833,
+            "lon": 131.6655667,
+            "cogDegreesTrue": 82.1,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:02:02+09:00",
+            "lat": 33.8990833,
+            "lon": 131.6693,
+            "cogDegreesTrue": 82.3,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:03:02+09:00",
+            "lat": 33.8994833,
+            "lon": 131.673,
+            "cogDegreesTrue": 82.0,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:04:01+09:00",
+            "lat": 33.8999333,
+            "lon": 131.6767167,
+            "cogDegreesTrue": 81.6,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:05:12+09:00",
+            "lat": 33.9004167,
+            "lon": 131.68115,
+            "cogDegreesTrue": 82.7,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:06:22+09:00",
+            "lat": 33.9008167,
+            "lon": 131.6854667,
+            "cogDegreesTrue": 83.9,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:07:22+09:00",
+            "lat": 33.9012,
+            "lon": 131.6892667,
+            "cogDegreesTrue": 83.2,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:08:12+09:00",
+            "lat": 33.9015,
+            "lon": 131.6924,
+            "cogDegreesTrue": 82.9,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:09:22+09:00",
+            "lat": 33.9019333,
+            "lon": 131.69675,
+            "cogDegreesTrue": 83.0,
+            "sogKnots": 11.3
+          },
+          {
+            "t": "2025-11-27T18:10:01+09:00",
+            "lat": 33.9021,
+            "lon": 131.6985667,
+            "cogDegreesTrue": 82.9,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:11:01+09:00",
+            "lat": 33.9025333,
+            "lon": 131.7029667,
+            "cogDegreesTrue": 83.1,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:11:22+09:00",
+            "lat": 33.90265,
+            "lon": 131.7042,
+            "cogDegreesTrue": 81.8,
+            "sogKnots": 11.2
+          },
+          {
+            "t": "2025-11-27T18:12:01+09:00",
+            "lat": 33.90295,
+            "lon": 131.7065833,
+            "cogDegreesTrue": 72.1,
+            "sogKnots": 10.6
+          },
+          {
+            "t": "2025-11-27T18:12:32+09:00",
+            "lat": 33.9035333,
+            "lon": 131.7083,
+            "cogDegreesTrue": 65.7,
+            "sogKnots": 10.6
+          },
+          {
+            "t": "2025-11-27T18:12:41+09:00",
+            "lat": 33.9037333,
+            "lon": 131.7087833,
+            "cogDegreesTrue": 63.4,
+            "sogKnots": 10.6
+          },
+          {
+            "t": "2025-11-27T18:13:11+09:00",
+            "lat": 33.9043333,
+            "lon": 131.7104,
+            "cogDegreesTrue": 66.3,
+            "sogKnots": 10.4
+          },
+          {
+            "t": "2025-11-27T18:13:21+09:00",
+            "lat": 33.9045833,
+            "lon": 131.7108333,
+            "cogDegreesTrue": 49.2,
+            "sogKnots": 9.3
+          },
+          {
+            "t": "2025-11-27T18:13:41+09:00",
+            "lat": 33.9051667,
+            "lon": 131.7114,
+            "cogDegreesTrue": 43.8,
+            "sogKnots": 7.9
+          },
+          {
+            "t": "2025-11-27T18:14:21+09:00",
+            "lat": 33.9061833,
+            "lon": 131.7124333,
+            "cogDegreesTrue": 32.1,
+            "sogKnots": 6.0
+          },
+          {
+            "t": "2025-11-27T18:14:41+09:00",
+            "lat": 33.90665,
+            "lon": 131.71265,
+            "cogDegreesTrue": 18.7,
+            "sogKnots": 4.4
+          },
+          {
+            "t": "2025-11-27T18:15:21+09:00",
+            "lat": 33.9072833,
+            "lon": 131.7127,
+            "cogDegreesTrue": 356.2,
+            "sogKnots": 2.8
+          },
+          {
+            "t": "2025-11-27T18:15:41+09:00",
+            "lat": 33.90755,
+            "lon": 131.7127167,
+            "cogDegreesTrue": 4.9,
+            "sogKnots": 1.8
+          },
+          {
+            "t": "2025-11-27T18:16:01+09:00",
+            "lat": 33.90775,
+            "lon": 131.7127333,
+            "cogDegreesTrue": 9.0,
+            "sogKnots": 1.8
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+dist/
+node_modules/
+coverage/
+
+# Markdown is written by hand and reflowing it churns diffs for no gain.
+*.md

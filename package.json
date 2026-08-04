@@ -1,0 +1,42 @@
+{
+  "name": "voyage-replay",
+  "version": "0.0.0",
+  "description": "Replay and reconstruct marine incidents in 3D - from overhead, your own bridge, or the other ship's",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fune-gaku/voyage-replay.git"
+  },
+  "keywords": [
+    "maritime",
+    "accident-reconstruction",
+    "ais",
+    "colreg",
+    "3d",
+    "replay"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.15.0",
+    "prettier": "^3.4.1",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.16.0",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local scratch: downloaded source PDFs, extraction working files.
+# Reports are public, but we do not vendor them into the repo.
+.scratch/
+*.pdf
+
+.DS_Store
+.env
+.env.local

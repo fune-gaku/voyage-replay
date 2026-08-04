@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>voyage-replay</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #16202b;
+        --muted: #5b6b7c;
+        --bg: #f6f8fa;
+        --panel: #ffffff;
+        --line: #d7dee6;
+        --warn: #9a3412;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #dbe4ee;
+          --muted: #8fa3b8;
+          --bg: #0e151c;
+          --panel: #16202b;
+          --line: #263544;
+          --warn: #fca5a5;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          14px/1.6 ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 60rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.3rem;
+        margin: 0 0 0.25rem;
+      }
+      .lede {
+        color: var(--muted);
+        margin: 0 0 2rem;
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+      }
+      h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 0.75rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.3rem 0.75rem 0.3rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>voyage-replay</h1>
+      <p class="lede">
+        No renderer yet. This page loads a <code>.voyage.json</code>, checks it against the schema
+        and against physics, and reports what a watchkeeper would have seen.
+      </p>
+      <div id="app">Loading&hellip;</div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
