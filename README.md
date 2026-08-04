@@ -7,7 +7,7 @@ navigation lights showing over their real arcs, and a camera you can put anywher
 somebody's bridge.
 
 > **Status: early.** The format, the geometry and the checks are in and tested. The 3D renderer
-> is not written yet — `yarn dev` currently loads a scenario, validates it, and reports what each
+> is not written yet — `npm run dev` currently loads a scenario, validates it, and reports what each
 > ship showed the other. See [Roadmap](#roadmap).
 
 ## Why
@@ -97,17 +97,21 @@ reconstruction that looks fine and is wrong:
 
 ## Install and run
 
-Requires Node 20+ and yarn (classic).
+Requires Node 20 or later. Nothing else — npm ships with it.
 
 ```bash
-yarn install
-yarn dev        # dev page: load a scenario, validate it, read off the aspects
-yarn test       # unit tests plus the reference case
-yarn lint && yarn typecheck && yarn build
+npm install
+npm run dev            # dev page: load a scenario, validate it, read off the aspects
+npm test               # unit tests plus the reference case
+npm run check:config   # asserts the linter and compiler are configured to see what we think
+npm run lint && npm run typecheck && npm run build
 ```
 
-`yarn dev` loads [`examples/suo-nada-2025-11-27.voyage.json`](examples/suo-nada-2025-11-27.voyage.json)
+`npm run dev` loads [`examples/suo-nada-2025-11-27.voyage.json`](examples/suo-nada-2025-11-27.voyage.json)
 by default; pass another with `?scenario=/your-file.voyage.json`.
+
+`check:config` exists because a rule that is not enabled reports nothing — see
+[`docs/verifying-config.md`](docs/verifying-config.md).
 
 ## Use as a library
 

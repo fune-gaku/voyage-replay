@@ -10,29 +10,34 @@ import { DERIVATIONS, SOURCE_KINDS, VESSEL_TYPES } from "../src/core/types.js";
  * that one half of the codebase accepts and the other rejects.
  */
 describe("the schema and the TypeScript types agree", () => {
-  const defs = schema.$defs as Record<string, { enum?: readonly string[] }>;
+  const defs: Record<string, unknown> = schema.$defs;
 
-  it.each([
-    ["derivation", DERIVATIONS],
-    ["source kind", SOURCE_KINDS],
-    ["vessel type", VESSEL_TYPES],
-  ] as const)("%s", (name, values) => {
-    const fromSchema =
-      name === "derivation"
-        ? defs.derivation?.enum
-        : name === "source kind"
-          ? (defs.source as { properties?: { kind?: { enum?: readonly string[] } } } | undefined)
-              ?.properties?.kind?.enum
-          : (defs.vessel as { properties?: { type?: { enum?: readonly string[] } } } | undefined)
-              ?.properties?.type?.enum;
+  /** Pull an `enum` out of the schema by path, so a moved definition fails loudly. */
+  function enumAt(...path: string[]): readonly string[] {
+    let node: unknown = defs;
+    for (const key of path) {
+      expect(node, `no ${path.join(".")} in the schema`).toBeTypeOf("object");
+      node = (node as Record<string, unknown>)[key];
+    }
+    const values = (node as { enum?: readonly string[] } | undefined)?.enum;
+    expect(values, `no enum at ${path.join(".")}`).toBeDefined();
+    return values ?? [];
+  }
 
-    expect(fromSchema, `${name} enum is missing from the schema`).toBeDefined();
-    expect([...fromSchema!].sort()).toEqual([...values].sort());
+  it("agrees on derivation", () => {
+    expect([...enumAt("derivation")].sort()).toEqual([...DERIVATIONS].sort());
+  });
+
+  it("agrees on source kind", () => {
+    expect([...enumAt("source", "properties", "kind")].sort()).toEqual([...SOURCE_KINDS].sort());
+  });
+
+  it("agrees on vessel type", () => {
+    expect([...enumAt("vessel", "properties", "type")].sort()).toEqual([...VESSEL_TYPES].sort());
   });
 
   it("only knows about the vessel actor kind", () => {
-    const actor = defs.actor as { properties?: { kind?: { enum?: readonly string[] } } };
-    expect(actor.properties?.kind?.enum).toEqual(["vessel"]);
+    expect(enumAt("actor", "properties", "kind")).toEqual(["vessel"]);
   });
 
   // 0.x means the format may change without a migration. When this becomes 1.0 the

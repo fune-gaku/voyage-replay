@@ -6,23 +6,51 @@ AI コーディングエージェント向けの作業ノート。「何のツ�
 ## スタックとパッケージマネージャ
 
 - TypeScript / Vite / Vitest / ESLint / Prettier。3D は three.js を予定しているが**まだ入れていない**
-- パッケージマネージャは **yarn classic (1.22.x)**。`yarn add` を使い、package.json を手で書き換えない
-- **`packageManager` フィールドを package.json に足さないこと。** 足すと corepack が起動して
-  yarn 4 系を選び、`yarn.lock` が berry 形式に書き換わる。この環境の yarn は nvm 配下の
-  classic 1.22.22 で、CI もそれ前提
+- パッケージマネージャは **npm**。`npm install <pkg>` を使い、package.json を手で書き換えない。
+  yarn ではない（OSS なので Node 同梱の npm で追加インストール不要にする、
+  yarn classic はメンテナンスモード、という理由）
 
 ## 変更したら走らせるもの
 
 ```
-yarn lint       # ESLint
-yarn typecheck  # tsc --noEmit（src / test / *.config.ts を全部見る）
-yarn test       # Vitest（test/**/*.spec.ts）
-yarn build      # typecheck + vite build
-yarn format     # Prettier。.prettierignore で *.md は対象外
-yarn dev        # 開発ページ
+npm run check:config  # lint と tsc が「見る設定になっているか」を検査（後述）
+npm run lint          # ESLint（型情報つき）
+npm run typecheck     # tsc --noEmit（src / test / *.config.ts を全部見る）
+npm test              # Vitest（test/**/*.spec.ts）
+npm run build         # typecheck + vite build
+npm run format        # Prettier。.prettierignore で *.md は対象外
+npm run dev           # 開発ページ
 ```
 
-CI は同じ4つを順に流すだけ。ローカルで通れば CI も通る。
+CI は同じものを順に流すだけ。ローカルで通れば CI も通る。
+
+## 設定は「読む」のではなく「実効値を出して数える」
+
+**入っていない設定は何も報告しない。** これがこのレポで一度踏んだ罠で、最初の版は
+`tseslint.configs.recommended` + `strict: true` という、いかにも厳しそうで実際には
+**型情報ルールが1本も動いていない**設定だった（`parserOptions.projectService` が無いので
+そもそも型を見られない）。lint は通り、CI は緑で、欠けていること自体はどこにも出なかった。
+
+そのため `npm run check:config` が、**設定ファイルではなく実効値**を読んで、
+必要なルールとコンパイラフラグが実際に有効かを検査する。CI では lint より先に走る。
+
+設定を触ったら、この3つで確かめること。
+
+```
+npx eslint --print-config src/core/track.ts   # そのファイルに実際に効いているルール
+npx tsc -p tsconfig.json --showConfig         # extends 解決後のコンパイラ設定
+npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたときの違反件数
+```
+
+- **`strict: true` は「厳しい設定」ではない。** `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, `noImplicitReturns`, `noPropertyAccessFromIndexSignature` などは
+  含まれない。このレポは個別に入れてある
+- **型情報ルールは `*TypeChecked` プリセットにしか無い。** `recommended` にも `strict` にも
+  `no-floating-promises` も `no-unsafe-*` も `consistent-type-assertions` も入っていない
+- **例外は `eslint.config.js` に理由付きで書く。** ファイルに散らした `eslint-disable` コメントは、
+  気づかないうちにルールを失う経路そのもの
+
+詳細と実測値は [`docs/verifying-config.md`](docs/verifying-config.md)。
 
 ## レイアウト
 

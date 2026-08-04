@@ -18,9 +18,14 @@ import {
   type PreparedTrack,
 } from "./core/track.js";
 import type { Actor, Scenario } from "./core/types.js";
-import { validateScenario } from "./core/validate.js";
+import { parseScenario, validateScenario } from "./core/validate.js";
 
 const DEFAULT_SCENARIO = "/suo-nada-2025-11-27.voyage.json";
+
+interface Prepared {
+  actor: Actor;
+  track: PreparedTrack;
+}
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("#app is missing");
@@ -34,7 +39,7 @@ async function main(root: HTMLElement): Promise<void> {
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    raw = await response.json();
+    raw = (await response.json()) as unknown;
   } catch (error) {
     root.innerHTML = section("Load failed", `<p class="warn">${escapeHtml(String(error))}</p>`);
     return;
@@ -49,41 +54,39 @@ async function main(root: HTMLElement): Promise<void> {
     return;
   }
 
-  root.innerHTML = render(raw as Scenario);
+  root.innerHTML = render(parseScenario(raw));
 }
 
 function render(scenario: Scenario): string {
-  const tracks = new Map<string, PreparedTrack>();
-  for (const actor of scenario.actors) tracks.set(actor.id, prepareActor(actor, scenario.origin));
+  const prepared: Prepared[] = scenario.actors.map((actor) => ({
+    actor,
+    track: prepareActor(actor, scenario.origin),
+  }));
 
-  const findings = scenario.actors.flatMap((actor) =>
-    checkPlausibility(tracks.get(actor.id)!, actor.vessel),
-  );
+  const findings = prepared.flatMap((p) => checkPlausibility(p.track, p.actor.vessel));
 
   return [
     section("Scenario", overview(scenario)),
-    section("Actors", actorTable(scenario, tracks)),
-    section("Closest approach", approach(scenario, tracks)),
-    section("What each ship showed the other", aspects(scenario, tracks)),
+    section("Actors", actorTable(prepared)),
+    section("Closest approach", approach(prepared)),
+    section("What each ship showed the other", aspects(prepared)),
     section(`Plausibility screening (${findings.length})`, findingList(findings)),
   ].join("");
 }
 
 function overview(scenario: Scenario): string {
-  const rows: [string, string][] = [
+  return keyValueTable([
     ["Title", scenario.meta.title],
     ["Occurred", scenario.meta.occurredAt],
     ["Locality", scenario.meta.locality ?? "-"],
     ["Light condition", scenario.environment?.lightCondition ?? "unstated"],
     ["Source", scenario.meta.source?.citation ?? scenario.meta.source?.id ?? "-"],
-  ];
-  return keyValueTable(rows);
+  ]);
 }
 
-function actorTable(scenario: Scenario, tracks: Map<string, PreparedTrack>): string {
+function actorTable(prepared: Prepared[]): string {
   const head = ["id", "name", "LOA", "beam", "points", "derivation", "position at", "heading?"];
-  const rows = scenario.actors.map((actor: Actor) => {
-    const track = tracks.get(actor.id)!;
+  const rows = prepared.map(({ actor, track }) => {
     const withHeading = track.points.filter((p) => p.headingDegreesTrue !== undefined).length;
     return [
       actor.id,
@@ -99,64 +102,75 @@ function actorTable(scenario: Scenario, tracks: Map<string, PreparedTrack>): str
   return dataTable(head, rows);
 }
 
-function approach(scenario: Scenario, tracks: Map<string, PreparedTrack>): string {
-  const [first, second] = scenario.actors;
-  if (!first || !second) return "<p>Needs two actors.</p>";
-  const cpa = closestPointOfApproach(tracks.get(first.id)!, tracks.get(second.id)!);
+/** The two actors a two-ship analysis needs, or null with the reason it cannot run. */
+function pair(prepared: Prepared[]): [Prepared, Prepared] | null {
+  const [first, second] = prepared;
+  return first && second ? [first, second] : null;
+}
+
+function approach(prepared: Prepared[]): string {
+  const both = pair(prepared);
+  if (!both) return "<p>Needs two actors.</p>";
+  const [first, second] = both;
+
+  const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
 
-  const offsets = first.vessel?.referencePointOffsets;
+  const offsets = first.actor.vessel?.referencePointOffsets;
   const caveat = offsets
-    ? `Reported positions are the GPS antenna. On ${first.id} the antenna sits ` +
+    ? `Reported positions are the GPS antenna. On ${first.actor.id} the antenna sits ` +
       `${offsets.fromBowMetres} m from the bow, so this is not the gap between hulls.`
     : "";
 
   return (
     keyValueTable([
-      ["Between", `${first.id} and ${second.id}`],
+      ["Between", `${first.actor.id} and ${second.actor.id}`],
       ["At", new Date(cpa.epochSeconds * 1000).toISOString()],
       ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
     ]) + (caveat ? `<p style="color:var(--muted)">${escapeHtml(caveat)}</p>` : "")
   );
 }
 
-function aspects(scenario: Scenario, tracks: Map<string, PreparedTrack>): string {
-  const [first, second] = scenario.actors;
-  if (!first || !second) return "<p>Needs two actors.</p>";
-  const a = tracks.get(first.id)!;
-  const b = tracks.get(second.id)!;
-  const cpa = closestPointOfApproach(a, b);
+function aspects(prepared: Prepared[]): string {
+  const both = pair(prepared);
+  if (!both) return "<p>Needs two actors.</p>";
+  const [first, second] = both;
+
+  const vessel = second.actor.vessel;
+  if (!vessel) return `<p>${escapeHtml(second.actor.id)} carries no vessel particulars.</p>`;
+
+  const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
 
   const rows: string[][] = [];
   for (let back = 420; back >= 0; back -= 60) {
     const t = cpa.epochSeconds - back;
-    const pa = sampleAt(a, t);
-    const pb = sampleAt(b, t);
-    if (!pa || !pb) continue;
+    const here = sampleAt(first.track, t);
+    const there = sampleAt(second.track, t);
+    if (!here || !there) continue;
 
     const clock = new Date(t * 1000).toISOString().slice(11, 19);
-    const range = distanceMetres(pa.position, pb.position);
-    const bearing = bearingDegrees(pa.position, pb.position);
+    const range = distanceMetres(here.position, there.position);
+    const bearing = bearingDegrees(here.position, there.position);
 
     // Heading is what fixes a ship's light arcs. Where the source did not supply it -
     // a Class B transponder never does - say so rather than quietly using the course.
-    const headingOfB = pb.headingDegreesTrue;
-    const standIn = headingOfB ?? pb.cogDegreesTrue;
+    const heading = there.headingDegreesTrue;
+    const standIn = heading ?? there.cogDegreesTrue;
     const seen =
       standIn === undefined
         ? "no heading and no course: cannot say"
-        : describeAspect(visibleLights(second.vessel!, normaliseDegrees(bearing + 180 - standIn))) +
-          (headingOfB === undefined ? " (from course over ground)" : "");
+        : describeAspect(visibleLights(vessel, normaliseDegrees(bearing + 180 - standIn))) +
+          (heading === undefined ? " (from course over ground)" : "");
 
     rows.push([
       `${clock}Z`,
       `${bearing.toFixed(1)} deg`,
       `${range.toFixed(0)} m`,
-      `${first.id} sees: ${seen}`,
+      `${first.actor.id} sees: ${seen}`,
     ]);
   }
-  return dataTable(["time", `bearing of ${second.id}`, "range", "aspect"], rows);
+  return dataTable(["time", `bearing of ${second.actor.id}`, "range", "aspect"], rows);
 }
 
 function findingList(findings: Finding[]): string {
@@ -188,9 +202,14 @@ function dataTable(head: string[], rows: string[][]): string {
   return `<table>${thead}${tbody}</table>`;
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
-  );
+  return value.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
 }

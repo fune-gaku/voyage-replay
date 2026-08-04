@@ -14,7 +14,8 @@ const examplesDir = join(dirname(fileURLToPath(import.meta.url)), "..", "example
 const files = readdirSync(examplesDir).filter((f) => f.endsWith(".voyage.json"));
 
 function load(name: string) {
-  return parseScenario(JSON.parse(readFileSync(join(examplesDir, name), "utf8")));
+  const raw: unknown = JSON.parse(readFileSync(join(examplesDir, name), "utf8"));
+  return parseScenario(raw);
 }
 
 describe("every example", () => {
@@ -23,7 +24,7 @@ describe("every example", () => {
   });
 
   it.each(files)("%s satisfies the schema", (name) => {
-    const raw = JSON.parse(readFileSync(join(examplesDir, name), "utf8"));
+    const raw: unknown = JSON.parse(readFileSync(join(examplesDir, name), "utf8"));
     const result = validateScenario(raw);
     expect(result.errors).toEqual([]);
     expect(result.valid).toBe(true);

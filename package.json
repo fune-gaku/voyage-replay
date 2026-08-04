@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "check:config": "node scripts/check-config.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {

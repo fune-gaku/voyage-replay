@@ -33,12 +33,18 @@ should be.
 ## Running things
 
 ```bash
-yarn install
-yarn lint && yarn typecheck && yarn test && yarn build
+npm install
+npm run check:config && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-CI runs exactly those, so a green local run is a green CI run. `yarn format` runs Prettier;
+CI runs exactly those, so a green local run is a green CI run. `npm run format` runs Prettier;
 Markdown is deliberately excluded.
+
+`check:config` comes first on purpose. Linting is type-aware here, and a config that loses
+`parserOptions.projectService` or drops back to a non-`TypeChecked` preset still exits 0 while
+silently checking nothing — so the absence is asserted directly rather than assumed. If you
+need an exception to a rule, put it in `eslint.config.js` with the reason, not in a scattered
+`eslint-disable` comment. See [docs/verifying-config.md](docs/verifying-config.md).
 
 ## Data
 

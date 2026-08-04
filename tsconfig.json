@@ -6,13 +6,26 @@
     "moduleResolution": "bundler",
     "types": ["node", "vitest/globals"],
 
+    // `strict` is not the strict setting. It leaves off every flag below, and a config
+    // that stops at `strict: true` therefore type-checks clean while never looking at
+    // out-of-range indexing, explicit `undefined` in optional properties, or a function
+    // that returns a value on some paths and falls off the end on others.
+    //
+    // Verify rather than trust this comment:
+    //   npx tsc -p tsconfig.json --showConfig
+    //   npx tsc -p tsconfig.json --noEmit --<flag>     # violations if it were on
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedSideEffectImports": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
 
     "resolveJsonModule": true,
     "isolatedModules": true,
