@@ -51,7 +51,9 @@ export default tseslint.config(
     // project service cannot type them and every type-aware rule errors on the parse.
     files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
     extends: [tseslint.configs.disableTypeChecked],
-    languageOptions: { globals: { console: "readonly", process: "readonly" } },
+    languageOptions: {
+      globals: { console: "readonly", process: "readonly", Buffer: "readonly" },
+    },
   },
   {
     // Tests read JSON off disk and poke at the schema as plain data, so they assert

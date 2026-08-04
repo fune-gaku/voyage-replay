@@ -169,6 +169,11 @@
 
       <div id="panels"></div>
     </main>
+    <!--
+      A single-file build writes the scenario in here, so the page opens straight off the
+      filesystem with nothing to fetch. Left empty, the page falls back to fetching one.
+    -->
+    <script type="application/json" id="scenario"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

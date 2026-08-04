@@ -101,7 +101,7 @@ Requires Node 20 or later. Nothing else — npm ships with it.
 
 ```bash
 npm install
-npm run dev            # dev page: load a scenario, validate it, read off the aspects
+npm run dev            # dev server, then open http://localhost:5173/
 npm test               # unit tests plus the reference case
 npm run check:config   # asserts the linter and compiler are configured to see what we think
 npm run lint && npm run typecheck && npm run build
@@ -109,6 +109,23 @@ npm run lint && npm run typecheck && npm run build
 
 `npm run dev` loads [`examples/suo-nada-2025-11-27.voyage.json`](examples/suo-nada-2025-11-27.voyage.json)
 by default; pass another with `?scenario=/your-file.voyage.json`.
+
+### One file you can just open
+
+You do not have to keep a dev server running to look at a reconstruction:
+
+```bash
+npm run build:single -- examples/suo-nada-2025-11-27.voyage.json
+# → dist/suo-nada-2025-11-27.html   (about 720 kB, self-contained)
+```
+
+Everything — the player, the styles, the scenario — is inside that one file. Double-click it,
+attach it to an email, drop it into an article, or archive it beside the video it produced.
+There is nothing left to fetch, so it will still open years from now, which is the property
+worth having: a reconstruction whose viewer has rotted is not evidence of anything.
+
+The cost is that three.js travels inside every file. That is accepted; a CDN reference would
+be smaller and would trade away the only thing that makes the file worth keeping.
 
 `check:config` exists because a rule that is not enabled reports nothing — see
 [`docs/verifying-config.md`](docs/verifying-config.md).

@@ -19,8 +19,20 @@ npm run typecheck     # tsc --noEmit（src / test / *.config.ts を全部見る�
 npm test              # Vitest（test/**/*.spec.ts）
 npm run build         # typecheck + vite build
 npm run format        # Prettier。.prettierignore で *.md は対象外
-npm run dev           # 開発ページ
+npm run dev           # 開発サーバ（http://localhost:5173/）
+npm run build:single -- <scenario.voyage.json>   # 自己完結 HTML 1枚を dist/ に出す
 ```
+
+`build:single` は「見るたびに dev サーバを回す」を不要にするためのもの。通常の
+`npm run build` が吐く `dist/index.html` は JS を別ファイルから読み、シナリオを `fetch`
+するので **`file://` では開けない**。1枚に畳めば、ダブルクリックで開き、メールに添付でき、
+記事に埋め込め、何年後でも開く（取りに行くものが残っていないため）。
+
+**実装上の罠**: `String.prototype.replace` の**置換文字列**は `$&` / `` $` `` / `$'` / `$1`
+を展開する。ミニファイされた JS にはこれらが普通に含まれるので、バンドルを置換文字列として
+渡すと `$'` が「マッチ以降の全文」に化けて HTML が壊れる。**置換は必ず関数で渡すこと**
+（`scripts/build-single.mjs` にコメントあり）。出力に外部参照が残っていないかは同スクリプトが
+検査して、残っていれば失敗する。
 
 CI は同じものを順に流すだけ。ローカルで通れば CI も通る。
 

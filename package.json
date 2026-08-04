@@ -21,6 +21,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:single": "node scripts/build-single.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

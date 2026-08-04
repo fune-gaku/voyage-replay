@@ -24,9 +24,7 @@ async function main(): Promise<void> {
 
   let raw: unknown;
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    raw = (await response.json()) as unknown;
+    raw = readInlineScenario() ?? (await fetchScenario(url));
   } catch (error) {
     subtitle.textContent = "load failed";
     panels.innerHTML = section("Load failed", `<p class="warn">${escapeHtml(String(error))}</p>`);
@@ -173,6 +171,24 @@ function wireRecording(
     button.textContent = "Stop";
     button.classList.add("recording");
   });
+}
+
+/**
+ * A single-file build embeds the scenario in the page, which is what lets the result be
+ * opened straight off the filesystem: `fetch` of a sibling file is blocked under file://,
+ * so a page that has to go and get its data is a page that needs a web server.
+ */
+function readInlineScenario(): unknown {
+  const element = document.querySelector("#scenario");
+  const text = element?.textContent?.trim();
+  if (!text) return null;
+  return JSON.parse(text) as unknown;
+}
+
+async function fetchScenario(url: string): Promise<unknown> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return (await response.json()) as unknown;
 }
 
 function slug(title: string): string {
