@@ -6,9 +6,9 @@ Give it a timestamped track for each vessel and it rebuilds the encounter: hulls
 navigation lights showing over their real arcs, and a camera you can put anywhere, including on
 somebody's bridge.
 
-> **Status: early.** The format, the geometry and the checks are in and tested. The 3D renderer
-> is not written yet — `npm run dev` currently loads a scenario, validates it, and reports what each
-> ship showed the other. See [Roadmap](#roadmap).
+> **Status: early.** A scenario renders and plays back, from overhead or from either bridge, and
+> records to video. What is not in yet is a ship motion model — between samples a hull still
+> travels in a straight line. See [Roadmap](#roadmap).
 
 ## Why
 
@@ -164,9 +164,9 @@ and `checkPlausibility` — but nothing is wired up for consumption outside this
 
 | | |
 |---|---|
-| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case |
-| **Next** | Ship motion model (first-order response, so a hull carries its turn instead of sliding sideways); 3D renderer with the three cameras; timeline with variable time compression |
-| **After** | JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view; video capture |
+| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case, 3D renderer with the three cameras, timeline with variable time compression, webm capture, single-file build |
+| **Next** | Ship motion model (first-order response, so a hull carries its turn instead of sliding sideways) |
+| **After** | JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view |
 
 Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
 reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)

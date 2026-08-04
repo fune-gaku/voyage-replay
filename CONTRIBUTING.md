@@ -11,6 +11,16 @@ unsure about. The files under [`plans/`](plans/) show the level of detail the pr
 
 Typo fixes, obviously-correct one-liners and test additions can go straight to a pull request.
 
+The issue is the entry point; [`plans/`](plans/) is where a design decision lives once it needs
+more room than a comment thread. They are tied together by number:
+
+- Anything needing a design decision gets `plans/<slug>-<issue number>.md` — what, why (above all,
+  what a straightforward implementation would get wrong), which files, and the open questions.
+- The pull request says `Closes #N`, and the plan moves to `plans/done/` when it merges.
+
+The open questions are the reason a plan is a file rather than a comment: they get re-read every
+time someone touches that area, and they belong in the diff where a reviewer will see them.
+
 ## The bar for correctness here is unusual
 
 This tool makes claims about what happened. A reconstruction that looks plausible and is wrong is

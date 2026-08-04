@@ -5,7 +5,7 @@ AI コーディングエージェント向けの作業ノート。「何のツ�
 
 ## スタックとパッケージマネージャ
 
-- TypeScript / Vite / Vitest / ESLint / Prettier。3D は three.js を予定しているが**まだ入れていない**
+- TypeScript / Vite / Vitest / ESLint / Prettier。3D は **three.js**（`src/render/`）
 - パッケージマネージャは **npm**。`npm install <pkg>` を使い、package.json を手で書き換えない。
   yarn ではない（OSS なので Node 同梱の npm で追加インストール不要にする、
   yarn classic はメンテナンスモード、という理由）
@@ -191,7 +191,20 @@ JTSB 自身が航行経路図で実線と破線を描き分けているので、
 `test/examples.spec.ts` が最接近距離・方位の不動・灯火の見え方まで固定している。
 このファイルの数字を触るときは、報告書の付表と突き合わせること。
 
-## plans/
+## issue と plans/ の使い分け
 
-1変更1メモ。何を・なぜ・どのファイルを触るかを数段落。実装前に書き、終わったら
-`plans/done/` へ移す。
+**issue が入口、`plans/` は設計判断の置き場**。二重管理にしないため、番号で結ぶ。
+
+1. **issue を先に立てる。** 外から見え、番号が採れる
+2. **設計判断が要るものだけ `plans/<slug>-<issue番号>.md` を書く。** 小さい修正は issue だけでよい。
+   何を・なぜ（特に「素直な実装だと何が間違うか」）・どのファイルを触るか・未解決の問い
+3. **実装 PR に `Closes #N` を書き、merge したら plan を `plans/done/` へ移す**
+
+issue のコメント欄ではなく `plans/` に置く理由は、**未解決の問いがコードと一緒に動いて
+PR でレビューされる必要がある**から。`plans/ship-motion-model.md` の「係数の出どころ」が例で、
+これは実装のたびに読み返される前提になっている。逆に「誰がいつやるか」「外部との議論」は
+issue の仕事で、`plans/` に持ち込まない。
+
+移し忘れは実際に起きる（`phase1-video.md` は実装後もしばらく `plans/` に残っていた）。
+本数が増えて手で回らなくなったら、`gh pr view <num> --json mergedAt` で実値を取って
+triage する形に自動化する。**完了日を推測で書かないこと。**
