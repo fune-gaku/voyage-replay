@@ -6,14 +6,14 @@
  */
 
 import { prepareActor } from "./core/track.js";
-import type { Scenario } from "./core/types.js";
+import type { Scenario, ScenarioMeta } from "./core/types.js";
 import { parseScenario, validateScenario } from "./core/validate.js";
-import { Replay, type ViewSelection } from "./render/player.js";
-import { escapeHtml, formatClock, formatDate, renderPanels, section } from "./ui/panels.js";
+import { Replay } from "./render/player.js";
+import { escapeHtml, formatDate, renderPanels, section } from "./ui/panels.js";
 import { wireRecordingButton } from "./ui/recording-button.js";
+import { wireTransport } from "./ui/transport.js";
 
 const DEFAULT_SCENARIO = "/suo-nada-2025-11-27.voyage.json";
-const SCRUB_STEPS = 1000;
 
 void main();
 
@@ -72,121 +72,31 @@ function show(scenario: Scenario, report: Report): void {
   const when = formatDate(replay.startSeconds, scenario.meta.timeZone);
   report.subtitle.textContent = `${scenario.meta.title} - ${when}`;
 
-  wireControls(replay, scenario);
+  wireControls(replay, scenario.meta);
 }
 
-function wireControls(replay: Replay, scenario: Scenario): void {
-  const paint = painter(replay, scenario);
-  const startFollowing = follower(replay, paint);
+/** Look every control up, hand them over, and hook the two halves together. */
+function wireControls(replay: Replay, meta: ScenarioMeta): void {
+  const { startFollowing } = wireTransport({
+    replay,
+    clock: must("#clock", HTMLElement),
+    playPause: must("#playPause", HTMLButtonElement),
+    scrub: must("#scrub", HTMLInputElement),
+    speed: must("#speed", HTMLSelectElement),
+    views: must("#views", HTMLElement),
+    timeZone: meta.timeZone,
+  });
 
-  wireViews(replay);
-  wireSpeed(replay);
-  wirePlayPause(replay, paint, startFollowing);
-  wireScrub(replay, paint);
   window.addEventListener("resize", () => {
     replay.resize();
   });
 
-  paint();
   wireRecordingButton({
     button: must("#record", HTMLButtonElement),
     canvas: must("#view", HTMLCanvasElement),
     replay,
-    filename: slug(scenario.meta.title),
+    title: meta.title,
     onStart: startFollowing,
-  });
-}
-
-/** Everything the controls say about where playback has got to. */
-function painter(replay: Replay, scenario: Scenario): () => void {
-  const clock = must("#clock", HTMLElement);
-  const playPause = must("#playPause", HTMLButtonElement);
-  const scrub = must("#scrub", HTMLInputElement);
-  const span = replay.endSeconds - replay.startSeconds;
-
-  return () => {
-    clock.textContent = `${formatClock(replay.timeSeconds, scenario.meta.timeZone)} local`;
-    scrub.value = String(
-      Math.round(((replay.timeSeconds - replay.startSeconds) / span) * SCRUB_STEPS),
-    );
-    playPause.textContent = replay.isPlaying ? "Pause" : "Play";
-  };
-}
-
-/**
- * The clock has to keep up with playback, which advances on its own animation frames -
- * but ONLY while it is playing. An unconditional rAF loop repaints the clock sixty times
- * a second at a standstill, which is not merely wasted work: it keeps the main thread
- * busy enough that anything waiting for an idle moment (a screenshot, an extension, the
- * profiler) never gets one.
- */
-function follower(replay: Replay, paint: () => void): () => void {
-  let following = false;
-
-  const follow = (): void => {
-    paint();
-    if (replay.isPlaying) requestAnimationFrame(follow);
-    else following = false;
-  };
-
-  return () => {
-    if (following) return;
-    following = true;
-    requestAnimationFrame(follow);
-  };
-}
-
-function wireViews(replay: Replay): void {
-  const views = must("#views", HTMLElement);
-  const buttons: { button: HTMLButtonElement; view: ViewSelection }[] = [];
-
-  const add = (label: string, view: ViewSelection): void => {
-    const button = document.createElement("button");
-    button.textContent = label;
-    button.addEventListener("click", () => {
-      replay.setView(view);
-      for (const entry of buttons) {
-        entry.button.setAttribute("aria-pressed", String(entry.view === view));
-      }
-    });
-    views.append(button);
-    buttons.push({ button, view });
-  };
-
-  add("Overhead", { kind: "overhead" });
-  for (const id of replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
-  buttons[0]?.button.setAttribute("aria-pressed", "true");
-}
-
-function wireSpeed(replay: Replay): void {
-  const speed = must("#speed", HTMLSelectElement);
-  speed.addEventListener("change", () => {
-    replay.setSpeed(Number(speed.value));
-  });
-  replay.setSpeed(Number(speed.value));
-}
-
-function wirePlayPause(replay: Replay, paint: () => void, startFollowing: () => void): void {
-  const playPause = must("#playPause", HTMLButtonElement);
-  playPause.addEventListener("click", () => {
-    if (replay.isPlaying) replay.pause();
-    else {
-      replay.play();
-      startFollowing();
-    }
-    paint();
-  });
-}
-
-function wireScrub(replay: Replay, paint: () => void): void {
-  const scrub = must("#scrub", HTMLInputElement);
-  const span = replay.endSeconds - replay.startSeconds;
-
-  scrub.max = String(SCRUB_STEPS);
-  scrub.addEventListener("input", () => {
-    replay.pause();
-    replay.seek(replay.startSeconds + (Number(scrub.value) / SCRUB_STEPS) * span);
-    paint();
   });
 }
 
@@ -206,15 +116,6 @@ async function fetchScenario(url: string): Promise<unknown> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return (await response.json()) as unknown;
-}
-
-function slug(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "voyage-replay"
-  );
 }
 
 /**

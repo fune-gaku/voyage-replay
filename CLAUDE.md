@@ -134,23 +134,27 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 
 | | 実測 | 下限 |
 |---|---:|---:|
-| Lines | 99.09% | 98% |
-| Statements | 96.82% | 95% |
+| Lines | 99.17% | 98% |
+| Statements | 97.08% | 95% |
 | Functions | 100% | 99% |
-| Branches | 85.00% | 83% |
+| Branches | 85.51% | 83% |
 
 - **効いているのは `coverage.include: ["src/**/*.ts"]`。** これが無いと「テストが読み込んだ
   ファイル」だけが分母になり、**テストが1本も無いファイルは 0% ではなく不在**になる。
   つまり未テストのコードを足すと数字が *上がる*
-- **除外は `src/main.ts` 1本だけ。** しかも理由はブラウザではなく**このレポ自身の構造**で、
-  `void main()` が module のトップにあるので import した時点で走り、配線関数9本は1つも
-  export されていない。部品として触るには先に seam を入れる必要がある＝テストを書く前に
-  コードを変える話
+- **除外は `src/main.ts` 1本だけ、しかも実行39行（src の 6%）。** 残っているのは
+  「要素を引く・シナリオを読む・部品に渡す」だけ。除外の理由はブラウザではなく
+  **このレポ自身の構造**で、`void main()` が module のトップにあるので import した時点で
+  走り、何も export されていない
+- **`main.ts` の中身が正しくある必要が出たら、推論を頑張るのではなく測れる場所へ動かす。**
+  実際そうした: 録画ボタンは `src/ui/recording-button.ts` へ（同じ窓でバグが3件出たため）、
+  再生コントロールは `src/ui/transport.ts` へ（`follower` の rAF ループが同じ形だったため。
+  停止後もループが残ると画面は正常に見えたまま idle が二度と取れなくなる）
 - **`player.ts` と `record.ts` を「実ブラウザが要る」として除外していたのは誤りだった。**
   検証せずに書いた主張で、実際には `record.ts` は `MediaRecorder` を1つ、`player.ts` は
   three.js の `WebGLRenderer` を1つスタブすれば素の Node で動く。両方いま lines 100%。
   除外していた間、**src の 44% が測定の外**にあり、報告していた数字は半分強のコードに
-  対するものだった（現在は 88%）
+  対するものだった（現在は 94%）
 - **原則: 除外は「測れないもの」に使う。「測っていないもの」に使わない。** 入れる前に
   安いスタンドインを試すこと。`test/record.spec.ts` `test/player.spec.ts` がその書き方で、
   スタンドイン不要な部分は `test/scene.spec.ts` `test/hull.spec.ts` `test/cameras.spec.ts`
@@ -168,7 +172,7 @@ spec/       .voyage.json の JSON Schema。フォーマットの正本
 src/core/   型・測地・検証・トラック標本化・物理スクリーニング
 src/actors/vessel/  船に固有のもの（航海灯、将来は運動モデル）
 src/render/ three.js。シーン・船体・航海灯・カメラ・再生・録画
-src/ui/     画の下のテキストパネル
+src/ui/     画の下のテキストパネル、再生コントロール、録画ボタン
 src/extract/  報告書などからシナリオを起こす（未実装）
 examples/   参照事案 **1本だけ**。サンプルではなく回帰テスト。CI が schema 検証する
 scenarios/  作業中の事案群。**git 追跡外**（README.md のみ追跡）

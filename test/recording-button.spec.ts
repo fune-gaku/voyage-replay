@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  fileNameFor,
   wireRecordingButton,
   type RecordablePlayback,
   type RecordingButtonParts,
@@ -109,7 +110,7 @@ function wire(
     button,
     canvas,
     replay,
-    filename: "suo-nada",
+    title: "Suo-nada collision, 27 November 2025",
     onStart,
   };
   wireRecordingButton(parts);
@@ -360,5 +361,26 @@ describe("when even the rollback fails", () => {
     }).not.toThrow();
     expect(button.textContent).toBe("Record");
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe("fileNameFor", () => {
+  it("turns a title into something a filesystem will take", () => {
+    expect(fileNameFor("Suo-nada collision, 27 November 2025")).toBe(
+      "suo-nada-collision-27-november-2025",
+    );
+  });
+
+  /**
+   * Most of the reports this tool reads are typeset in Japanese, and a title with no ASCII
+   * letters in it reduces to an empty string. A download named "" is one the browser
+   * quietly refuses, so there has to be something left.
+   */
+  it("still names the file when the title has nothing ASCII in it", () => {
+    expect(fileNameFor("周防灘における衝突")).toBe("voyage-replay");
+  });
+
+  it("leaves no separator dangling at either end", () => {
+    expect(fileNameFor("  (2025) collision!  ")).toBe("2025-collision");
   });
 });
