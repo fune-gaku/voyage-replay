@@ -9,8 +9,8 @@ import { prepareActor } from "./core/track.js";
 import type { Scenario } from "./core/types.js";
 import { parseScenario, validateScenario } from "./core/validate.js";
 import { Replay, type ViewSelection } from "./render/player.js";
-import { CanvasRecorder, downloadRecording, isRecordingSupported } from "./render/record.js";
 import { escapeHtml, formatClock, formatDate, renderPanels, section } from "./ui/panels.js";
+import { wireRecordingButton } from "./ui/recording-button.js";
 
 const DEFAULT_SCENARIO = "/suo-nada-2025-11-27.voyage.json";
 const SCRUB_STEPS = 1000;
@@ -88,7 +88,13 @@ function wireControls(replay: Replay, scenario: Scenario): void {
   });
 
   paint();
-  wireRecording(must("#record", HTMLButtonElement), replay, scenario, startFollowing);
+  wireRecordingButton({
+    button: must("#record", HTMLButtonElement),
+    canvas: must("#view", HTMLCanvasElement),
+    replay,
+    filename: slug(scenario.meta.title),
+    onStart: startFollowing,
+  });
 }
 
 /** Everything the controls say about where playback has got to. */
@@ -181,70 +187,6 @@ function wireScrub(replay: Replay, paint: () => void): void {
     replay.pause();
     replay.seek(replay.startSeconds + (Number(scrub.value) / SCRUB_STEPS) * span);
     paint();
-  });
-}
-
-function wireRecording(
-  button: HTMLButtonElement,
-  replay: Replay,
-  scenario: Scenario,
-  startFollowing: () => void,
-): void {
-  if (!isRecordingSupported()) {
-    button.disabled = true;
-    button.title = "this browser cannot record the canvas";
-    return;
-  }
-
-  const recorder = new CanvasRecorder(must("#view", HTMLCanvasElement));
-  button.addEventListener("click", () => {
-    if (recorder.isRecording) stopRecording(recorder, replay, button, scenario);
-    else startRecording(recorder, replay, button, startFollowing);
-  });
-}
-
-/**
- * Rewind first: a recording that starts halfway through is not what anyone wants, and
- * remembering to scrub back every time is exactly the kind of step people skip.
- */
-function startRecording(
-  recorder: CanvasRecorder,
-  replay: Replay,
-  button: HTMLButtonElement,
-  startFollowing: () => void,
-): void {
-  replay.seek(replay.startSeconds);
-  recorder.start();
-  replay.play();
-  startFollowing();
-  button.textContent = "Stop";
-  button.classList.add("recording");
-}
-
-/**
- * Out of action until the file is in hand, which is not the same instant as the click.
- *
- * The browser hands over the video in an event raised after `stop()` returns, so there is
- * a window where the recording is finishing and the button is still live. Left enabled it
- * reads "Stop" for all of it, and a second press starts a fresh recording that this one
- * then reports over the top of - leaving the page saying "Record" while it is recording,
- * so the next press stops what the user meant to start. Disabling closes the window rather
- * than trying to sort out afterwards which recording the callback belonged to.
- */
-function stopRecording(
-  recorder: CanvasRecorder,
-  replay: Replay,
-  button: HTMLButtonElement,
-  scenario: Scenario,
-): void {
-  button.disabled = true;
-  replay.pause();
-
-  void recorder.stop().then((recording) => {
-    downloadRecording(recording, slug(scenario.meta.title));
-    button.textContent = "Record";
-    button.classList.remove("recording");
-    button.disabled = false;
   });
 }
 
