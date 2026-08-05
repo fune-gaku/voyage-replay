@@ -20,17 +20,20 @@ jobs:
       - run: npm ci
 
       # Runs first, because everything after it reports only on what it was configured to
-      # look at. A linter that lost its type-aware rules, or a tsconfig that lost a flag,
-      # still exits 0 - so the absence has to be checked directly.
+      # look at. A linter that lost its type-aware rules, a tsconfig that lost a flag, or a
+      # coverage threshold quietly deleted - all three still exit 0, so the absence has to
+      # be checked directly.
       - name: Config coverage
         run: npm run check:config
 
+      # Includes the 20-line cap on functions.
       - name: Lint
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
 
+      # `npm test` measures coverage and fails under the thresholds in vitest.config.ts.
       - name: Test
         run: npm test
 

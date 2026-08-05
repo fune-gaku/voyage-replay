@@ -34,21 +34,8 @@ export interface SampledState {
 
 /** Project a track onto the scenario's local plane and put its clock on one axis. */
 export function prepareTrack(actorId: string, track: Track, origin: LatLon): PreparedTrack {
-  const points: PreparedPoint[] = track.points
-    .map((p) => {
-      const epochSeconds = Date.parse(p.t) / 1000;
-      if (!Number.isFinite(epochSeconds)) {
-        throw new Error(`${actorId}: unparseable timestamp ${JSON.stringify(p.t)}`);
-      }
-      return {
-        epochSeconds,
-        position: toLocalPosition({ lat: p.lat, lon: p.lon }, origin),
-        headingDegreesTrue: p.headingDegreesTrue,
-        cogDegreesTrue: p.cogDegreesTrue,
-        sogKnots: p.sogKnots,
-        derivation: p.derivation ?? track.derivation,
-      };
-    })
+  const points = track.points
+    .map((p) => preparedPoint(actorId, p, track.derivation, origin))
     .sort((a, b) => a.epochSeconds - b.epochSeconds);
 
   const first = points[0];
@@ -56,6 +43,30 @@ export function prepareTrack(actorId: string, track: Track, origin: LatLon): Pre
   if (!first || !last) throw new Error(`${actorId}: track has no points`);
 
   return { actorId, points, startSeconds: first.epochSeconds, endSeconds: last.epochSeconds };
+}
+
+/**
+ * One source point on the local plane. A point may state its own derivation - part of a
+ * track can be measured and part reconstructed - and falls back to the track's otherwise.
+ */
+function preparedPoint(
+  actorId: string,
+  point: Track["points"][number],
+  trackDerivation: Derivation,
+  origin: LatLon,
+): PreparedPoint {
+  const epochSeconds = Date.parse(point.t) / 1000;
+  if (!Number.isFinite(epochSeconds)) {
+    throw new Error(`${actorId}: unparseable timestamp ${JSON.stringify(point.t)}`);
+  }
+  return {
+    epochSeconds,
+    position: toLocalPosition({ lat: point.lat, lon: point.lon }, origin),
+    headingDegreesTrue: point.headingDegreesTrue,
+    cogDegreesTrue: point.cogDegreesTrue,
+    sogKnots: point.sogKnots,
+    derivation: point.derivation ?? trackDerivation,
+  };
 }
 
 export function prepareActor(actor: Actor, origin: LatLon): PreparedTrack {
@@ -83,24 +94,31 @@ export function sampleAt(track: PreparedTrack, epochSeconds: number): SampledSta
     const b = points[i + 1];
     if (!a || !b) continue;
     if (epochSeconds < a.epochSeconds || epochSeconds > b.epochSeconds) continue;
-
-    const span = b.epochSeconds - a.epochSeconds;
-    const fraction = span === 0 ? 0 : (epochSeconds - a.epochSeconds) / span;
-    const exact = fraction === 0 ? a : fraction === 1 ? b : undefined;
-
-    return {
-      epochSeconds,
-      position: {
-        east: a.position.east + (b.position.east - a.position.east) * fraction,
-        north: a.position.north + (b.position.north - a.position.north) * fraction,
-      },
-      headingDegreesTrue: blendDegrees(a.headingDegreesTrue, b.headingDegreesTrue, fraction),
-      cogDegreesTrue: blendDegrees(a.cogDegreesTrue, b.cogDegreesTrue, fraction),
-      sogKnots: blendNumbers(a.sogKnots, b.sogKnots, fraction),
-      derivation: exact ? exact.derivation : "interpolated",
-    };
+    return blendPoints(a, b, epochSeconds);
   }
   return null;
+}
+
+/**
+ * The straight-line blend itself. Landing exactly on a sample keeps that sample's own
+ * derivation; anything between them is this tool's own construction and says so.
+ */
+function blendPoints(a: PreparedPoint, b: PreparedPoint, epochSeconds: number): SampledState {
+  const span = b.epochSeconds - a.epochSeconds;
+  const fraction = span === 0 ? 0 : (epochSeconds - a.epochSeconds) / span;
+  const exact = fraction === 0 ? a : fraction === 1 ? b : undefined;
+
+  return {
+    epochSeconds,
+    position: {
+      east: a.position.east + (b.position.east - a.position.east) * fraction,
+      north: a.position.north + (b.position.north - a.position.north) * fraction,
+    },
+    headingDegreesTrue: blendDegrees(a.headingDegreesTrue, b.headingDegreesTrue, fraction),
+    cogDegreesTrue: blendDegrees(a.cogDegreesTrue, b.cogDegreesTrue, fraction),
+    sogKnots: blendNumbers(a.sogKnots, b.sogKnots, fraction),
+    derivation: exact ? exact.derivation : "interpolated",
+  };
 }
 
 export interface RangeSample {

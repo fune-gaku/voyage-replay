@@ -17,98 +17,151 @@ const SCRUB_STEPS = 1000;
 
 void main();
 
+/** The two places on the page the analysis is written into. They always travel together. */
+interface Report {
+  panels: HTMLElement;
+  subtitle: HTMLElement;
+}
+
 async function main(): Promise<void> {
-  const panels = must("#panels", HTMLElement);
-  const subtitle = must("#subtitle", HTMLElement);
+  const report: Report = {
+    panels: must("#panels", HTMLElement),
+    subtitle: must("#subtitle", HTMLElement),
+  };
   const url = new URLSearchParams(location.search).get("scenario") ?? DEFAULT_SCENARIO;
 
   let raw: unknown;
   try {
     raw = readInlineScenario() ?? (await fetchScenario(url));
   } catch (error) {
-    subtitle.textContent = "load failed";
-    panels.innerHTML = section("Load failed", `<p class="warn">${escapeHtml(String(error))}</p>`);
+    fail(report, "load failed", "Load failed", escapeHtml(String(error)));
     return;
   }
 
   const validation = validateScenario(raw);
   if (!validation.valid) {
-    subtitle.textContent = "does not match the schema";
-    panels.innerHTML = section(
-      "Schema",
-      `<p class="warn">${validation.errors.map(escapeHtml).join("<br>")}</p>`,
-    );
+    const detail = validation.errors.map(escapeHtml).join("<br>");
+    fail(report, "does not match the schema", "Schema", detail);
     return;
   }
 
-  const scenario = parseScenario(raw);
+  show(parseScenario(raw), report);
+}
+
+/**
+ * Put the failure where the analysis would have gone.
+ *
+ * A tool that makes claims about what happened has to be visibly unable to make one,
+ * rather than showing an empty page and leaving the reason in a console nobody has open.
+ */
+function fail(report: Report, status: string, title: string, detail: string): void {
+  report.subtitle.textContent = status;
+  report.panels.innerHTML = section(title, `<p class="warn">${detail}</p>`);
+}
+
+function show(scenario: Scenario, report: Report): void {
   const prepared = scenario.actors.map((actor) => ({
     actor,
     track: prepareActor(actor, scenario.origin),
   }));
 
-  panels.innerHTML = renderPanels(scenario, prepared);
+  report.panels.innerHTML = renderPanels(scenario, prepared);
   must("#stage", HTMLElement).hidden = false;
 
   const replay = new Replay(must("#view", HTMLCanvasElement), scenario);
-  subtitle.textContent = `${scenario.meta.title} - ${formatDate(replay.startSeconds, scenario.meta.timeZone)}`;
+  const when = formatDate(replay.startSeconds, scenario.meta.timeZone);
+  report.subtitle.textContent = `${scenario.meta.title} - ${when}`;
 
   wireControls(replay, scenario);
 }
 
 function wireControls(replay: Replay, scenario: Scenario): void {
-  const views = must("#views", HTMLElement);
-  const playPause = must("#playPause", HTMLButtonElement);
-  const speed = must("#speed", HTMLSelectElement);
+  const paint = painter(replay, scenario);
+  const startFollowing = follower(replay, paint);
+
+  wireViews(replay);
+  wireSpeed(replay);
+  wirePlayPause(replay, paint, startFollowing);
+  wireScrub(replay, paint);
+  window.addEventListener("resize", () => {
+    replay.resize();
+  });
+
+  paint();
+  wireRecording(must("#record", HTMLButtonElement), replay, scenario, startFollowing);
+}
+
+/** Everything the controls say about where playback has got to. */
+function painter(replay: Replay, scenario: Scenario): () => void {
   const clock = must("#clock", HTMLElement);
+  const playPause = must("#playPause", HTMLButtonElement);
   const scrub = must("#scrub", HTMLInputElement);
-  const record = must("#record", HTMLButtonElement);
-
   const span = replay.endSeconds - replay.startSeconds;
-  const viewButtons: { button: HTMLButtonElement; view: ViewSelection }[] = [];
 
-  const addView = (label: string, view: ViewSelection) => {
-    const button = document.createElement("button");
-    button.textContent = label;
-    button.addEventListener("click", () => {
-      replay.setView(view);
-      for (const entry of viewButtons) {
-        entry.button.setAttribute("aria-pressed", String(entry.view === view));
-      }
-    });
-    views.append(button);
-    viewButtons.push({ button, view });
-  };
-
-  addView("Overhead", { kind: "overhead" });
-  for (const id of replay.actorIds) addView(`${id} bridge`, { kind: "bridge", actorId: id });
-  viewButtons[0]?.button.setAttribute("aria-pressed", "true");
-
-  const paint = () => {
+  return () => {
     clock.textContent = `${formatClock(replay.timeSeconds, scenario.meta.timeZone)} local`;
     scrub.value = String(
       Math.round(((replay.timeSeconds - replay.startSeconds) / span) * SCRUB_STEPS),
     );
     playPause.textContent = replay.isPlaying ? "Pause" : "Play";
   };
+}
 
-  // The clock has to keep up with playback, which advances on its own animation frames -
-  // but ONLY while it is playing. An unconditional rAF loop repaints the clock sixty
-  // times a second at a standstill, which is not merely wasted work: it keeps the main
-  // thread busy enough that anything waiting for an idle moment (a screenshot, an
-  // extension, the profiler) never gets one.
+/**
+ * The clock has to keep up with playback, which advances on its own animation frames -
+ * but ONLY while it is playing. An unconditional rAF loop repaints the clock sixty times
+ * a second at a standstill, which is not merely wasted work: it keeps the main thread
+ * busy enough that anything waiting for an idle moment (a screenshot, an extension, the
+ * profiler) never gets one.
+ */
+function follower(replay: Replay, paint: () => void): () => void {
   let following = false;
-  const follow = () => {
+
+  const follow = (): void => {
     paint();
     if (replay.isPlaying) requestAnimationFrame(follow);
     else following = false;
   };
-  const startFollowing = () => {
+
+  return () => {
     if (following) return;
     following = true;
     requestAnimationFrame(follow);
   };
+}
 
+function wireViews(replay: Replay): void {
+  const views = must("#views", HTMLElement);
+  const buttons: { button: HTMLButtonElement; view: ViewSelection }[] = [];
+
+  const add = (label: string, view: ViewSelection): void => {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      replay.setView(view);
+      for (const entry of buttons) {
+        entry.button.setAttribute("aria-pressed", String(entry.view === view));
+      }
+    });
+    views.append(button);
+    buttons.push({ button, view });
+  };
+
+  add("Overhead", { kind: "overhead" });
+  for (const id of replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
+  buttons[0]?.button.setAttribute("aria-pressed", "true");
+}
+
+function wireSpeed(replay: Replay): void {
+  const speed = must("#speed", HTMLSelectElement);
+  speed.addEventListener("change", () => {
+    replay.setSpeed(Number(speed.value));
+  });
+  replay.setSpeed(Number(speed.value));
+}
+
+function wirePlayPause(replay: Replay, paint: () => void, startFollowing: () => void): void {
+  const playPause = must("#playPause", HTMLButtonElement);
   playPause.addEventListener("click", () => {
     if (replay.isPlaying) replay.pause();
     else {
@@ -117,11 +170,11 @@ function wireControls(replay: Replay, scenario: Scenario): void {
     }
     paint();
   });
+}
 
-  speed.addEventListener("change", () => {
-    replay.setSpeed(Number(speed.value));
-  });
-  replay.setSpeed(Number(speed.value));
+function wireScrub(replay: Replay, paint: () => void): void {
+  const scrub = must("#scrub", HTMLInputElement);
+  const span = replay.endSeconds - replay.startSeconds;
 
   scrub.max = String(SCRUB_STEPS);
   scrub.addEventListener("input", () => {
@@ -129,13 +182,6 @@ function wireControls(replay: Replay, scenario: Scenario): void {
     replay.seek(replay.startSeconds + (Number(scrub.value) / SCRUB_STEPS) * span);
     paint();
   });
-
-  window.addEventListener("resize", () => {
-    replay.resize();
-  });
-
-  paint();
-  wireRecording(record, replay, scenario, startFollowing);
 }
 
 function wireRecording(
@@ -152,25 +198,41 @@ function wireRecording(
 
   const recorder = new CanvasRecorder(must("#view", HTMLCanvasElement));
   button.addEventListener("click", () => {
-    if (recorder.isRecording) {
-      void recorder.stop().then((recording) => {
-        downloadRecording(recording, slug(scenario.meta.title));
-        button.textContent = "Record";
-        button.classList.remove("recording");
-      });
-      replay.pause();
-      return;
-    }
-
-    // Rewind first: a recording that starts halfway through is not what anyone wants,
-    // and remembering to scrub back every time is exactly the kind of step people skip.
-    replay.seek(replay.startSeconds);
-    recorder.start();
-    replay.play();
-    startFollowing();
-    button.textContent = "Stop";
-    button.classList.add("recording");
+    if (recorder.isRecording) stopRecording(recorder, replay, button, scenario);
+    else startRecording(recorder, replay, button, startFollowing);
   });
+}
+
+/**
+ * Rewind first: a recording that starts halfway through is not what anyone wants, and
+ * remembering to scrub back every time is exactly the kind of step people skip.
+ */
+function startRecording(
+  recorder: CanvasRecorder,
+  replay: Replay,
+  button: HTMLButtonElement,
+  startFollowing: () => void,
+): void {
+  replay.seek(replay.startSeconds);
+  recorder.start();
+  replay.play();
+  startFollowing();
+  button.textContent = "Stop";
+  button.classList.add("recording");
+}
+
+function stopRecording(
+  recorder: CanvasRecorder,
+  replay: Replay,
+  button: HTMLButtonElement,
+  scenario: Scenario,
+): void {
+  void recorder.stop().then((recording) => {
+    downloadRecording(recording, slug(scenario.meta.title));
+    button.textContent = "Record";
+    button.classList.remove("recording");
+  });
+  replay.pause();
 }
 
 /**

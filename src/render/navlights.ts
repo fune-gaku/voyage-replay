@@ -102,35 +102,14 @@ function sectorMesh(light: NavigationLight, radius: number): Mesh {
 export function buildNavigationLights(vessel: Vessel, freeboard: number): NavigationLightGroup {
   const group = new Group();
   const sectors = new Group();
-  const lights = lightsForVessel(vessel);
 
   // The sectors are a diagram, not a light-propagation model, so their radius is chosen
   // to be legible next to the hull rather than to equal the Rule 22 range - six miles of
   // translucent wedge would fill the overhead view and show nothing.
   const sectorRadius = Math.max(vessel.loaMetres * 4, 400);
 
-  for (const light of lights) {
-    const [x, y, z] = lampPosition(light.kind, vessel.loaMetres, vessel.beamMetres, freeboard);
-
-    // Drawn at a fixed size in PIXELS, not in metres.
-    //
-    // This is both the realistic choice and the one that works. A navigation light seen
-    // from another ship is a point of light whose apparent size barely changes with range
-    // - you judge distance from its brightness and from the other lights around it, never
-    // from how big it looks. And a lamp modelled at true scale is sub-pixel at any range
-    // worth reconstructing: a 1 m lamp two miles off does not survive rasterisation, so
-    // the one thing the whole tool is about would render as nothing.
-    const lamp = new Points(
-      new BufferGeometry().setAttribute("position", new Float32BufferAttribute([x, y, z], 3)),
-      new PointsMaterial({
-        color: COLOURS[light.colour] ?? 0xffffff,
-        size: 7,
-        sizeAttenuation: false,
-        transparent: true,
-        depthWrite: false,
-      }),
-    );
-    group.add(lamp);
+  for (const light of lightsForVessel(vessel)) {
+    group.add(lampPoints(light, vessel, freeboard));
 
     const sector = sectorMesh(light, sectorRadius);
     sector.position.set(0, 0.6, 0);
@@ -139,4 +118,28 @@ export function buildNavigationLights(vessel: Vessel, freeboard: number): Naviga
 
   group.add(sectors);
   return { group, sectors };
+}
+
+/**
+ * One lamp, drawn at a fixed size in PIXELS rather than in metres.
+ *
+ * This is both the realistic choice and the one that works. A navigation light seen from
+ * another ship is a point of light whose apparent size barely changes with range - you
+ * judge distance from its brightness and from the other lights around it, never from how
+ * big it looks. And a lamp modelled at true scale is sub-pixel at any range worth
+ * reconstructing: a 1 m lamp two miles off does not survive rasterisation, so the one
+ * thing the whole tool is about would render as nothing.
+ */
+function lampPoints(light: NavigationLight, vessel: Vessel, freeboard: number): Points {
+  const [x, y, z] = lampPosition(light.kind, vessel.loaMetres, vessel.beamMetres, freeboard);
+  return new Points(
+    new BufferGeometry().setAttribute("position", new Float32BufferAttribute([x, y, z], 3)),
+    new PointsMaterial({
+      color: COLOURS[light.colour] ?? 0xffffff,
+      size: 7,
+      sizeAttenuation: false,
+      transparent: true,
+      depthWrite: false,
+    }),
+  );
 }

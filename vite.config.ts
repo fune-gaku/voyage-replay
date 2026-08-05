@@ -1,4 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
+import type { ServerResponse } from "node:http";
 import { join, normalize, resolve } from "node:path";
 
 import { defineConfig, type Plugin } from "vite";
@@ -27,35 +28,36 @@ function scenariosPlugin(): Plugin {
 
       server.middlewares.use("/scenarios", (request, response) => {
         const requested = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
-        const target = normalize(join(SCENARIOS_DIR, requested));
-        // Refuse anything that climbs out of the directory. This server is local, but a
-        // path traversal here would hand out arbitrary files to any page in the browser.
-        if (!target.startsWith(SCENARIOS_DIR)) {
-          response.statusCode = 403;
-          response.end("outside scenarios/");
-          return;
-        }
-
-        void (async () => {
-          try {
-            const info = await stat(target);
-            if (!info.isFile()) throw new Error("not a file");
-            response.setHeader("Content-Type", "application/json; charset=utf-8");
-            response.setHeader("Cache-Control", "no-store");
-            response.end(await readFile(target));
-          } catch {
-            // Answer here rather than calling next(). Vite's fallback would serve
-            // index.html with a 200, so a mistyped scenario name arrives at the page as
-            // HTML and surfaces as a JSON parse error - which says nothing about the
-            // actual mistake.
-            response.statusCode = 404;
-            response.setHeader("Content-Type", "text/plain; charset=utf-8");
-            response.end(`no such scenario: scenarios${requested}`);
-          }
-        })();
+        void serveScenario(requested, response);
       });
     },
   };
+}
+
+async function serveScenario(requested: string, response: ServerResponse): Promise<void> {
+  const target = normalize(join(SCENARIOS_DIR, requested));
+  // Refuse anything that climbs out of the directory. This server is local, but a path
+  // traversal here would hand out arbitrary files to any page in the browser.
+  if (!target.startsWith(SCENARIOS_DIR)) {
+    response.statusCode = 403;
+    response.end("outside scenarios/");
+    return;
+  }
+
+  try {
+    const info = await stat(target);
+    if (!info.isFile()) throw new Error("not a file");
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.setHeader("Cache-Control", "no-store");
+    response.end(await readFile(target));
+  } catch {
+    // Answer here rather than calling next(). Vite's fallback would serve index.html with
+    // a 200, so a mistyped scenario name arrives at the page as HTML and surfaces as a
+    // JSON parse error - which says nothing about the actual mistake.
+    response.statusCode = 404;
+    response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    response.end(`no such scenario: scenarios${requested}`);
+  }
 }
 
 export default defineConfig({

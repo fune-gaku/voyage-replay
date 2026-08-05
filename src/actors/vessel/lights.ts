@@ -41,6 +41,19 @@ const ABAFT_THE_BEAM = 112.5;
 const RIGHT_AFT_SECTOR = 247.5;
 
 /**
+ * The four Rule 21 arcs, as relative bearings clockwise from the bow.
+ *
+ * Naming them keeps the rule's numbers in one place and out of the call sites below. A
+ * bare pair of degrees in an argument list is the easiest thing in this file to transpose,
+ * and transposing one produces a light that shows over the wrong half of the horizon
+ * while every test that only counts lights still passes.
+ */
+const MASTHEAD_ARC: LightArc = { startDegrees: RIGHT_AFT_SECTOR, endDegrees: ABAFT_THE_BEAM };
+const STARBOARD_ARC: LightArc = { startDegrees: 0, endDegrees: ABAFT_THE_BEAM };
+const PORT_ARC: LightArc = { startDegrees: RIGHT_AFT_SECTOR, endDegrees: 360 };
+const STERN_ARC: LightArc = { startDegrees: ABAFT_THE_BEAM, endDegrees: RIGHT_AFT_SECTOR };
+
+/**
  * Whether a relative bearing falls inside an arc. Arcs are half-open, [start, end),
  * so the four Rule 21 arcs partition the horizon with no bearing counted twice and
  * none left out.
@@ -68,43 +81,27 @@ function ranges(loaMetres: number): { masthead: number; sidelight: number; stern
 export function lightsForVessel(vessel: Vessel): NavigationLight[] {
   const range = ranges(vessel.loaMetres);
 
-  const lights: NavigationLight[] = [
-    {
-      kind: "masthead",
-      colour: "white",
-      arc: { startDegrees: RIGHT_AFT_SECTOR, endDegrees: ABAFT_THE_BEAM },
-      nominalRangeNauticalMiles: range.masthead,
-    },
-    {
-      kind: "sidelight-starboard",
-      colour: "green",
-      arc: { startDegrees: 0, endDegrees: ABAFT_THE_BEAM },
-      nominalRangeNauticalMiles: range.sidelight,
-    },
-    {
-      kind: "sidelight-port",
-      colour: "red",
-      arc: { startDegrees: RIGHT_AFT_SECTOR, endDegrees: 360 },
-      nominalRangeNauticalMiles: range.sidelight,
-    },
-    {
-      kind: "sternlight",
-      colour: "white",
-      arc: { startDegrees: ABAFT_THE_BEAM, endDegrees: RIGHT_AFT_SECTOR },
-      nominalRangeNauticalMiles: range.stern,
-    },
+  // The after masthead light sits second so the list reads bow to stern.
+  return [
+    light("masthead", "white", MASTHEAD_ARC, range.masthead),
+    ...(vessel.loaMetres >= 50
+      ? [light("masthead-after", "white", MASTHEAD_ARC, range.masthead)]
+      : []),
+    light("sidelight-starboard", "green", STARBOARD_ARC, range.sidelight),
+    light("sidelight-port", "red", PORT_ARC, range.sidelight),
+    light("sternlight", "white", STERN_ARC, range.stern),
   ];
+}
 
-  if (vessel.loaMetres >= 50) {
-    lights.splice(1, 0, {
-      kind: "masthead-after",
-      colour: "white",
-      arc: { startDegrees: RIGHT_AFT_SECTOR, endDegrees: ABAFT_THE_BEAM },
-      nominalRangeNauticalMiles: range.masthead,
-    });
-  }
-
-  return lights;
+function light(
+  kind: LightKind,
+  colour: LightColour,
+  arc: LightArc,
+  nominalRangeNauticalMiles: number,
+): NavigationLight {
+  // Copied rather than shared. The two masthead lights carry the same arc, and a caller
+  // that reached in and adjusted one would otherwise move the other with it.
+  return { kind, colour, arc: { ...arc }, nominalRangeNauticalMiles };
 }
 
 /**

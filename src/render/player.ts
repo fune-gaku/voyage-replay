@@ -18,7 +18,7 @@ import {
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildHull } from "./hull.js";
 import { buildNavigationLights } from "./navlights.js";
-import { buildScene, buildTrackLine } from "./scene.js";
+import { buildScene, buildTrackLine, type SceneParts } from "./scene.js";
 
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
 const ACTOR_COLOURS = [0xd8443c, 0x3f7bd8, 0xd8b23c, 0x46b07a];
@@ -40,19 +40,31 @@ interface Cast {
   fit: BridgeFit;
 }
 
+/**
+ * Everything that comes from the scenario, as opposed to from the canvas.
+ *
+ * The split is worth a name: the stage is decided once by the case being reconstructed and
+ * never changes, while the renderer and the cameras below it belong to whatever surface
+ * happens to be showing it and are rebuilt or resized freely.
+ */
+interface Stage {
+  startSeconds: number;
+  endSeconds: number;
+  sceneParts: SceneParts;
+  diagram: Group;
+  cast: Cast[];
+  minimumOverheadExtent: number;
+}
+
 export class Replay {
   readonly startSeconds: number;
   readonly endSeconds: number;
 
+  private readonly stage: Stage;
   private readonly renderer: WebGLRenderer;
-  private readonly cast: Cast[] = [];
-  private readonly sceneParts: ReturnType<typeof buildScene>;
   private readonly overhead: OrthographicCamera;
   private readonly bridge: PerspectiveCamera;
-  private readonly extentMetres: number;
 
-  private readonly diagram: Group;
-  private readonly minimumOverheadExtent: number;
   private aspect: number;
   private view: ViewSelection = { kind: "overhead" };
   private currentSeconds: number;
@@ -65,60 +77,16 @@ export class Replay {
     private readonly canvas: HTMLCanvasElement,
     scenario: Scenario,
   ) {
-    const prepared = scenario.actors.map((actor) => ({
-      actor,
-      track: prepareActor(actor, scenario.origin),
-    }));
-
-    this.startSeconds = Math.min(...prepared.map((p) => p.track.startSeconds));
-    this.endSeconds = Math.max(...prepared.map((p) => p.track.endSeconds));
+    this.stage = buildStage(scenario);
+    this.startSeconds = this.stage.startSeconds;
+    this.endSeconds = this.stage.endSeconds;
     this.currentSeconds = this.startSeconds;
-    this.extentMetres = extentOf(prepared.map((p) => p.track));
-
-    this.sceneParts = buildScene(scenario.environment, this.extentMetres);
-    // Track lines belong to the diagram, not to the night: nobody on a bridge sees where
-    // the other ship has been. They are the strongest orientation cue in the plan view
-    // and a fiction from a wheelhouse window.
-    this.diagram = new Group();
-    this.sceneParts.scene.add(this.diagram);
-
-    prepared.forEach(({ actor, track }, index) => {
-      const vessel = actor.vessel ?? DEFAULT_VESSEL;
-      const colour = ACTOR_COLOURS[index % ACTOR_COLOURS.length] ?? 0xffffff;
-      const hull = buildHull(vessel, colour);
-      const freeboard = hull.eyeHeightMetres * 0.4;
-      const lights = buildNavigationLights(vessel, freeboard);
-
-      const group = new Group();
-      group.add(hull.group);
-      group.add(lights.group);
-      this.sceneParts.actors.add(group);
-      this.diagram.add(buildTrackLine(track, colour));
-
-      this.cast.push({
-        actor,
-        track,
-        vessel,
-        group,
-        sectors: lights.sectors,
-        fit: {
-          eyeHeightMetres: hull.eyeHeightMetres,
-          bridgeOffsetForwardMetres: hull.bridgeOffsetForwardMetres,
-        },
-      });
-    });
 
     this.renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
     this.aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
     this.overhead = makeOverheadCamera();
     this.bridge = makeBridgeCamera(this.aspect);
-
-    // Never let the plan view zoom closer than a few ship lengths, or the frame collapses
-    // onto the hulls at contact and the approach geometry - the thing worth looking at -
-    // leaves the screen just as it matters.
-    this.minimumOverheadExtent = Math.max(...this.cast.map((c) => c.vessel.loaMetres * 7), 300);
 
     this.resize();
     this.update();
@@ -137,7 +105,7 @@ export class Replay {
   }
 
   get actorIds(): string[] {
-    return this.cast.map((c) => c.actor.id);
+    return this.stage.cast.map((c) => c.actor.id);
   }
 
   setView(view: ViewSelection): void {
@@ -185,60 +153,49 @@ export class Replay {
 
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
-    for (const member of this.cast) {
-      const state = sampleAt(member.track, this.currentSeconds);
-      if (!state) {
-        member.group.visible = false;
-        continue;
-      }
-      member.group.visible = true;
-      member.group.position.copy(toWorld(state.position));
-
-      // Heading is what the hull points along. Where the source has none - a Class B
-      // transponder transmits no heading - the course over ground stands in, because
-      // something has to be drawn; the panel says so rather than hiding it.
-      const heading = state.headingDegreesTrue ?? state.cogDegreesTrue ?? 0;
-      member.group.rotation.y = headingToRotationY(heading);
-
-      // The arcs are a diagram for the plan view. From a bridge they would be a picture
-      // of the rules rather than of the night.
-      member.sectors.visible = this.view.kind === "overhead";
+    const diagramMode = this.view.kind === "overhead";
+    for (const member of this.stage.cast) {
+      this.place(member, diagramMode);
     }
 
-    const diagramMode = this.view.kind === "overhead";
-    this.diagram.visible = diagramMode;
-    this.sceneParts.setDiagramLighting(diagramMode);
+    this.stage.diagram.visible = diagramMode;
+    this.stage.sceneParts.setDiagramLighting(diagramMode);
+    this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
+  }
 
-    this.renderer.render(this.sceneParts.scene, this.activeCamera());
+  /** One ship at the current instant, or hidden if her track does not reach it. */
+  private place(member: Cast, diagramMode: boolean): void {
+    const state = sampleAt(member.track, this.currentSeconds);
+    member.group.visible = state !== null;
+    if (!state) return;
+
+    member.group.position.copy(toWorld(state.position));
+
+    // Heading is what the hull points along. Where the source has none - a Class B
+    // transponder transmits no heading - the course over ground stands in, because
+    // something has to be drawn; the panel says so rather than hiding it.
+    const heading = state.headingDegreesTrue ?? state.cogDegreesTrue ?? 0;
+    member.group.rotation.y = headingToRotationY(heading);
+
+    // The arcs are a diagram for the plan view. From a bridge they would be a picture
+    // of the rules rather than of the night.
+    member.sectors.visible = diagramMode;
   }
 
   /** Follow whoever is on stage, wide enough to hold them all with room to read. */
   private frameOverhead(): void {
-    let east = { min: Infinity, max: -Infinity };
-    let north = { min: Infinity, max: -Infinity };
-    let any = false;
+    const bounds = boundsOfVisible(this.stage.cast, this.currentSeconds);
+    if (!bounds) return;
 
-    for (const member of this.cast) {
-      const state = sampleAt(member.track, this.currentSeconds);
-      if (!state) continue;
-      any = true;
-      east = {
-        min: Math.min(east.min, state.position.east),
-        max: Math.max(east.max, state.position.east),
-      };
-      north = {
-        min: Math.min(north.min, state.position.north),
-        max: Math.max(north.max, state.position.north),
-      };
-    }
-    if (!any) return;
-
-    const centre = { east: (east.min + east.max) / 2, north: (north.min + north.max) / 2 };
-    const span = Math.max(east.max - east.min, north.max - north.min);
-    const extent = Math.max(span * 1.9, this.minimumOverheadExtent);
+    const centre = {
+      east: (bounds.east.min + bounds.east.max) / 2,
+      north: (bounds.north.min + bounds.north.max) / 2,
+    };
+    const span = Math.max(bounds.east.max - bounds.east.min, bounds.north.max - bounds.north.min);
+    const extent = Math.max(span * 1.9, this.stage.minimumOverheadExtent);
 
     frameOverheadCamera(this.overhead, centre, extent, this.aspect);
-    this.sceneParts.setViewExtent(extent);
+    this.stage.sceneParts.setViewExtent(extent);
   }
 
   private activeCamera(): Camera {
@@ -247,7 +204,8 @@ export class Replay {
       return this.overhead;
     }
 
-    const member = this.cast.find((c) => c.actor.id === this.view.actorId) ?? this.cast[0];
+    const cast = this.stage.cast;
+    const member = cast.find((c) => c.actor.id === this.view.actorId) ?? cast[0];
     if (!member) return this.overhead;
 
     const state = sampleAt(member.track, this.currentSeconds);
@@ -279,22 +237,103 @@ export class Replay {
   };
 }
 
+function buildStage(scenario: Scenario): Stage {
+  const prepared = scenario.actors.map((actor) => ({
+    actor,
+    track: prepareActor(actor, scenario.origin),
+  }));
+  const tracks = prepared.map((p) => p.track);
+  const sceneParts = buildScene(scenario.environment, extentOf(tracks));
+
+  // Track lines belong to the diagram, not to the night: nobody on a bridge sees where
+  // the other ship has been. They are the strongest orientation cue in the plan view
+  // and a fiction from a wheelhouse window.
+  const diagram = new Group();
+  sceneParts.scene.add(diagram);
+  const cast = prepared.map((entry, index) => enterStage(entry, index, sceneParts, diagram));
+
+  return {
+    startSeconds: Math.min(...tracks.map((t) => t.startSeconds)),
+    endSeconds: Math.max(...tracks.map((t) => t.endSeconds)),
+    sceneParts,
+    diagram,
+    cast,
+    // Never let the plan view zoom closer than a few ship lengths, or the frame collapses
+    // onto the hulls at contact and the approach geometry - the thing worth looking at -
+    // leaves the screen just as it matters.
+    minimumOverheadExtent: Math.max(...cast.map((c) => c.vessel.loaMetres * 7), 300),
+  };
+}
+
+/** Build one ship and put her, and her track line, into the scene. */
+function enterStage(
+  { actor, track }: { actor: Actor; track: PreparedTrack },
+  index: number,
+  sceneParts: SceneParts,
+  diagram: Group,
+): Cast {
+  const colour = ACTOR_COLOURS[index % ACTOR_COLOURS.length] ?? 0xffffff;
+  const member = castMember(actor, track, colour);
+  sceneParts.actors.add(member.group);
+  diagram.add(buildTrackLine(track, colour));
+  return member;
+}
+
+function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
+  const vessel = actor.vessel ?? DEFAULT_VESSEL;
+  const hull = buildHull(vessel, colour);
+  const lights = buildNavigationLights(vessel, hull.eyeHeightMetres * 0.4);
+
+  const group = new Group();
+  group.add(hull.group);
+  group.add(lights.group);
+
+  return {
+    actor,
+    track,
+    vessel,
+    group,
+    sectors: lights.sectors,
+    fit: {
+      eyeHeightMetres: hull.eyeHeightMetres,
+      bridgeOffsetForwardMetres: hull.bridgeOffsetForwardMetres,
+    },
+  };
+}
+
+interface Bounds {
+  east: Extremes;
+  north: Extremes;
+}
+
+interface Extremes {
+  min: number;
+  max: number;
+}
+
+/** The box round every ship that has a position at this instant, or null if none has. */
+function boundsOfVisible(cast: Cast[], epochSeconds: number): Bounds | null {
+  const positions = cast
+    .map((member) => sampleAt(member.track, epochSeconds))
+    .filter((state) => state !== null)
+    .map((state) => state.position);
+  if (positions.length === 0) return null;
+
+  return {
+    east: extremesOf(positions.map((p) => p.east)),
+    north: extremesOf(positions.map((p) => p.north)),
+  };
+}
+
+function extremesOf(values: number[]): Extremes {
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
 /** Half-width of a square that comfortably holds every track. */
 function extentOf(tracks: PreparedTrack[]): number {
-  let east = { min: Infinity, max: -Infinity };
-  let north = { min: Infinity, max: -Infinity };
-  for (const track of tracks) {
-    for (const point of track.points) {
-      east = {
-        min: Math.min(east.min, point.position.east),
-        max: Math.max(east.max, point.position.east),
-      };
-      north = {
-        min: Math.min(north.min, point.position.north),
-        max: Math.max(north.max, point.position.north),
-      };
-    }
-  }
+  const positions = tracks.flatMap((track) => track.points.map((p) => p.position));
+  const east = extremesOf(positions.map((p) => p.east));
+  const north = extremesOf(positions.map((p) => p.north));
   const span = Math.max(east.max - east.min, north.max - north.min, 500);
   return span * 1.15;
 }

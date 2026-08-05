@@ -26,7 +26,7 @@ import {
 } from "three";
 
 import type { Environment } from "../core/types.js";
-import type { PreparedTrack } from "../core/track.js";
+import type { PreparedPoint, PreparedTrack } from "../core/track.js";
 import { toWorld } from "./coords.js";
 
 export interface SceneParts {
@@ -58,51 +58,85 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 const NIGHT = { sky: 0x05080e, water: 0x0a121d, ambient: 0.28 };
 const DAY = { sky: 0x9fb8cf, water: 0x2b4a63, ambient: 0.95 };
 
+type Palette = typeof NIGHT;
+
 export function buildScene(environment: Environment | undefined, extentMetres: number): SceneParts {
-  const night =
-    environment?.lightCondition === "night" ||
-    environment?.lightCondition === "twilight" ||
-    environment?.lightCondition === undefined;
+  const night = isNight(environment);
   const palette = night ? NIGHT : DAY;
 
   const scene = new Scene();
   scene.background = new Color(palette.sky);
+  scene.fog = buildFog(palette, environment?.visibilityMetres, extentMetres);
+  scene.add(waterMesh(palette, extentMetres));
 
-  // In fog the far ship should fade, which is half the explanation in a restricted
-  // visibility case. Where the report gives no figure, the fog is set far enough away to
-  // be invisible rather than invented.
-  const visibility = environment?.visibilityMetres ?? null;
-  scene.fog = new Fog(
-    palette.sky,
-    visibility ? visibility * 0.25 : extentMetres * 1.4,
-    visibility ?? extentMetres * 3,
+  const setDiagramLighting = addLighting(scene, palette, night);
+
+  // Before the grid, so the scene's children keep the order they had when this was one
+  // function: water, lights, cast, grid.
+  const actors = new Group();
+  scene.add(actors);
+
+  const setViewExtent = addGrid(scene);
+  setViewExtent(extentMetres);
+
+  return { scene, actors, setViewExtent, setDiagramLighting };
+}
+
+/** Twilight is drawn as night, and so is an unstated condition. */
+function isNight(environment: Environment | undefined): boolean {
+  return (
+    environment?.lightCondition === "night" ||
+    environment?.lightCondition === "twilight" ||
+    environment?.lightCondition === undefined
   );
+}
 
+/**
+ * In fog the far ship should fade, which is half the explanation in a restricted
+ * visibility case. Where the report gives no figure, the fog is set far enough away to
+ * be invisible rather than invented.
+ */
+function buildFog(
+  palette: Palette,
+  visibilityMetres: number | null | undefined,
+  extentMetres: number,
+): Fog {
+  return new Fog(
+    palette.sky,
+    visibilityMetres ? visibilityMetres * 0.25 : extentMetres * 1.4,
+    visibilityMetres ?? extentMetres * 3,
+  );
+}
+
+function waterMesh(palette: Palette, extentMetres: number): Mesh {
   const water = new Mesh(
     new PlaneGeometry(extentMetres * 6, extentMetres * 6),
     new MeshStandardMaterial({ color: palette.water, roughness: 0.95, metalness: 0.1 }),
   );
   water.rotation.x = -Math.PI / 2;
-  scene.add(water);
+  return water;
+}
 
+/** Adds the two lights and hands back the switch described on `setDiagramLighting`. */
+function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boolean) => void {
   const ambient = new AmbientLight(0xffffff, palette.ambient);
-  scene.add(ambient);
   const key = new DirectionalLight(0xffffff, night ? 0.25 : 1.1);
   key.position.set(1, 2, 1);
+  scene.add(ambient);
   scene.add(key);
 
-  const setDiagramLighting = (on: boolean): void => {
+  return (on: boolean): void => {
     ambient.intensity = on ? Math.max(palette.ambient, 1.35) : palette.ambient;
     key.intensity = on ? 0.8 : night ? 0.25 : 1.1;
   };
+}
 
-  const actors = new Group();
-  scene.add(actors);
-
+/** Owns the one grid, replacing it when the view has moved far enough to want another. */
+function addGrid(scene: Scene): (viewExtentMetres: number) => void {
   let grid: GridHelper | null = null;
   let spacing = 0;
 
-  const setViewExtent = (viewExtentMetres: number): void => {
+  return (viewExtentMetres: number): void => {
     // Aim for roughly a dozen squares across the frame.
     const wanted = viewExtentMetres / 12;
     const chosen = GRID_LADDER.find((step) => step >= wanted) ?? GRID_LADDER.at(-1) ?? 1000;
@@ -119,10 +153,6 @@ export function buildScene(environment: Environment | undefined, extentMetres: n
     grid.position.y = 0.05;
     scene.add(grid);
   };
-
-  setViewExtent(extentMetres);
-
-  return { scene, actors, setViewExtent, setDiagramLighting };
 }
 
 /**
@@ -132,8 +162,30 @@ export function buildScene(environment: Environment | undefined, extentMetres: n
  */
 export function buildTrackLine(track: PreparedTrack, colour: number): Group {
   const group = new Group();
-  const points = track.points;
+  for (const run of derivationRuns(track.points)) {
+    if (run.length < 2) continue;
+    group.add(
+      polyline(
+        run.map((p) => toWorld(p.position, 1.2)),
+        colour,
+        // The SECOND point, not the first. The first is the join shared with the previous
+        // run and still carries the previous run's derivation, so reading the style off it
+        // labels every run after the first with the kind it just stopped being - drawing
+        // reconstructed track solid, which is the one thing this line must never do.
+        run[1]?.derivation === "measured",
+      ),
+    );
+  }
+  return group;
+}
 
+/**
+ * Cut the track where it crosses between recorded and reconstructed. Consecutive runs
+ * share their boundary point, so the dashed length starts where the solid one ends rather
+ * than leaving a gap the width of one interval.
+ */
+function derivationRuns(points: PreparedPoint[]): PreparedPoint[][] {
+  const runs: PreparedPoint[][] = [];
   let runStart = 0;
   for (let i = 1; i <= points.length; i += 1) {
     const previous = points[i - 1];
@@ -141,23 +193,10 @@ export function buildTrackLine(track: PreparedTrack, colour: number): Group {
     const sameKind =
       next && previous && (next.derivation === "measured") === (previous.derivation === "measured");
     if (sameKind) continue;
-
-    const run = points.slice(runStart, i);
-    if (run.length >= 2) {
-      const first = run[0];
-      const measured = first ? first.derivation === "measured" : true;
-      group.add(
-        polyline(
-          run.map((p) => toWorld(p.position, 1.2)),
-          colour,
-          measured,
-        ),
-      );
-    }
+    runs.push(points.slice(runStart, i));
     runStart = i - 1;
   }
-
-  return group;
+  return runs;
 }
 
 function polyline(vertices: Vector3[], colour: number, solid: boolean): Line {

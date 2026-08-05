@@ -10,8 +10,13 @@
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
-import { closestPointOfApproach, sampleAt, type PreparedTrack } from "../core/track.js";
-import type { Actor, Scenario } from "../core/types.js";
+import {
+  closestPointOfApproach,
+  sampleAt,
+  type PreparedTrack,
+  type SampledState,
+} from "../core/track.js";
+import type { Actor, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -105,45 +110,66 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
   );
 }
 
+/**
+ * One ship looking at another. `observer` and `target` are not interchangeable: the table
+ * reports what the observer saw, and the light arcs are read off the TARGET's heading, so
+ * swapping them turns every aspect through 180 degrees while still looking plausible.
+ */
+interface Encounter {
+  observer: Prepared;
+  target: Prepared;
+  /** The target's particulars, already checked to be present. */
+  targetVessel: Vessel;
+  timeZone: string;
+}
+
 function aspects(prepared: Prepared[], scenario: Scenario): string {
   const both = pair(prepared);
   if (!both) return "<p>Needs two actors.</p>";
-  const [first, second] = both;
+  const [observer, target] = both;
 
-  const vessel = second.actor.vessel;
-  if (!vessel) return `<p>${escapeHtml(second.actor.id)} carries no vessel particulars.</p>`;
+  const targetVessel = target.actor.vessel;
+  if (!targetVessel) return `<p>${escapeHtml(target.actor.id)} carries no vessel particulars.</p>`;
 
-  const cpa = closestPointOfApproach(first.track, second.track);
+  const cpa = closestPointOfApproach(observer.track, target.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
 
+  const encounter = { observer, target, targetVessel, timeZone: scenario.meta.timeZone };
   const rows: string[][] = [];
   for (let back = 420; back >= 0; back -= 60) {
-    const t = cpa.epochSeconds - back;
-    const here = sampleAt(first.track, t);
-    const there = sampleAt(second.track, t);
-    if (!here || !there) continue;
-
-    const range = distanceMetres(here.position, there.position);
-    const bearing = bearingDegrees(here.position, there.position);
-
-    // Heading fixes a ship's light arcs. Where the source supplied none - a Class B
-    // transponder never does - say so rather than quietly using the course.
-    const heading = there.headingDegreesTrue;
-    const standIn = heading ?? there.cogDegreesTrue;
-    const seen =
-      standIn === undefined
-        ? "no heading and no course: cannot say"
-        : describeAspect(visibleLights(vessel, normaliseDegrees(bearing + 180 - standIn))) +
-          (heading === undefined ? " (from course over ground)" : "");
-
-    rows.push([
-      formatClock(t, scenario.meta.timeZone),
-      `${bearing.toFixed(1)} deg`,
-      `${range.toFixed(0)} m`,
-      `${first.actor.id} sees: ${seen}`,
-    ]);
+    const row = aspectRow(encounter, cpa.epochSeconds - back);
+    if (row) rows.push(row);
   }
-  return dataTable(["time", `bearing of ${second.actor.id}`, "range", "aspect"], rows);
+  return dataTable(["time", `bearing of ${target.actor.id}`, "range", "aspect"], rows);
+}
+
+/** One minute of the approach: where the other ship was, and what she was showing. */
+function aspectRow(encounter: Encounter, epochSeconds: number): string[] | null {
+  const { observer, target, targetVessel, timeZone } = encounter;
+  const here = sampleAt(observer.track, epochSeconds);
+  const there = sampleAt(target.track, epochSeconds);
+  if (!here || !there) return null;
+
+  const bearing = bearingDegrees(here.position, there.position);
+  return [
+    formatClock(epochSeconds, timeZone),
+    `${bearing.toFixed(1)} deg`,
+    `${distanceMetres(here.position, there.position).toFixed(0)} m`,
+    `${observer.actor.id} sees: ${lightsSeen(targetVessel, there, bearing)}`,
+  ];
+}
+
+/**
+ * Heading fixes a ship's light arcs. Where the source supplied none - a Class B
+ * transponder never does - say so rather than quietly using the course.
+ */
+function lightsSeen(vessel: Vessel, there: SampledState, bearing: number): string {
+  const heading = there.headingDegreesTrue;
+  const standIn = heading ?? there.cogDegreesTrue;
+  if (standIn === undefined) return "no heading and no course: cannot say";
+
+  const aspect = describeAspect(visibleLights(vessel, normaliseDegrees(bearing + 180 - standIn)));
+  return heading === undefined ? `${aspect} (from course over ground)` : aspect;
 }
 
 function findingList(findings: Finding[], scenario: Scenario): string {
