@@ -345,3 +345,20 @@ describe("when something fails after the recorder is already running", () => {
     );
   });
 });
+
+describe("when even the rollback fails", () => {
+  // The recording is unrecoverable either way; the button is not, and it is the button the
+  // user is left holding.
+  it("still leaves a button that can start a new recording", () => {
+    FakeMediaRecorder.failOnStop = true;
+    const { button } = wire({ captureStream: () => ({}) } as unknown as HTMLCanvasElement, () => {
+      throw new Error("no frames");
+    });
+
+    expect(() => {
+      press(button);
+    }).not.toThrow();
+    expect(button.textContent).toBe("Record");
+    expect(button.disabled).toBe(false);
+  });
+});

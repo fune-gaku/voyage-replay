@@ -134,10 +134,10 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 
 | | 実測 | 下限 |
 |---|---:|---:|
-| Lines | 98.22% | 95% |
-| Statements | 95.70% | 93% |
-| Functions | 99.32% | 98% |
-| Branches | 83.57% | 82% |
+| Lines | 99.09% | 98% |
+| Statements | 96.82% | 95% |
+| Functions | 100% | 99% |
+| Branches | 85.00% | 83% |
 
 - **効いているのは `coverage.include: ["src/**/*.ts"]`。** これが無いと「テストが読み込んだ
   ファイル」だけが分母になり、**テストが1本も無いファイルは 0% ではなく不在**になる。
@@ -150,7 +150,7 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
   検証せずに書いた主張で、実際には `record.ts` は `MediaRecorder` を1つ、`player.ts` は
   three.js の `WebGLRenderer` を1つスタブすれば素の Node で動く。両方いま lines 100%。
   除外していた間、**src の 44% が測定の外**にあり、報告していた数字は半分強のコードに
-  対するものだった（現在は 82%）
+  対するものだった（現在は 88%）
 - **原則: 除外は「測れないもの」に使う。「測っていないもの」に使わない。** 入れる前に
   安いスタンドインを試すこと。`test/record.spec.ts` `test/player.spec.ts` がその書き方で、
   スタンドイン不要な部分は `test/scene.spec.ts` `test/hull.spec.ts` `test/cameras.spec.ts`

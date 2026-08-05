@@ -118,17 +118,18 @@ well; raising the ceiling is about removing future pressure, not a reason to chu
 easy to miss: `coverage.include` over `src/**`. Without it, coverage is measured only over
 the files the tests happened to load, so a module with no test at all is not counted as
 untested — it is not counted at all, and **the percentage rises when untested code is
-added**. Measured here: dropping that one line takes `src/main.ts` out of the report and
-moves the figure from 97.36% to 97.48%.
+added**. The effect is small while everything happens to be imported (99.09% with it, 99.12% without)
+and unbounded the moment someone adds a file nobody tests, which is exactly when the number
+needs to move the other way.
 
 Where it stands, and the floors it must not fall below:
 
 | | Measured | Floor |
 |---|---:|---:|
-| Lines | 98.22% | 95% |
-| Statements | 95.70% | 93% |
-| Functions | 99.32% | 98% |
-| Branches | 83.57% | 82% |
+| Lines | 99.09% | 98% |
+| Statements | 96.82% | 95% |
+| Functions | 100% | 99% |
+| Branches | 85.00% | 83% |
 
 #### What is excluded, and the exclusion that was wrong
 
@@ -172,7 +173,7 @@ it was wrong:
 
 Both are covered now, at **100% of lines each**, with no new dependency and no headless
 browser. Excluding them had put **44% of `src/` outside the measurement**, so the figure
-being reported was over little more than half the code. It is now over 82%.
+being reported was over little more than half the code. It is now over 88%.
 
 The rule this settles: **an exclusion is for code that cannot be measured, not for code
 that has not been.** Before adding one, try the cheap stand-in first — `test/record.spec.ts`
@@ -221,7 +222,7 @@ checked that way:
 | `skipComments` turned off | `counts comments, which prices the explanations this codebase depends on` |
 | `thresholds` block deleted | `coverage threshold is not set: lines` (and the other three) |
 | `coverage.include` deleted | `does not cover src/, so a module with no test at all is left out` |
-| `branches` floor raised to 99 | the test run itself: `Coverage for branches (83.57%) does not meet global threshold (99%)`, exit 1 |
+| `branches` floor raised to 99 | the test run itself: `Coverage for branches (85%) does not meet global threshold (99%)`, exit 1 |
 
 And the coverage floors themselves fail the test run rather than the config check — raising
 `branches` to 99 gives `ERROR: Coverage for branches (83.41%) does not meet global threshold
