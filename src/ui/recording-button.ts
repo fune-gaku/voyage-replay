@@ -26,8 +26,8 @@ export interface RecordingButtonParts {
   button: HTMLButtonElement;
   canvas: HTMLCanvasElement;
   replay: RecordablePlayback;
-  /** Names the downloaded file. */
-  filename: string;
+  /** The scenario's title. The downloaded file is named after it. */
+  title: string;
   /** Called when a recording starts, so the clock keeps up with playback. */
   onStart: () => void;
 }
@@ -106,14 +106,14 @@ function refuse(button: HTMLButtonElement, error: unknown): void {
  * only into a console.
  */
 function stop(recorder: CanvasRecorder, parts: RecordingButtonParts): void {
-  const { button, replay, filename } = parts;
+  const { button, replay, title } = parts;
   button.disabled = true;
   replay.pause();
 
   void recorder
     .stop()
     .then((recording) => {
-      downloadRecording(recording, filename);
+      downloadRecording(recording, fileNameFor(title));
       button.title = "";
     })
     .catch((error: unknown) => {
@@ -124,4 +124,20 @@ function stop(recorder: CanvasRecorder, parts: RecordingButtonParts): void {
       button.classList.remove("recording");
       button.disabled = false;
     });
+}
+
+/**
+ * A title turned into something a filesystem will take.
+ *
+ * The fallback matters more than it looks: a title in a script with no ASCII letters at
+ * all - which is most of the reports this tool reads - reduces to an empty string, and a
+ * download named "" is one the browser quietly refuses.
+ */
+export function fileNameFor(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "voyage-replay"
+  );
 }

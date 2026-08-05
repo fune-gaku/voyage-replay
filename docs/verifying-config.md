@@ -126,22 +126,22 @@ Where it stands, and the floors it must not fall below:
 
 | | Measured | Floor |
 |---|---:|---:|
-| Lines | 99.09% | 98% |
-| Statements | 96.82% | 95% |
+| Lines | 99.17% | 98% |
+| Statements | 97.08% | 95% |
 | Functions | 100% | 99% |
-| Branches | 85.00% | 83% |
+| Branches | 85.51% | 83% |
 
 #### What is excluded, and the exclusion that was wrong
 
-**`src/main.ts` only**, and the reason is this repository's own shape rather than the
-browser: `void main()` sits at the module's top level, so importing it runs it, and not one
-of its nine wiring functions is exported. There is no way to reach a part of it without
-driving the whole thing against a real page. Covering it means giving the module a seam
-first — a change to the code, not a test to write.
+**`src/main.ts` only**, and it is now 39 executable lines — six per cent of `src/`. What is
+left in it is lookup and assembly: find the elements, load the scenario, hand the pieces to
+the modules that do the work. It stays excluded because `void main()` sits at the module's
+top level, so importing it runs it, and nothing is exported; there is no way to reach a
+part of it without driving the whole thing against a real page.
 
-That gap has already cost something, and it is worth writing down rather than leaving as a
-theoretical concern. Three bugs of the same shape turned up while covering `record.ts`, all
-of them in the window between clicking Stop and the file being in hand:
+That is a much smaller claim than it used to be, and shrinking it is what the exclusion
+actually cost. Three bugs of the same shape turned up while covering `record.ts`, all in
+the window between clicking Stop and the file being in hand:
 
 1. the recorder cleared the field on the recording that had replaced it, killing it;
 2. the Record button was reset by the finishing recording, so the page read "Record" while
@@ -151,29 +151,22 @@ of them in the window between clicking Stop and the file being in hand:
    rather than by a test, because there was still nothing that could test it.
 
 (1) had a regression test immediately. (2) and (3) lived in `main.ts` and did not, which is
-how (3) got in. **So the button moved out**: `src/ui/recording-button.ts` holds that state
-machine now, takes every element it touches as a parameter, looks nothing up in the
-document, and has `test/recording-button.spec.ts` on both the success and the failure
-paths. What is left in `main.ts` is lookup and assembly.
+how (3) got in. So the code moved out to where it could be reached, twice:
 
-That is the shape of the remedy in general: when something in `main.ts` needs to be
-correct, move it somewhere it can be measured rather than reasoning harder about it.
+- **`src/ui/recording-button.ts`** — the Record button's state machine, tested on the
+  success path, the failure path, the download being refused, the press that used to slip
+  through while the file was still being assembled, and the rollback when starting fails
+  halfway.
+- **`src/ui/transport.ts`** — play, speed, the scrub bar, the clock, the view buttons. Not
+  because anything was known to be wrong there, but because `follower` is the same kind of
+  thing: a repaint loop guarded by a flag, where the failure is invisible. A loop left
+  running after playback stops repaints sixty times a second at a standstill and the page
+  quietly never goes idle again, which is what a screenshot, an extension or a profiler is
+  waiting for. Sixteen tests hold it now, including that the flag is cleared on the way out
+  so the next press follows again.
 
-The list held **`src/render/player.ts` and `src/render/record.ts`** too, on the stated
-grounds that they needed a real browser. That claim was written without being tested, and
-it was wrong:
-
-- `record.ts` never touches a GL context or the DOM. It asks the canvas for a stream and
-  hands it to a `MediaRecorder`; standing in for that one API covers the file in plain Node.
-- `player.ts` needs exactly one class of three.js stood in for. `WebGLRenderer` wants a GL
-  context; scenes, geometry, cameras and all the arithmetic that puts a hull where the
-  track says it was do not. Mocking that one class also makes the interesting question
-  observable — recording what `render` was handed answers "which camera was the viewer
-  looking through", which is what the class exists to decide.
-
-Both are covered now, at **100% of lines each**, with no new dependency and no headless
-browser. Excluding them had put **44% of `src/` outside the measurement**, so the figure
-being reported was over little more than half the code. It is now over 88%.
+Both take every element they touch as a parameter and look nothing up in the document,
+which is the whole of what makes them reachable.
 
 The rule this settles: **an exclusion is for code that cannot be measured, not for code
 that has not been.** Before adding one, try the cheap stand-in first — `test/record.spec.ts`
