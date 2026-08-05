@@ -16,6 +16,8 @@ class FakeMediaRecorder {
   static last: FakeMediaRecorder | null = null;
   /** Set to make stop() fail the way a stream ending under the recorder would. */
   static failOnStop = false;
+  /** Set to accept stop() and then never raise the event that says it finished. */
+  static neverFinishes = false;
 
   static isTypeSupported(): boolean {
     return FakeMediaRecorder.supported;
@@ -41,6 +43,7 @@ class FakeMediaRecorder {
       throw new DOMException("the stream ended", "InvalidStateError");
 
     this.state = "inactive";
+    if (FakeMediaRecorder.neverFinishes) return;
     setTimeout(() => {
       this.ondataavailable?.({ data: new Blob(["video"]) });
       this.onstop?.();
@@ -96,12 +99,14 @@ function playback(): RecordablePlayback & { seeks: number[]; paused: number; pla
   };
 }
 
-function wire(): { button: HTMLButtonElement; replay: ReturnType<typeof playback> } {
+function wire(
+  canvas: HTMLCanvasElement = { captureStream: () => ({}) } as unknown as HTMLCanvasElement,
+): { button: HTMLButtonElement; replay: ReturnType<typeof playback> } {
   const button = fakeButton();
   const replay = playback();
   const parts: RecordingButtonParts = {
     button,
-    canvas: { captureStream: () => ({}) } as unknown as HTMLCanvasElement,
+    canvas,
     replay,
     filename: "suo-nada",
     onStart: vi.fn(),
@@ -121,6 +126,7 @@ beforeEach(() => {
   downloads = [];
   FakeMediaRecorder.supported = true;
   FakeMediaRecorder.failOnStop = false;
+  FakeMediaRecorder.neverFinishes = false;
   FakeMediaRecorder.last = null;
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   vi.stubGlobal("document", {
@@ -261,5 +267,50 @@ describe("when the recording fails", () => {
 
     await settle();
     expect(button.title).toBe("");
+  });
+});
+
+describe("when the browser will not let it start at all", () => {
+  /**
+   * `isRecordingSupported` only asks whether an encoding exists; it cannot ask whether
+   * this particular canvas may be captured. So starting can still be refused, and an
+   * exception thrown out of a click handler leaves the page looking like the press did
+   * nothing at all.
+   */
+  it("leaves a button that can be pressed again, and says why", () => {
+    const refusing = {
+      captureStream: () => {
+        throw new DOMException("tainted", "SecurityError");
+      },
+    } as unknown as HTMLCanvasElement;
+    const { button } = wire(refusing);
+
+    expect(() => {
+      press(button);
+    }).not.toThrow();
+    expect(button.textContent, "still offering to record").toBe("Record");
+    expect(button.classList.contains("recording")).toBe(false);
+    expect(button.disabled).toBe(false);
+    expect(button.title).toContain("could not start");
+  });
+});
+
+describe("when the browser accepts the stop and then never finishes it", () => {
+  /**
+   * Nothing but the browser's `stop` event resolves the wait, so a browser that takes the
+   * call and never raises it would leave the page disabled and reading "Stop" with no way
+   * back short of a reload. Losing the recording is bad; losing the page is worse.
+   */
+  it("gives up after a deadline rather than holding the button for good", async () => {
+    FakeMediaRecorder.neverFinishes = true;
+    const { button } = wire();
+    press(button);
+    press(button);
+    expect(button.disabled).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect(button.disabled, "released once the deadline passed").toBe(false);
+    expect(button.textContent).toBe("Record");
+    expect(button.title).toContain("failed");
   });
 });

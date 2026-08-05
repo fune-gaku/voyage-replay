@@ -18,6 +18,14 @@ export interface Recording {
 
 const CANDIDATE_TYPES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"] as const;
 
+/**
+ * How long to wait for the browser to finish a recording before giving up on it.
+ *
+ * Generous: finalising a WebM of a few minutes is quick, and the cost of being wrong in
+ * this direction is a recording thrown away a moment before it arrived.
+ */
+const STOP_TIMEOUT_MS = 10_000;
+
 export function isRecordingSupported(): boolean {
   return typeof MediaRecorder !== "undefined" && pickMimeType() !== null;
 }
@@ -84,8 +92,19 @@ export class CanvasRecorder {
     this.recorder = null;
     this.chunks = [];
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      // A deadline, because the alternative to a lost recording is not a kept one.
+      //
+      // Nothing resolves this but the browser's `stop` event, and a browser that accepts
+      // `stop()` and then never raises it leaves the promise pending for good - taking the
+      // caller's own state with it. The page ends up disabled and reading "Stop" with no
+      // way back short of a reload, which is worse than being told the recording is gone.
+      const deadline = setTimeout(() => {
+        reject(new Error("the browser never finished stopping the recording"));
+      }, STOP_TIMEOUT_MS);
+
       recorder.onstop = () => {
+        clearTimeout(deadline);
         resolve();
       };
       recorder.stop();
