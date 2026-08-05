@@ -56,8 +56,11 @@ class FakeMediaRecorder {
   stop(): void {
     // The real API refuses this outright rather than quietly doing nothing, so the fake
     // has to as well: a stand-in that forgives what the browser rejects turns a crash in
-    // front of a user into a green test.
-    if (this.state !== "recording") throw new Error("InvalidStateError");
+    // front of a user into a green test. A DOMException named InvalidStateError, not an
+    // Error that merely says so - anything branching on `name` has to see what it would.
+    if (this.state !== "recording") {
+      throw new DOMException("stop() on an inactive recorder", "InvalidStateError");
+    }
 
     // State changes at once; the events come later. Later as a TASK, not a microtask -
     // the difference is whether a promise callback the caller queues in the meantime runs
@@ -161,6 +164,21 @@ describe("CanvasRecorder", () => {
 
   it("refuses to stop when it never started", async () => {
     await expect(new CanvasRecorder(fakeCanvas().canvas).stop()).rejects.toThrow(/not recording/);
+  });
+
+  /**
+   * The second stop must be turned away by CanvasRecorder itself. Reaching the browser
+   * with it raises a DOMException named InvalidStateError - the stand-in above raises the
+   * same thing - and that would surface as an unhandled rejection rather than as the plain
+   * refusal a caller can act on.
+   */
+  it("turns away a second stop itself rather than letting it reach the browser", async () => {
+    const recorder = new CanvasRecorder(fakeCanvas().canvas);
+    recorder.start();
+    const first = recorder.stop();
+
+    await expect(recorder.stop()).rejects.toThrow(/not recording/);
+    await expect(first).resolves.toBeDefined();
   });
 
   /**

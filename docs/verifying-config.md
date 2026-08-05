@@ -138,6 +138,15 @@ of its nine wiring functions is exported. There is no way to reach a part of it 
 driving the whole thing against a real page. Covering it means giving the module a seam
 first — a change to the code, not a test to write.
 
+That gap has already cost something, and it is worth writing down rather than leaving as a
+theoretical concern. Two bugs of the same shape were found while covering `record.ts`: the
+recorder killed the recording that replaced it, and `stopRecording` in `main.ts` reported a
+finished recording over the top of a running one, leaving the page saying "Record" while it
+recorded. **The first has a regression test. The second does not, because it lives in the
+one module with no seam** — it was fixed by reasoning and read back by eye, which is the
+standard this project otherwise refuses to accept. Giving `main.ts` a seam is the follow-up
+that turns that back into something a test can hold.
+
 The list held **`src/render/player.ts` and `src/render/record.ts`** too, on the stated
 grounds that they needed a real browser. That claim was written without being tested, and
 it was wrong:
