@@ -50,21 +50,39 @@ export class CanvasRecorder {
     if (!mimeType) throw new Error("this browser cannot record the canvas");
 
     const stream = this.canvas.captureStream(this.framesPerSecond);
-    this.chunks = [];
+    // The array belongs to this recording rather than to the recorder, and the handler
+    // closes over it rather than reading it back off `this`. Stopping is asynchronous, so
+    // a second recording can be under way before the first has finished collecting itself,
+    // and the two must not be writing into the same place when it does.
+    const chunks: Blob[] = [];
+    this.chunks = chunks;
     this.recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
     this.recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) this.chunks.push(event.data);
+      if (event.data.size > 0) chunks.push(event.data);
     };
     this.startedAtMs = performance.now();
     this.recorder.start();
   }
 
+  /**
+   * Let the recorder go BEFORE the wait, not after it.
+   *
+   * The browser hands over the last of the video in an event raised after `stop()` has
+   * returned, and the Record button is live again in that window - `state` goes inactive
+   * at once. Someone who stops a recording and immediately starts another therefore has a
+   * new recorder running by the time this resolves, and clearing the field at the end
+   * would clear THAT one: the page would be left reporting that it is not recording, with
+   * a Record button that does nothing and no error anywhere to say why.
+   */
   async stop(): Promise<Recording> {
     const recorder = this.recorder;
     if (!recorder) throw new Error("not recording");
 
     const mimeType = recorder.mimeType;
     const durationMs = performance.now() - this.startedAtMs;
+    const chunks = this.chunks;
+    this.recorder = null;
+    this.chunks = [];
 
     await new Promise<void>((resolve) => {
       recorder.onstop = () => {
@@ -73,8 +91,7 @@ export class CanvasRecorder {
       recorder.stop();
     });
 
-    this.recorder = null;
-    return { blob: new Blob(this.chunks, { type: mimeType }), mimeType, durationMs };
+    return { blob: new Blob(chunks, { type: mimeType }), mimeType, durationMs };
   }
 }
 
