@@ -125,21 +125,39 @@ Where it stands, and the floors it must not fall below:
 
 | | Measured | Floor |
 |---|---:|---:|
-| Lines | 97.36% | 90% |
-| Statements | 94.88% | 90% |
-| Functions | 98.96% | 95% |
-| Branches | 83.41% | 80% |
+| Lines | 98.22% | 95% |
+| Statements | 95.70% | 93% |
+| Functions | 99.32% | 98% |
+| Branches | 83.57% | 82% |
 
-Three modules are excluded, and the exclusion is the honest version of a gap rather than a
-lower global floor that would hide it: `src/main.ts`, `src/render/player.ts` and
-`src/render/record.ts` need a real browser, not a DOM shim — a `WebGLRenderer` wants a GL
-context, the recorder wants `MediaRecorder` and `canvas.captureStream`, and `main.ts` is
-the DOM wiring holding the two together. Everything they call is covered on its own.
-Closing the gap means a headless browser run, which is a separate piece of work.
+#### What is excluded, and the exclusion that was wrong
 
-Everything else in `src/render/` **is** testable in plain Node: three.js builds scenes,
-geometry and cameras perfectly well without a GL context, and it is only the renderer that
-needs one. `test/scene.spec.ts` and `test/hull.spec.ts` are the pattern.
+**`src/main.ts` only**, and the reason is this repository's own shape rather than the
+browser: `void main()` sits at the module's top level, so importing it runs it, and not one
+of its nine wiring functions is exported. There is no way to reach a part of it without
+driving the whole thing against a real page. Covering it means giving the module a seam
+first — a change to the code, not a test to write.
+
+The list held **`src/render/player.ts` and `src/render/record.ts`** too, on the stated
+grounds that they needed a real browser. That claim was written without being tested, and
+it was wrong:
+
+- `record.ts` never touches a GL context or the DOM. It asks the canvas for a stream and
+  hands it to a `MediaRecorder`; standing in for that one API covers the file in plain Node.
+- `player.ts` needs exactly one class of three.js stood in for. `WebGLRenderer` wants a GL
+  context; scenes, geometry, cameras and all the arithmetic that puts a hull where the
+  track says it was do not. Mocking that one class also makes the interesting question
+  observable — recording what `render` was handed answers "which camera was the viewer
+  looking through", which is what the class exists to decide.
+
+Both are covered now, at **100% of lines each**, with no new dependency and no headless
+browser. Excluding them had put **44% of `src/` outside the measurement**, so the figure
+being reported was over little more than half the code. It is now over 82%.
+
+The rule this settles: **an exclusion is for code that cannot be measured, not for code
+that has not been.** Before adding one, try the cheap stand-in first — `test/record.spec.ts`
+and `test/player.spec.ts` are the pattern, alongside `test/scene.spec.ts` and
+`test/hull.spec.ts` for the parts that need no stand-in at all.
 
 ## Where the exceptions are, and why
 
@@ -183,6 +201,7 @@ checked that way:
 | `skipComments` turned off | `counts comments, which prices the explanations this codebase depends on` |
 | `thresholds` block deleted | `coverage threshold is not set: lines` (and the other three) |
 | `coverage.include` deleted | `does not cover src/, so a module with no test at all is left out` |
+| `branches` floor raised to 99 | the test run itself: `Coverage for branches (83.57%) does not meet global threshold (99%)`, exit 1 |
 
 And the coverage floors themselves fail the test run rather than the config check — raising
 `branches` to 99 gives `ERROR: Coverage for branches (83.41%) does not meet global threshold

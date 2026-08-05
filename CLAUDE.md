@@ -134,22 +134,26 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 
 | | 実測 | 下限 |
 |---|---:|---:|
-| Lines | 97.36% | 90% |
-| Statements | 94.88% | 90% |
-| Functions | 98.96% | 95% |
-| Branches | 83.41% | 80% |
+| Lines | 98.22% | 95% |
+| Statements | 95.70% | 93% |
+| Functions | 99.32% | 98% |
+| Branches | 83.57% | 82% |
 
 - **効いているのは `coverage.include: ["src/**/*.ts"]`。** これが無いと「テストが読み込んだ
   ファイル」だけが分母になり、**テストが1本も無いファイルは 0% ではなく不在**になる。
-  つまり未テストのコードを足すと数字が *上がる*。実測: この1行を消すと `src/main.ts` が
-  レポートから消えて 97.36% → 97.48% に上がった
-- **除外は3本だけ**（`src/main.ts` / `src/render/player.ts` / `src/render/record.ts`）。
-  WebGL コンテキスト・`MediaRecorder`・DOM 配線で、jsdom では足りず実ブラウザが要る。
-  低い全体閾値で隠すのではなく、除外として名指ししてある。塞ぐならヘッドレスブラウザ実行で、
-  それは別の仕事
-- **`src/render/` の残りは素の Node でテストできる。** three.js はシーン・ジオメトリ・
-  カメラを GL コンテキスト無しで組める。GL が要るのはレンダラだけ。
-  `test/scene.spec.ts` `test/hull.spec.ts` `test/cameras.spec.ts` がその書き方
+  つまり未テストのコードを足すと数字が *上がる*
+- **除外は `src/main.ts` 1本だけ。** しかも理由はブラウザではなく**このレポ自身の構造**で、
+  `void main()` が module のトップにあるので import した時点で走り、配線関数9本は1つも
+  export されていない。部品として触るには先に seam を入れる必要がある＝テストを書く前に
+  コードを変える話
+- **`player.ts` と `record.ts` を「実ブラウザが要る」として除外していたのは誤りだった。**
+  検証せずに書いた主張で、実際には `record.ts` は `MediaRecorder` を1つ、`player.ts` は
+  three.js の `WebGLRenderer` を1つスタブすれば素の Node で動く。両方いま lines 100%。
+  除外していた間、**src の 44% が測定の外**にあり、報告していた数字は半分強のコードに
+  対するものだった（現在は 82%）
+- **原則: 除外は「測れないもの」に使う。「測っていないもの」に使わない。** 入れる前に
+  安いスタンドインを試すこと。`test/record.spec.ts` `test/player.spec.ts` がその書き方で、
+  スタンドイン不要な部分は `test/scene.spec.ts` `test/hull.spec.ts` `test/cameras.spec.ts`
 - 閾値は「今の実測のすぐ下」に置いてある。**通らないから下げる、はしないこと。**
   実測が上がったら閾値も上げる
 
