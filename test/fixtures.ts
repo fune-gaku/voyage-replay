@@ -18,12 +18,21 @@ export const ORIGIN = { lat: 0, lon: 0 };
 export const COASTER: Vessel = { loaMetres: 49, beamMetres: 9.4, type: "tanker" };
 export const BIG_SHIP: Vessel = { loaMetres: 180, beamMetres: 28, type: "cargo" };
 
-/** One minute apart, due north at a shade under 6 knots, bow along the track. */
+/**
+ * One minute apart, making good due north at a shade under 6 knots - with her bow ten
+ * degrees to starboard of the track she is actually following.
+ *
+ * The heading and the course over ground are deliberately DIFFERENT, and by the amount a
+ * cross-tide really would set a ship: that difference is the drift angle, and it is the
+ * whole reason the format carries the two as separate fields. A fixture that gave her
+ * heading 000 and course 000 would let a test pass whichever of the two the code reached
+ * for, which is exactly the confusion these tests exist to catch.
+ */
 export function northboundPoints(): TrackPoint[] {
   return [
-    { t: "2025-01-01T00:00:00Z", lat: 0, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 0 },
-    { t: "2025-01-01T00:01:00Z", lat: 0.0015, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 0 },
-    { t: "2025-01-01T00:02:00Z", lat: 0.003, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 0 },
+    { t: "2025-01-01T00:00:00Z", lat: 0, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 10 },
+    { t: "2025-01-01T00:01:00Z", lat: 0.0015, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 10 },
+    { t: "2025-01-01T00:02:00Z", lat: 0.003, lon: 0, cogDegreesTrue: 0, headingDegreesTrue: 10 },
   ];
 }
 

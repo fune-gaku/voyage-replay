@@ -145,19 +145,35 @@ describe("where each ship is put", () => {
   });
 
   /**
-   * The rule this project is most careful about. A hull points along her HEADING, and a
-   * Class B transponder never transmits one - actor B here has only a course over ground.
-   * Something has to be drawn, so the course stands in, and the panels say so. What must
-   * not happen is the two being confused in either direction.
+   * The rule this project is most careful about, and the two halves of it have to be
+   * checked separately or neither is checked at all.
+   *
+   * A hull points along her HEADING. Actor A is making good due north with her bow ten
+   * degrees to starboard of that - a drift angle, which is what a cross-tide does - so
+   * course and heading disagree and only one of them is the right answer. Reaching for the
+   * course instead would turn her by the drift angle, taking every navigation light she
+   * carries round with her, and the picture would still look entirely reasonable.
+   *
+   * Actor B is the other half: a Class B transponder, which transmits no heading at all.
+   * Something has to be drawn, so her course stands in and the panels say so.
    */
-  it("points a hull along her heading, and along her course only where there is no heading", () => {
+  it("points a hull along her heading, not along the course she is making good", () => {
     const replay = replayOf();
     replay.seek(replay.startSeconds + 30);
-    const [a, b] = ships(lastFrame().scene);
+    const [a] = ships(lastFrame().scene);
 
-    // A steers 000 and says so.
-    expect(a!.rotation.y).toBeCloseTo(headingToRotationY(0), 9);
-    // B transmits no heading at all; her course over ground is 270.
+    expect(a!.rotation.y).toBeCloseTo(headingToRotationY(10), 9);
+    expect(a!.rotation.y, "her course over ground is 000; her bow is not").not.toBeCloseTo(
+      headingToRotationY(0),
+      9,
+    );
+  });
+
+  it("falls back to the course over ground only where no heading was transmitted", () => {
+    const replay = replayOf();
+    replay.seek(replay.startSeconds + 30);
+    const [, b] = ships(lastFrame().scene);
+
     expect(b!.rotation.y).toBeCloseTo(headingToRotationY(270), 9);
   });
 
