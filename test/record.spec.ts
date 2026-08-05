@@ -24,6 +24,17 @@ class FakeMediaRecorder {
   ondataavailable: ((event: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
 
+  /**
+   * What the encoder is still holding when recording stops.
+   *
+   * This is not a detail of the stand-in, it is the main path. `CanvasRecorder.start()`
+   * passes no timeslice, so the browser never hands anything over mid-recording: the
+   * whole video arrives in one `dataavailable` raised by `stop()`, and only then is
+   * `stop` raised. Code that assembled the blob before waiting for that would produce an
+   * empty file every time, so the fake has to raise the two in the real order.
+   */
+  pending: string | null = "the recording";
+
   constructor(
     readonly stream: unknown,
     options: { mimeType: string; videoBitsPerSecond?: number },
@@ -37,14 +48,18 @@ class FakeMediaRecorder {
     this.state = "recording";
   }
 
-  /** A chunk arriving from the encoder. */
+  /** A chunk arriving from the encoder mid-recording. */
   emit(text: string): void {
     this.ondataavailable?.({ data: new Blob([text]) });
   }
 
   stop(): void {
     this.state = "inactive";
-    this.onstop?.();
+    // Asynchronously, and data before stop, as the browser does both.
+    queueMicrotask(() => {
+      if (this.pending !== null) this.ondataavailable?.({ data: new Blob([this.pending]) });
+      this.onstop?.();
+    });
   }
 }
 
@@ -140,25 +155,53 @@ describe("CanvasRecorder", () => {
     await expect(new CanvasRecorder(fakeCanvas().canvas).stop()).rejects.toThrow(/not recording/);
   });
 
+  /**
+   * The one that matters, and the reason the fake raises `dataavailable` from inside
+   * `stop()`. With no timeslice the entire video arrives in that last event, so a `stop()`
+   * that assembled the blob before waiting for it would hand back an empty file - on every
+   * recording, not on an edge case. A test that fed the chunks in by hand beforehand would
+   * not notice.
+   */
+  it("waits for the video the browser only hands over as it stops", async () => {
+    const recorder = new CanvasRecorder(fakeCanvas().canvas);
+    recorder.start();
+
+    const recording = await recorder.stop();
+    expect(recording.blob.size).toBe("the recording".length);
+  });
+
   it("gathers the chunks into one blob of the type it recorded", async () => {
     const recorder = new CanvasRecorder(fakeCanvas().canvas);
     recorder.start();
+    FakeMediaRecorder.last!.pending = "third";
     FakeMediaRecorder.last!.emit("first");
     FakeMediaRecorder.last!.emit("second");
 
     const recording = await recorder.stop();
     expect(recording.mimeType).toBe("video/webm;codecs=vp9");
-    expect(recording.blob.size).toBe("firstsecond".length);
+    expect(recording.blob.size).toBe("firstsecondthird".length);
     expect(recording.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it("drops the empty chunks the encoder emits", async () => {
     const recorder = new CanvasRecorder(fakeCanvas().canvas);
     recorder.start();
+    FakeMediaRecorder.last!.pending = null;
     FakeMediaRecorder.last!.ondataavailable?.({ data: new Blob([]) });
     FakeMediaRecorder.last!.emit("kept");
 
     expect((await recorder.stop()).blob.size).toBe("kept".length);
+  });
+
+  // The chunks belong to the recording that collected them, not to the recorder.
+  it("does not carry the last recording's video into the next one", async () => {
+    const recorder = new CanvasRecorder(fakeCanvas().canvas);
+    recorder.start();
+    const first = await recorder.stop();
+
+    recorder.start();
+    const second = await recorder.stop();
+    expect(second.blob.size).toBe(first.blob.size);
   });
 
   it("can be started again after it has stopped", async () => {
