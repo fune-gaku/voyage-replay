@@ -154,4 +154,37 @@ describe("buildTrackLine", () => {
     expect(dashedStart.getX(0)).toBeCloseTo(solidEnd.getX(last), 5);
     expect(dashedStart.getZ(0)).toBeCloseTo(solidEnd.getZ(last), 5);
   });
+
+  /**
+   * A single reconstructed point between two recorded ones is the hardest case for the
+   * overlap-by-one scheme, because the runs on either side of it are two points long and
+   * the lone point is the join for both. It is also a real shape: one sample dropped out
+   * of an otherwise complete AIS track.
+   *
+   * The line goes dashed on the way in and solid on the way out, so the reconstructed
+   * point is never presented as if the whole leg were recorded.
+   */
+  it("handles a single reconstructed point between recorded ones", () => {
+    const lines = linesOf(["measured", "interpolated", "measured"]);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.material).toBeInstanceOf(LineDashedMaterial);
+    expect(lines[1]!.material).not.toBeInstanceOf(LineDashedMaterial);
+  });
+
+  it("draws a two-point track as one line rather than dropping it", () => {
+    expect(linesOf(["measured", "measured"])).toHaveLength(1);
+    expect(linesOf(["measured", "interpolated"])).toHaveLength(1);
+  });
+
+  // Every point of every run has to appear on some line. A run shorter than two points is
+  // skipped as undrawable, and the arithmetic that decides where the next run starts is
+  // the sort that loses a segment quietly.
+  it("leaves no stretch of an alternating track undrawn", () => {
+    const lines = linesOf(["measured", "interpolated", "measured", "interpolated", "measured"]);
+    const drawn = lines.reduce((n, l) => n + l.geometry.getAttribute("position").count - 1, 0);
+
+    // Four segments between five points, each drawn exactly once.
+    expect(drawn).toBe(4);
+  });
 });
