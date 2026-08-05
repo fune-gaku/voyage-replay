@@ -65,10 +65,24 @@ export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullPart
   const length = vessel.loaMetres;
   const beam = vessel.beamMetres;
   const freeboard = beam * FREEBOARD_FRACTION_OF_BEAM;
+  const bridgeHeight = beam * BRIDGE_HEIGHT_FRACTION_OF_BEAM;
+  // A pusher unit and a tanker put the bridge in different places, but the scenario does
+  // not say where. Aft is right for almost everything that appears in a collision report.
+  const bridgeOffsetForward = -length * 0.32;
 
   const group = new Group();
+  group.add(hullMesh(vessel, freeboard, colour));
+  group.add(bridgeMesh(vessel, freeboard, bridgeHeight, bridgeOffsetForward));
 
-  const geometry = new ExtrudeGeometry(planOutline(length, beam), {
+  return {
+    group,
+    eyeHeightMetres: freeboard + bridgeHeight * 0.85,
+    bridgeOffsetForwardMetres: bridgeOffsetForward,
+  };
+}
+
+function hullMesh(vessel: Vessel, freeboard: number, colour: ColorRepresentation): Mesh {
+  const geometry = new ExtrudeGeometry(planOutline(vessel.loaMetres, vessel.beamMetres), {
     depth: freeboard,
     bevelEnabled: false,
   });
@@ -77,26 +91,22 @@ export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullPart
   // the bow - drawn at +y - lands at -Z, which is the forward this project uses.
   geometry.rotateX(-Math.PI / 2);
 
-  const hull = new Mesh(
+  return new Mesh(
     geometry,
     new MeshStandardMaterial({ color: colour, roughness: 0.85, metalness: 0.05 }),
   );
-  group.add(hull);
+}
 
-  // A pusher unit and a tanker put the bridge in different places, but the scenario does
-  // not say where. Aft is right for almost everything that appears in a collision report.
-  const bridgeOffsetForward = -length * 0.32;
-  const bridgeHeight = beam * BRIDGE_HEIGHT_FRACTION_OF_BEAM;
+function bridgeMesh(
+  vessel: Vessel,
+  freeboard: number,
+  height: number,
+  offsetForward: number,
+): Mesh {
   const bridge = new Mesh(
-    new BoxGeometry(beam * 0.62, bridgeHeight, length * 0.1),
+    new BoxGeometry(vessel.beamMetres * 0.62, height, vessel.loaMetres * 0.1),
     new MeshStandardMaterial({ color: 0xdfe6ee, roughness: 0.7 }),
   );
-  bridge.position.set(0, freeboard + bridgeHeight / 2, -bridgeOffsetForward);
-  group.add(bridge);
-
-  return {
-    group,
-    eyeHeightMetres: freeboard + bridgeHeight * 0.85,
-    bridgeOffsetForwardMetres: bridgeOffsetForward,
-  };
+  bridge.position.set(0, freeboard + height / 2, -offsetForward);
+  return bridge;
 }

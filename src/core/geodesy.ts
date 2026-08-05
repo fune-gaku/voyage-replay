@@ -28,14 +28,7 @@ export interface LocalPosition {
  * from are typeset in Japanese and mix them freely with ASCII.
  */
 export function parseDegreesMinutesSeconds(input: string): number {
-  const normalised = input
-    .trim()
-    .replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xff10))
-    .replace(/[－‐-―−ー]/g, "-")
-    .replace(/[°'"′″]/g, "-")
-    .replace(/-+$/, "");
-
-  const parts = normalised.split("-").filter((p) => p.length > 0);
+  const parts = splitCoordinate(input);
   if (parts.length === 0 || parts.length > 3) {
     throw new Error(`not a coordinate: ${JSON.stringify(input)}`);
   }
@@ -51,6 +44,25 @@ export function parseDegreesMinutesSeconds(input: string): number {
     scale *= 60;
   }
   return value;
+}
+
+/**
+ * Reduce the typography to one separator, then split on it.
+ *
+ * Everything here is about the source documents rather than about coordinates: they are
+ * typeset in Japanese and mix full-width digits with ASCII, use any of half a dozen
+ * characters that look like a hyphen, and sometimes print the degree and minute marks
+ * instead. All of them mean the same thing, so all of them become "-".
+ */
+function splitCoordinate(input: string): string[] {
+  return input
+    .trim()
+    .replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xff10))
+    .replace(/[－‐-―−ー]/g, "-")
+    .replace(/[°'"′″]/g, "-")
+    .replace(/-+$/, "")
+    .split("-")
+    .filter((p) => p.length > 0);
 }
 
 export function toLocalPosition(point: LatLon, origin: LatLon): LocalPosition {

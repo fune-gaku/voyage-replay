@@ -56,6 +56,50 @@ silently checking nothing — so the absence is asserted directly rather than as
 need an exception to a rule, put it in `eslint.config.js` with the reason, not in a scattered
 `eslint-disable` comment. See [docs/verifying-config.md](docs/verifying-config.md).
 
+## Two gates that will fail your first pull request
+
+Neither is a style preference, and neither is enforced by asking. Both fail the build.
+
+**Functions stay under three limits**, and they are deliberately different measures:
+
+| | | |
+|---|---:|---|
+| `max-lines-per-function` | 30 | code only — blank lines and comments are not charged for |
+| `complexity` | 10 | cyclomatic, the number McCabe proposed with the measure in 1976 |
+| `max-params` | 4 | five is where a call site stops being readable |
+
+Write the comments; they cost nothing against the length. The length limit is also what
+protects the coverage figure below: one long function is entered by a single test and
+reports as covered while most of its branches never run, where the same code as six named
+pieces has to be reached on purpose. It does not apply under `test/`, where a `describe`
+body is a list of cases rather than code.
+
+When `max-params` fires, the move that works is almost never "pass fewer things". It is to
+notice that some of them travel together and give that group a name. `Interval` in
+`src/core/plausibility.ts`, `Encounter` in `src/ui/panels.ts` and `Report` in `src/main.ts`
+all came from exactly that, and each ended up naming something the code had been carrying
+around unnamed.
+
+The length limit was 20 before it was 30, and the history is written down in
+[docs/verifying-config.md](docs/verifying-config.md) because the measurement is more useful
+than the number: 30 still catches every function that was genuinely hard to read, while 20
+was mostly catching Prettier's line wrapping and pushing the complexity into parameter lists.
+
+**New code comes with tests, and coverage cannot fall.** `npm test` measures it and fails
+under the thresholds in `vitest.config.ts` (currently 90% lines and statements, 95%
+functions, 80% branches). Raise a threshold when the real figure rises; do not lower one to
+get a green run.
+
+Do not assume rendering code is untestable. three.js builds scenes, hulls, light sectors and
+cameras perfectly well in plain Node — only the renderer itself needs a GL context, so only
+`player.ts`, `record.ts` and `main.ts` are excluded, and those are named in the config with
+the reason. `test/scene.spec.ts` and `test/cameras.spec.ts` show the shape.
+
+Tests here pin domain facts rather than implementation: that the arcs tile the horizon, that
+a reconstructed stretch of track draws dashed, that an aspect read from a course rather than
+a heading says so. `test/fixtures.ts` holds hand-built scenarios for that; `examples/` is a
+real case and is not the place to add one.
+
 ## Data
 
 Do not commit source PDFs, and do not commit scenario data whose origin you cannot cite. Every
