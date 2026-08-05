@@ -107,7 +107,15 @@ export class CanvasRecorder {
         clearTimeout(deadline);
         resolve();
       };
-      recorder.stop();
+
+      try {
+        recorder.stop();
+      } catch (error) {
+        // Refused outright - the recorder is no longer in a state it can be stopped from.
+        // Nothing will arrive, so the deadline has nothing left to wait for.
+        clearTimeout(deadline);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
 
     return { blob: new Blob(chunks, { type: mimeType }), mimeType, durationMs };
