@@ -101,6 +101,7 @@ function playback(): RecordablePlayback & { seeks: number[]; paused: number; pla
 
 function wire(
   canvas: HTMLCanvasElement = { captureStream: () => ({}) } as unknown as HTMLCanvasElement,
+  onStart: () => void = vi.fn(),
 ): { button: HTMLButtonElement; replay: ReturnType<typeof playback> } {
   const button = fakeButton();
   const replay = playback();
@@ -109,7 +110,7 @@ function wire(
     canvas,
     replay,
     filename: "suo-nada",
-    onStart: vi.fn(),
+    onStart,
   };
   wireRecordingButton(parts);
   return { button, replay };
@@ -312,5 +313,35 @@ describe("when the browser accepts the stop and then never finishes it", () => {
     expect(button.disabled, "released once the deadline passed").toBe(false);
     expect(button.textContent).toBe("Record");
     expect(button.title).toContain("failed");
+  });
+});
+
+describe("when something fails after the recorder is already running", () => {
+  const workingCanvas = (): HTMLCanvasElement =>
+    ({ captureStream: () => ({}) }) as unknown as HTMLCanvasElement;
+
+  /**
+   * The catch has to put the recorder back, not merely report that it could not be
+   * started. `recorder.start()` has already succeeded by this point, so a button left
+   * reading "Record" over a running recorder sends the next press into the stop branch -
+   * and someone who meant to begin a recording is handed the previous one instead.
+   */
+  it("stops the recording it had already begun, so the next press starts a new one", () => {
+    let attempts = 0;
+    const failsAfterStart = (): void => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("no frames");
+    };
+    const { button, replay } = wire(workingCanvas(), failsAfterStart);
+
+    press(button);
+    expect(button.textContent, "the page is not recording").toBe("Record");
+    expect(button.title).toContain("could not start");
+    expect(replay.paused, "and playback was put back too").toBe(1);
+
+    press(button);
+    expect(button.textContent, "the next press begins a recording rather than ending one").toBe(
+      "Stop",
+    );
   });
 });

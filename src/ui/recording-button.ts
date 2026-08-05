@@ -53,23 +53,40 @@ export function wireRecordingButton(parts: RecordingButtonParts): void {
  */
 function start(recorder: CanvasRecorder, parts: RecordingButtonParts): void {
   const { button, replay, onStart } = parts;
+
   try {
+    // Starting can be refused outright - a canvas the browser will not let anyone capture,
+    // an encoder that turns out to be unavailable after all. Nothing is running yet, so
+    // saying so is the whole of what is needed.
     replay.seek(replay.startSeconds);
     recorder.start();
+  } catch (error) {
+    refuse(button, error);
+    return;
+  }
+
+  try {
     replay.play();
     onStart();
   } catch (error) {
-    // Starting can be refused outright - a canvas the browser will not let anyone capture,
-    // an encoder that turns out to be unavailable after all. The button has to stay a
-    // button that says "Record" and can be pressed again, rather than throwing out of an
-    // event handler into a console and leaving the page looking like nothing happened.
-    button.title = `the recording could not start: ${String(error)}`;
+    // Past `recorder.start()` the recorder IS running, so a failure here has to put it
+    // back rather than only report it. A button reading "Record" over a recorder that is
+    // recording sends the next press into the stop branch: someone who meant to begin a
+    // recording is handed the previous one instead.
+    void recorder.stop().catch(() => undefined);
+    replay.pause();
+    refuse(button, error);
     return;
   }
 
   button.title = "";
   button.textContent = "Stop";
   button.classList.add("recording");
+}
+
+/** Leave it a button that says "Record" and can be pressed again, with the reason on it. */
+function refuse(button: HTMLButtonElement, error: unknown): void {
+  button.title = `the recording could not start: ${String(error)}`;
 }
 
 /**
