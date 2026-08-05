@@ -53,10 +53,10 @@ const REQUIRED_LIMITS = {
 // is above where the suite would otherwise sit, and lowering one to get a green run is the
 // obvious move at exactly the moment it should not be made.
 const REQUIRED_COVERAGE_THRESHOLDS = {
-  lines: 90,
-  functions: 95,
-  branches: 80,
-  statements: 90,
+  lines: 95,
+  functions: 98,
+  branches: 82,
+  statements: 93,
 };
 
 // Compiler flags NOT implied by `strict: true`. Losing one is invisible: the build stays

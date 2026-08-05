@@ -86,14 +86,25 @@ than the number: 30 still catches every function that was genuinely hard to read
 was mostly catching Prettier's line wrapping and pushing the complexity into parameter lists.
 
 **New code comes with tests, and coverage cannot fall.** `npm test` measures it and fails
-under the thresholds in `vitest.config.ts` (currently 90% lines and statements, 95%
-functions, 80% branches). Raise a threshold when the real figure rises; do not lower one to
+under the thresholds in `vitest.config.ts` (currently 95% lines, 93% statements, 98%
+functions, 82% branches). Raise a threshold when the real figure rises; do not lower one to
 get a green run.
 
-Do not assume rendering code is untestable. three.js builds scenes, hulls, light sectors and
-cameras perfectly well in plain Node — only the renderer itself needs a GL context, so only
-`player.ts`, `record.ts` and `main.ts` are excluded, and those are named in the config with
-the reason. `test/scene.spec.ts` and `test/cameras.spec.ts` show the shape.
+**Do not assume rendering or browser code is untestable — it is the mistake this project
+has already made.** Three files were excluded from coverage on the stated grounds that they
+needed a real browser. Two of them did not: `record.ts` needed one browser API stood in
+for, `player.ts` needed one class of three.js stood in for, and both now sit at 100% of
+lines in plain Node. The exclusion had quietly put 44% of `src/` outside the measurement.
+
+three.js builds scenes, hulls, light sectors and cameras perfectly well without a GL
+context; only `WebGLRenderer` needs one, and mocking it is four lines. `test/player.spec.ts`
+and `test/record.spec.ts` show how, `test/scene.spec.ts` and `test/cameras.spec.ts` show the
+cases that need nothing at all.
+
+Only `main.ts` is excluded now, and for a structural reason rather than an environmental
+one: `void main()` runs at import and none of its wiring functions is exported, so the
+module has no seam to test through. **An exclusion is for code that cannot be measured, not
+for code that has not been** — if you add one, say which it is.
 
 Tests here pin domain facts rather than implementation: that the arcs tile the horizon, that
 a reconstructed stretch of track draws dashed, that an aspect read from a course rather than
