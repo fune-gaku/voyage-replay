@@ -14,7 +14,7 @@ export default defineConfig({
        * Without it, coverage is measured over the files the tests happened to load - so a
        * module with no test at all is not counted as untested, it is not counted at all,
        * and the percentage RISES when untested code is added. The effect is small while
-       * everything happens to be imported (98.22% with it, 98.28% without) and unbounded
+       * everything happens to be imported (99.09% with it, 99.12% without) and unbounded
        * the moment someone adds a file nobody tests, which is exactly when the number
        * needs to move the other way.
        */
@@ -54,10 +54,10 @@ export default defineConfig({
        * Raise them when the real figure rises; do not lower them to make a run pass.
        */
       thresholds: {
-        lines: 95,
-        functions: 98,
-        branches: 82,
-        statements: 93,
+        lines: 98,
+        functions: 99,
+        branches: 83,
+        statements: 95,
       },
     },
   },

@@ -112,3 +112,26 @@ describe("renderPanels", () => {
     expect(panelsFor(hostile)).not.toContain("<img src=x");
   });
 });
+
+describe("the plausibility table", () => {
+  /**
+   * The screening's whole point is to surface a transcription error before it becomes a
+   * video, so the findings have to reach the page rather than only the return value: which
+   * ship, when, what kind, and enough detail to check the source by hand.
+   */
+  it("lists what a ship could not have done, with the time and the reason", () => {
+    const impossible: TrackPoint[] = [
+      { t: "2025-01-01T00:00:00Z", lat: 0, lon: 0, cogDegreesTrue: 0, sogKnots: 6 },
+      // Five kilometres in a minute is about 160 knots.
+      { t: "2025-01-01T00:01:00Z", lat: 0.045, lon: 0, cogDegreesTrue: 0, sogKnots: 6 },
+    ];
+    const html = panelsFor(
+      scenario([actor("A", impossible, COASTER), actor("B", westboundPoints(), BIG_SHIP)]),
+    );
+
+    expect(html).toContain("implausible-speed");
+    expect(html).toContain("00:00:00");
+    expect(html).toMatch(/Plausibility screening \([1-9]/);
+    expect(html).not.toContain("Nothing implausible.");
+  });
+});
