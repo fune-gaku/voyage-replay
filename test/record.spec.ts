@@ -54,12 +54,20 @@ class FakeMediaRecorder {
   }
 
   stop(): void {
+    // The real API refuses this outright rather than quietly doing nothing, so the fake
+    // has to as well: a stand-in that forgives what the browser rejects turns a crash in
+    // front of a user into a green test.
+    if (this.state !== "recording") throw new Error("InvalidStateError");
+
+    // State changes at once; the events come later. Later as a TASK, not a microtask -
+    // the difference is whether a promise callback the caller queues in the meantime runs
+    // before the recording has finished stopping, which is exactly the window a race
+    // would live in.
     this.state = "inactive";
-    // Asynchronously, and data before stop, as the browser does both.
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (this.pending !== null) this.ondataavailable?.({ data: new Blob([this.pending]) });
       this.onstop?.();
-    });
+    }, 0);
   }
 }
 
@@ -202,6 +210,29 @@ describe("CanvasRecorder", () => {
     recorder.start();
     const second = await recorder.stop();
     expect(second.blob.size).toBe(first.blob.size);
+  });
+
+  /**
+   * Stopping takes a moment, and the button is live again for all of it: `state` goes
+   * inactive the instant `stop()` is called, so the page shows "Record" while the browser
+   * is still handing over the video. Pressing it again in that window used to leave the
+   * new recording orphaned - the finishing `stop()` cleared the field out from under it,
+   * and the page was left insisting it was not recording with a button that did nothing.
+   */
+  it("survives a second recording started before the first has finished stopping", async () => {
+    const recorder = new CanvasRecorder(fakeCanvas().canvas);
+    recorder.start();
+    const finishing = recorder.stop();
+
+    // What the page sees the moment Stop is pressed, and what makes the button live again.
+    expect(recorder.isRecording).toBe(false);
+    recorder.start();
+    expect(recorder.isRecording, "the second recording is running").toBe(true);
+
+    const first = await finishing;
+    expect(first.blob.size, "the first recording still got its video").toBeGreaterThan(0);
+    expect(recorder.isRecording, "and the second one is still alive").toBe(true);
+    expect((await recorder.stop()).blob.size).toBeGreaterThan(0);
   });
 
   it("can be started again after it has stopped", async () => {
