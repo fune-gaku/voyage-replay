@@ -53,10 +53,21 @@ export function wireRecordingButton(parts: RecordingButtonParts): void {
  */
 function start(recorder: CanvasRecorder, parts: RecordingButtonParts): void {
   const { button, replay, onStart } = parts;
-  replay.seek(replay.startSeconds);
-  recorder.start();
-  replay.play();
-  onStart();
+  try {
+    replay.seek(replay.startSeconds);
+    recorder.start();
+    replay.play();
+    onStart();
+  } catch (error) {
+    // Starting can be refused outright - a canvas the browser will not let anyone capture,
+    // an encoder that turns out to be unavailable after all. The button has to stay a
+    // button that says "Record" and can be pressed again, rather than throwing out of an
+    // event handler into a console and leaving the page looking like nothing happened.
+    button.title = `the recording could not start: ${String(error)}`;
+    return;
+  }
+
+  button.title = "";
   button.textContent = "Stop";
   button.classList.add("recording");
 }
