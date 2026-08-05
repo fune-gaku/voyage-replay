@@ -139,13 +139,24 @@ driving the whole thing against a real page. Covering it means giving the module
 first — a change to the code, not a test to write.
 
 That gap has already cost something, and it is worth writing down rather than leaving as a
-theoretical concern. Two bugs of the same shape were found while covering `record.ts`: the
-recorder killed the recording that replaced it, and `stopRecording` in `main.ts` reported a
-finished recording over the top of a running one, leaving the page saying "Record" while it
-recorded. **The first has a regression test. The second does not, because it lives in the
-one module with no seam** — it was fixed by reasoning and read back by eye, which is the
-standard this project otherwise refuses to accept. Giving `main.ts` a seam is the follow-up
-that turns that back into something a test can hold.
+theoretical concern. Three bugs of the same shape turned up while covering `record.ts`, all
+of them in the window between clicking Stop and the file being in hand:
+
+1. the recorder cleared the field on the recording that had replaced it, killing it;
+2. the Record button was reset by the finishing recording, so the page read "Record" while
+   it recorded and the next press stopped what the user meant to start;
+3. releasing the button only on the success path left it disabled and reading "Stop" for
+   good when a recording failed — introduced by the fix for (2), and caught by review
+   rather than by a test, because there was still nothing that could test it.
+
+(1) had a regression test immediately. (2) and (3) lived in `main.ts` and did not, which is
+how (3) got in. **So the button moved out**: `src/ui/recording-button.ts` holds that state
+machine now, takes every element it touches as a parameter, looks nothing up in the
+document, and has `test/recording-button.spec.ts` on both the success and the failure
+paths. What is left in `main.ts` is lookup and assembly.
+
+That is the shape of the remedy in general: when something in `main.ts` needs to be
+correct, move it somewhere it can be measured rather than reasoning harder about it.
 
 The list held **`src/render/player.ts` and `src/render/record.ts`** too, on the stated
 grounds that they needed a real browser. That claim was written without being tested, and
