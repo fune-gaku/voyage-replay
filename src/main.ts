@@ -221,18 +221,31 @@ function startRecording(
   button.classList.add("recording");
 }
 
+/**
+ * Out of action until the file is in hand, which is not the same instant as the click.
+ *
+ * The browser hands over the video in an event raised after `stop()` returns, so there is
+ * a window where the recording is finishing and the button is still live. Left enabled it
+ * reads "Stop" for all of it, and a second press starts a fresh recording that this one
+ * then reports over the top of - leaving the page saying "Record" while it is recording,
+ * so the next press stops what the user meant to start. Disabling closes the window rather
+ * than trying to sort out afterwards which recording the callback belonged to.
+ */
 function stopRecording(
   recorder: CanvasRecorder,
   replay: Replay,
   button: HTMLButtonElement,
   scenario: Scenario,
 ): void {
+  button.disabled = true;
+  replay.pause();
+
   void recorder.stop().then((recording) => {
     downloadRecording(recording, slug(scenario.meta.title));
     button.textContent = "Record";
     button.classList.remove("recording");
+    button.disabled = false;
   });
-  replay.pause();
 }
 
 /**
