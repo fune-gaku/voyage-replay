@@ -130,7 +130,12 @@ function hullOffsetCell(prepared: Prepared): string {
  */
 function isPlacedFromOffsets({ actor, track }: Prepared): boolean {
   const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
-  return offset.kind === "offset" && statedDirectionCount(track) > 0;
+  if (offset.kind !== "offset") return false;
+
+  // An antenna stated as being exactly amidships is a real arrangement, not a missing value,
+  // and it moves the hull nowhere. Having done the arithmetic is not having moved anything.
+  const moves = offset.forwardMetres !== 0 || offset.starboardMetres !== 0;
+  return moves && statedDirectionCount(track) > 0;
 }
 
 function statedDirectionCount(track: PreparedTrack): number {

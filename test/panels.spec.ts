@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareActor } from "../src/core/track.js";
-import type { Actor, Scenario, TrackPoint } from "../src/core/types.js";
+import type { Actor, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { escapeHtml, formatClock, formatDate, renderPanels } from "../src/ui/panels.js";
 import {
   actor,
@@ -157,6 +157,25 @@ describe("renderPanels", () => {
     const moved = actor("B", westboundPoints(), BIG_SHIP);
     moved.track.positionAt = "reference-point";
     const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), moved]));
+
+    expect(html).toContain("No hull in the view was moved off the position reported for her");
+  });
+
+  it("claims no placement for an antenna the offsets put amidships", () => {
+    // Bow and stern equal, port and starboard equal: a real arrangement, stated rather than
+    // missing, whose arithmetic comes to nothing and whose hull therefore does not move.
+    const amidships: Vessel = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 90,
+        fromSternMetres: 90,
+        fromPortMetres: 14,
+        fromStarboardMetres: 14,
+      },
+    };
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), amidships)]),
+    );
 
     expect(html).toContain("No hull in the view was moved off the position reported for her");
   });
