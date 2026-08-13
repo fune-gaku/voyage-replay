@@ -3,13 +3,53 @@
 Thanks for looking. This is a small project with one maintainer, so a little coordination saves
 everyone time.
 
-## Before writing code
+## Open an issue first — outside pull requests are not accepted
 
-**Open an issue with a plan for anything beyond a small fix.** A few paragraphs: what is wrong or
-missing, the approach you have in mind, which files you expect to touch, and anything you are
-unsure about. The files under [`plans/`](plans/) show the level of detail the project works at.
+**Pull requests from outside the development team are not accepted, regardless of size. An issue
+is the only way in** — bug reports, feature proposals, and corrections to the domain reasoning are
+all welcome.
 
-Typo fixes, obviously-correct one-liners and test additions can go straight to a pull request.
+What is asked for:
+
+1. **Open an issue saying what is wrong, or what is missing.** No implementation plan is needed;
+   how to fix it is decided here. What helps is what looks wrong, how you know it (which row of
+   which table in which report, which COLREG rule, which steps reproduce it), and what it should
+   say instead. An approach, if you have one in mind, is welcome but not expected.
+2. **The issue thread settles what to change.** Scope, overlap with work in flight, and the
+   constraints that are hard to see from outside — how `derivation` has to be carried, the
+   boundary that keeps vessel concepts out of `core/` — come from this side. It is usually a
+   short exchange.
+3. **A maintainer then implements it and writes the pull request.** Anything needing a design
+   decision is written up as `plans/<slug>-<issue number>.md` first. You are welcome to follow
+   the work and comment on it, and to say so if it departs from what was agreed.
+
+**There is no small-diff exemption.** Typos and one-line corrections go through an issue too;
+that is quicker than settling where "small" ends every time.
+
+### Why outside pull requests are not accepted
+
+This tool makes claims about what happened. A reconstruction that looks plausible and is wrong is
+worse than no reconstruction — and **the mistakes in this field are wrong in a way that reads
+correctly.** Using COG where the heading is meant, taking a light's relative bearing from the
+wrong end and landing 180° out, flipping the sign on the antenna offset: each can be written as
+straightforward code, can be written so the tests pass, and moves plausibly on screen. CI holds
+the function limits and the coverage floor; it cannot tell whether a number agrees with the
+appendix of a report. Only someone who has read that case can.
+
+Diffs that look large and finished can now be produced in minutes, which widened the gap:
+reviewing one cold, without having shaped the design, takes longer than writing it. This is not a
+rule against AI-assisted work — this repository is itself written with an agent, and says so in
+[CLAUDE.md](CLAUDE.md). The line it draws is that **what gets agreed is what is wrong, and the
+code is owned by whoever lands it.**
+
+### Writing the issue
+
+- **Make the first three lines a summary.** Whether the issue gets picked up is decided from
+  those lines. The background belongs after them.
+- **Be specific.** Not "the lights look wrong", but which bearing, which light should be visible
+  there, and which COLREG rule says so. For a real case, which row of which table.
+
+### Issues and plans
 
 The issue is the entry point; [`plans/`](plans/) is where a design decision lives once it needs
 more room than a comment thread. They are tied together by number:
@@ -56,7 +96,7 @@ silently checking nothing — so the absence is asserted directly rather than as
 need an exception to a rule, put it in `eslint.config.js` with the reason, not in a scattered
 `eslint-disable` comment. See [docs/verifying-config.md](docs/verifying-config.md).
 
-## Two gates that will fail your first pull request
+## Two gates that will fail a pull request
 
 Neither is a style preference, and neither is enforced by asking. Both fail the build.
 
