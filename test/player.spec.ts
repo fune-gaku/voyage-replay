@@ -1,4 +1,4 @@
-import { OrthographicCamera, PerspectiveCamera } from "three";
+import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import type * as THREE from "three";
 import type { Group, Object3D, Scene } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -86,6 +86,15 @@ function groupsOf(scene: Scene): [Group, Group] {
 
 function ships(scene: Scene): Object3D[] {
   return groupsOf(scene)[0].children;
+}
+
+/**
+ * The hull and the lamps, which hang off the group carrying the antenna offset rather than
+ * off the ship's own group. Both are wanted together: they are bolted to the same steel, so
+ * anything that moves one and not the other is wrong however plausible it looks.
+ */
+function partsOf(ship: Object3D): Object3D[] {
+  return ship.children.flatMap((child) => child.children);
 }
 
 beforeEach(() => {
@@ -177,6 +186,67 @@ describe("where each ship is put", () => {
     expect(b!.rotation.y).toBeCloseTo(headingToRotationY(270), 9);
   });
 
+  /**
+   * The reported position is the GPS antenna, and a hull is drawn about its own centre. B's
+   * antenna sits 140 m from a 180 m bow, so her hull's centre is 50 m forward of what her
+   * track reports and 4 m to starboard of it.
+   *
+   * She is steering 270, so forward is west and starboard is north, and the expected offset
+   * separates cleanly onto the two world axes: get the sign wrong and the hull lands 50 m
+   * EAST, astern of where she was, which is what the renderer did before and what still
+   * looks like a ship on a reasonable course.
+   */
+  it("stands the hull where the offsets say, not on top of the antenna", () => {
+    const subject = scenario();
+    const replay = replayOf(subject);
+    const at = replay.startSeconds + 30;
+    replay.seek(at);
+
+    const track = prepareActor(subject.actors[1]!, subject.origin);
+    const reported = toWorld(sampleAt(track, at)!.position);
+    const parts = partsOf(ships(lastFrame().scene)[1]!);
+
+    expect(parts.length, "the hull and the lamps").toBe(2);
+    for (const part of parts) {
+      const world = part.getWorldPosition(new Vector3());
+      expect(world.x, "50 m forward, and forward is west").toBeCloseTo(reported.x - 50, 6);
+      expect(world.z, "4 m to starboard, and starboard is north").toBeCloseTo(reported.z - 4, 6);
+    }
+  });
+
+  it("leaves a ship whose offsets were never stated where her track reports her", () => {
+    const subject = scenario();
+    const replay = replayOf(subject);
+    replay.seek(replay.startSeconds + 30);
+
+    const track = prepareActor(subject.actors[0]!, subject.origin);
+    const reported = toWorld(sampleAt(track, replay.timeSeconds)!.position);
+    const world = partsOf(ships(lastFrame().scene)[0]!)[0]!.getWorldPosition(new Vector3());
+
+    expect(world.x).toBeCloseTo(reported.x, 6);
+    expect(world.z).toBeCloseTo(reported.z, 6);
+  });
+
+  /**
+   * A track reported at the ship's reference point has already been moved onto the hull by
+   * whoever prepared it. Moving it again displaces her twice - and by then she is 50 m from
+   * where the source put her, still on a plausible course, with nothing downstream to say so.
+   */
+  it("does not move a track that was already reported at the hull", () => {
+    const alreadyMoved = actor("B", westboundPoints(), BIG_SHIP);
+    alreadyMoved.track.positionAt = "reference-point";
+    const subject = scenario([actor("A", northboundPoints(), COASTER), alreadyMoved]);
+    const replay = replayOf(subject);
+    replay.seek(replay.startSeconds + 30);
+
+    const track = prepareActor(alreadyMoved, subject.origin);
+    const reported = toWorld(sampleAt(track, replay.timeSeconds)!.position);
+    const world = partsOf(ships(lastFrame().scene)[1]!)[0]!.getWorldPosition(new Vector3());
+
+    expect(world.x).toBeCloseTo(reported.x, 6);
+    expect(world.z).toBeCloseTo(reported.z, 6);
+  });
+
   it("hides a ship at an instant her own track does not reach", () => {
     const short = actor("B", westboundPoints().slice(0, 2), BIG_SHIP);
     const replay = replayOf(scenario([actor("A", northboundPoints(), COASTER), short]));
@@ -200,6 +270,23 @@ describe("the two views", () => {
     expect(lastFrame().camera).toBeInstanceOf(PerspectiveCamera);
   });
 
+  /**
+   * Moving the hull onto its offsets moves the wheelhouse with it, and the eye has to go
+   * too. B's hull is 50 m forward of her reported position and her bridge 57.6 m aft of her
+   * centre, so an eye placed from the reported position alone ends up 107 m from the hull it
+   * belongs to - outside a 180 m ship, floating off her quarter and looking at her own
+   * accommodation block. Nothing about the frame would look broken.
+   */
+  it("keeps the bridge camera inside the hull it was moved with", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "B" });
+
+    const eye = (lastFrame().camera as PerspectiveCamera).position;
+    const hull = partsOf(ships(lastFrame().scene)[1]!)[0]!.getWorldPosition(new Vector3());
+
+    expect(Math.hypot(eye.x - hull.x, eye.z - hull.z)).toBeLessThan(BIG_SHIP.loaMetres / 2);
+  });
+
   it("falls back to the plan view rather than guessing at an unknown ship", () => {
     const replay = replayOf();
     replay.setView({ kind: "bridge", actorId: "nobody" });
@@ -215,8 +302,11 @@ describe("the two views", () => {
   it("shows the arcs and the track lines from above, and neither from a bridge", () => {
     const replay = replayOf();
     const [cast, diagram] = groupsOf(lastFrame().scene);
+    // Three deep now: the ship, the group carrying her antenna offset, her lamps, the arcs.
     const sectorsOf = (ship: Object3D): Object3D =>
-      ship.children.flatMap((c) => c.children).find((c) => c.type === "Group") ?? ship;
+      partsOf(ship)
+        .flatMap((part) => part.children)
+        .find((c) => c.type === "Group") ?? ship;
 
     expect(diagram.visible).toBe(true);
     expect(sectorsOf(cast.children[0]!).visible).toBe(true);

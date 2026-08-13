@@ -40,7 +40,7 @@ describe("the overhead camera", () => {
 });
 
 describe("the bridge camera", () => {
-  const fit = { eyeHeightMetres: 14, bridgeOffsetForwardMetres: -30 };
+  const fit = { eyeHeightMetres: 14, offsetForwardMetres: -30, offsetStarboardMetres: 0 };
 
   it("sits at the height of the wheelhouse windows", () => {
     const camera = makeBridgeCamera(1.5);
@@ -61,6 +61,19 @@ describe("the bridge camera", () => {
     placeBridgeCamera(eastbound, { east: 0, north: 0 }, 90, fit);
     expect(eastbound.position.x).toBeCloseTo(-30, 6);
     expect(eastbound.position.z).toBeCloseTo(0, 6);
+  });
+
+  /**
+   * The athwartships half of the same offset. It is small on most ships and never zero once
+   * a hull has been moved onto its AIS offsets, and it turns with her exactly as the
+   * fore-and-aft half does - so heading east, "to starboard" is south, which is +Z.
+   */
+  it("offsets athwartships along the ship's own beam, not along the world's", () => {
+    const camera = makeBridgeCamera(1.5);
+    placeBridgeCamera(camera, { east: 0, north: 0 }, 90, { ...fit, offsetStarboardMetres: 4 });
+
+    expect(camera.position.z).toBeCloseTo(4, 6);
+    expect(camera.position.x).toBeCloseTo(-30, 6);
   });
 
   it("looks where the bow points, not where the ship is going", () => {

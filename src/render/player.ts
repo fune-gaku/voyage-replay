@@ -6,6 +6,7 @@
 import type { PerspectiveCamera } from "three";
 import { Group, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
 
+import { hullCentreOffset, offsetMetres } from "../actors/vessel/reference-point.js";
 import { prepareActor, sampleAt, type PreparedTrack } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import {
@@ -169,6 +170,8 @@ export class Replay {
     member.group.visible = state !== null;
     if (!state) return;
 
+    // The reported position, which is the antenna. The hull hangs off this group at the
+    // offset worked out in castMember, so what moves here is the point the source states.
     member.group.position.copy(toWorld(state.position));
 
     // Heading is what the hull points along. Where the source has none - a Class B
@@ -284,9 +287,21 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
   const hull = buildHull(vessel, colour);
   const lights = buildNavigationLights(vessel, hull.eyeHeightMetres * 0.4);
 
+  // The track reports the GPS antenna; a hull is drawn about its own centre. Everything
+  // bolted to the ship - hull and lamps alike, since a sidelight is on the ship and not on
+  // the antenna - hangs off one inner group carrying that offset. Applying it here rather
+  // than in place() costs nothing per frame, and the outer group's rotation carries it
+  // round with the heading, so it stays along the ship's own axes without being recomputed.
+  const offset = offsetMetres(
+    hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets),
+  );
+  const onHull = new Group();
+  onHull.position.set(offset.starboardMetres, 0, -offset.forwardMetres);
+  onHull.add(hull.group);
+  onHull.add(lights.group);
+
   const group = new Group();
-  group.add(hull.group);
-  group.add(lights.group);
+  group.add(onHull);
 
   return {
     actor,
@@ -296,7 +311,11 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     sectors: lights.sectors,
     fit: {
       eyeHeightMetres: hull.eyeHeightMetres,
-      bridgeOffsetForwardMetres: hull.bridgeOffsetForwardMetres,
+      // Folded once, so the eye stays in the wheelhouse of the hull as drawn. Left out,
+      // the camera sits where the wheelhouse would have been had the ship not been moved -
+      // outside her, looking at her own superstructure from astern.
+      offsetForwardMetres: hull.bridgeOffsetForwardMetres + offset.forwardMetres,
+      offsetStarboardMetres: offset.starboardMetres,
     },
   };
 }

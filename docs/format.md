@@ -65,13 +65,25 @@ A reported position is where the antenna is, not where the ship is. AIS message 
 distances — antenna to bow, to stern, to port side, to starboard side — and investigation reports
 restate them in a footnote to the track table.
 
-Two consequences:
+`positionAt` says which of the two each `lat`/`lon` is:
+
+- **`gps-antenna`** — as transmitted. The offsets say where on the hull that point sits.
+- **`reference-point`** — already moved onto the ship's own reference point, her centre. Whoever
+  wrote the file did the arithmetic; a consumer must not do it again.
+
+Three consequences:
 
 1. **Length and beam fall out of the offsets.** Bow + stern is length overall, port + starboard is
    beam. This is often better than the particulars table in the report, whose length may be a
    *registered* length, which is shorter than length overall.
 2. **Range between two tracks is antenna to antenna.** On a large ship the antenna can sit over
    100 m from the bow, so a closest approach of 40 m between antennae is contact between hulls.
+3. **Anything that draws the ship has to move her, and the direction is not the obvious one.**
+   An antenna is usually near the bridge, which on most ships is aft — so the hull's centre lies
+   *forward* of the reported position, and a hull drawn at the antenna is drawn astern of where
+   the ship was. Forward of the reported position by (bow − stern) / 2, to starboard of it by
+   (starboard − port) / 2, both worked out inside the four offsets, which are rounded to the
+   metre and need not agree with the beam stated elsewhere in the same file.
 
 ## `t` is a full timestamp
 

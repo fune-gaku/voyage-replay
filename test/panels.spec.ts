@@ -63,6 +63,25 @@ describe("renderPanels", () => {
     expect(html).toContain("gps-antenna");
   });
 
+  /**
+   * A ship put where her offsets say and one drawn at her antenna because nobody wrote the
+   * offsets down look identical on screen, and are most of a ship's length apart in what
+   * they claim. The reader checking the reconstruction has to be able to tell them apart,
+   * so the table says which happened to each hull.
+   */
+  it("says how far each hull was moved off the position reported for her", () => {
+    expect(html).toContain("50.0 m fwd, 4.0 m stbd");
+    expect(html).toContain("not stated: drawn as reported");
+  });
+
+  it("says a position already at the hull needed no moving", () => {
+    const moved = actor("B", westboundPoints(), BIG_SHIP);
+    moved.track.positionAt = "reference-point";
+    const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), moved]));
+
+    expect(html).toContain("none: already the hull");
+  });
+
   it("reports the closest approach in both metres and miles", () => {
     expect(html).toMatch(/\d+ m \(\d+\.\d\d NM\)/);
   });
