@@ -60,6 +60,13 @@ interface Cast {
  * heading, so applying it to an invented one displaces her tens of metres away from the one
  * thing the source does state - her position - and the result looks exactly like a ship that
  * was placed correctly.
+ *
+ * A track that states a direction at some points and not at others therefore jumps when the
+ * offset switches on, at the midpoint of the span, which is an artefact of how sampleAt
+ * blends a value against a missing one rather than anything in the data. That instant is
+ * already a discontinuity - the hull snaps from north to the stated course there - and every
+ * cheap way of smoothing it either embellishes a measured point or invents positions, so it
+ * is issue #12 rather than something to paper over here.
  */
 function placementOf(member: Cast, state: SampledState): { heading: number; offset: OffsetMetres } {
   const stated = state.headingDegreesTrue ?? state.cogDegreesTrue;
