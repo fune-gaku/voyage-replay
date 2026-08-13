@@ -8,7 +8,7 @@ somebody's bridge.
 
 > **Status: early.** A scenario renders and plays back, from overhead or from either bridge, and
 > records to video. What is not in yet is a ship motion model — between samples a hull still
-> travels in a straight line. See [Roadmap](#roadmap).
+> travels in a straight line.
 
 ## Why
 
@@ -28,6 +28,10 @@ decreasing range, the classic signature of a collision course, and the report's 
 confirms the officer of the watch "saw a white light and a green light".
 
 The numbers were always in the report. This is what they look like.
+
+Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
+reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)
+has the measured numbers.
 
 ### Why not AI video
 
@@ -161,18 +165,6 @@ declares no `bin`, `main`, `exports` or `types`, so `npx voyage-replay …` and
 The pieces those would be built on exist and are tested — `src/index.ts` re-exports
 `parseScenario`, `prepareActor`, `closestPointOfApproach`, `visibleLights`, `describeAspect`
 and `checkPlausibility` — but nothing is wired up for consumption outside this repository yet.
-
-## Roadmap
-
-| | |
-|---|---|
-| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case, 3D renderer with the three cameras, timeline with variable time compression, webm capture, single-file build |
-| **Next** | Ship motion model (first-order response, so a hull carries its turn instead of sliding sideways) |
-| **After** | JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view |
-
-Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
-reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)
-has the measured numbers.
 
 ## Data and attribution
 
