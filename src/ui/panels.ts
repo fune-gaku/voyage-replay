@@ -106,13 +106,14 @@ function actorTable(prepared: Prepared[]): string {
  * heading and no course, and a cell that reported the arithmetic alone would say a hull had
  * been placed that was in fact drawn exactly where it was before.
  */
-function hullOffsetCell({ actor, track }: Prepared): string {
+function hullOffsetCell(prepared: Prepared): string {
+  const { actor, track } = prepared;
   const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
   if (offset.kind === "already-the-hull") return "none: already the hull";
   if (offset.kind === "not-stated") return "not stated: drawn as reported";
 
   const moved = `${offset.forwardMetres.toFixed(1)} m fwd, ${offset.starboardMetres.toFixed(1)} m stbd`;
-  const stated = track.points.filter((p) => statedDirection(p) !== undefined).length;
+  const stated = statedDirectionCount(track);
   if (stated === 0) return `${moved}, never applied: no direction stated`;
   if (stated < track.points.length) {
     return `${moved}, applied where she states a direction (${stated}/${track.points.length})`;
@@ -120,12 +121,21 @@ function hullOffsetCell({ actor, track }: Prepared): string {
   return moved;
 }
 
-/** Heading if the source gives one, course if it gives that instead, nothing if neither. */
-function statedDirection(point: {
-  headingDegreesTrue: number | undefined;
-  cogDegreesTrue: number | undefined;
-}): number | undefined {
-  return point.headingDegreesTrue ?? point.cogDegreesTrue;
+/**
+ * Whether the view really moved this hull off the position her track reports.
+ *
+ * Everything on the page that describes the picture has to agree about this, or one section
+ * contradicts another a paragraph apart - which is the failure the offsets were applied to
+ * fix, reappearing in the prose instead of in the geometry.
+ */
+function isPlacedFromOffsets({ actor, track }: Prepared): boolean {
+  const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
+  return offset.kind === "offset" && statedDirectionCount(track) > 0;
+}
+
+function statedDirectionCount(track: PreparedTrack): number {
+  return track.points.filter((p) => (p.headingDegreesTrue ?? p.cogDegreesTrue) !== undefined)
+    .length;
 }
 
 function pair(prepared: Prepared[]): [Prepared, Prepared] | null {
@@ -155,12 +165,15 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
  *
  * Each track says for itself what its positions refer to, and the two need not agree: one
  * ship's may be her antenna and the other's already moved to her reference point. Naming
- * both is the only version that stays true when they differ - and the hulls in the view are
- * placed from the offsets while this figure is not, which is a disagreement worth stating
- * rather than leaving for the reader to notice. A range between hulls needs their shapes
- * and not two points at all; that is issue #10.
+ * both is the only version that stays true when they differ.
+ *
+ * Whether the view disagrees with the figure depends on whether the view moved anything, so
+ * that half is written from the same test the actor table uses rather than assumed. A page
+ * that says "the hulls are placed from these offsets" beside two hulls drawn at their
+ * antennae has reproduced, in prose, the fault the offsets were applied to fix.
  */
-function approachCaveat([first, second]: [Prepared, Prepared]): string {
+function approachCaveat(both: [Prepared, Prepared]): string {
+  const [first, second] = both;
   const between = `${reportedPoint(first)} to ${reportedPoint(second)}`;
   // Whichever of the two states its offsets, for the sake of one concrete distance. Either
   // may be the one that has them, and neither need be.
@@ -170,11 +183,26 @@ function approachCaveat([first, second]: [Prepared, Prepared]): string {
     ? ` On ${withOffsets.actor.id} that point sits ${offsets.fromBowMetres} m from the bow.`
     : "";
 
-  return (
-    `Measured ${between}, which is what the sources state.${howFar} ` +
-    `The hulls in the view are placed from these offsets; this range is not, so it is not ` +
-    `the gap between hulls.`
-  );
+  return `Measured ${between}, which is what the sources state.${howFar} ${viewCaveat(both)}`;
+}
+
+/** How the picture stands to that figure, which depends on what the picture actually did. */
+function viewCaveat(both: [Prepared, Prepared]): string {
+  const placed = both.filter(isPlacedFromOffsets).map((p) => p.actor.id);
+  const gap = "the gap between hulls, which needs their shapes rather than two points: issue #10";
+
+  if (placed.length === 0) {
+    return (
+      "No hull in the view was moved off the position reported for her, so this is also the " +
+      `distance between the hulls as drawn - though still not ${gap}.`
+    );
+  }
+
+  const clause =
+    placed.length === 1
+      ? `${placed[0]}'s hull is placed from her offsets in the view`
+      : "Both hulls are placed from their offsets in the view";
+  return `${clause}; this range is not, so it is not ${gap}.`;
 }
 
 function reportedPoint({ actor }: Prepared): string {
@@ -214,12 +242,15 @@ function aspects(prepared: Prepared[], scenario: Scenario): string {
   }
   return (
     dataTable(["time", `bearing of ${target.actor.id}`, "range", "aspect"], rows) +
+    // Deliberately says nothing about how far apart the two answers are HERE: that depends on
+    // this scenario's ranges and offsets, and a sentence measured on one case and printed over
+    // every case is the same kind of untrue claim as a hull drawn where it was not.
     note(
       "Bearings and ranges here are between the positions the sources report, not between " +
-        "the hulls in the view. On the reference case the two agree to a tenth of a degree " +
-        "at a mile and part company as the range closes; in the last row they differ by " +
-        "tens of degrees, by which point the hulls are touching and no bearing between two " +
-        "points means much. Ranges and bearings between hulls need their shapes - issue #10.",
+        "the hulls in the view. The two agree while the ships are far apart and part company " +
+        "as the range closes, by up to the antenna offsets - and once the hulls are within " +
+        "their own lengths of each other, no bearing between two points says much about what " +
+        "was visible. Bearings and ranges between hulls need their shapes - issue #10.",
     )
   );
 }

@@ -135,6 +135,52 @@ describe("renderPanels", () => {
   });
 
   /**
+   * The sentence about the view has to be earned every time it is printed. Beside two hulls
+   * drawn at their antennae, "the hulls are placed from these offsets" is the same false
+   * claim as the hull-offset cell used to make, moved into the prose - and the three ways a
+   * hull ends up unplaced are the three cases below.
+   */
+  it("says only B's hull was placed, when only B carries offsets", () => {
+    expect(html).toContain("B&#39;s hull is placed from her offsets in the view");
+  });
+
+  it("claims no placement when neither ship carries offsets", () => {
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), COASTER)]),
+    );
+
+    expect(html).toContain("No hull in the view was moved off the position reported for her");
+    expect(html).toContain("also the distance between the hulls as drawn");
+  });
+
+  it("claims no placement for a track already reported at the hull", () => {
+    const moved = actor("B", westboundPoints(), BIG_SHIP);
+    moved.track.positionAt = "reference-point";
+    const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), moved]));
+
+    expect(html).toContain("No hull in the view was moved off the position reported for her");
+  });
+
+  it("claims no placement for offsets that nothing gave a direction to hang on", () => {
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", silentPoints(), BIG_SHIP)]),
+    );
+
+    expect(html).toContain("No hull in the view was moved off the position reported for her");
+  });
+
+  /**
+   * The note under the aspect table describes how the figures were arrived at, which is the
+   * same for every scenario. It used to carry measurements taken on the reference case -
+   * including that the hulls end up touching - and printed them over two ships in a test
+   * tube that never come within 200 m of each other.
+   */
+  it("keeps the aspect note to what is true of any encounter", () => {
+    expect(html).toContain("between the positions the sources report");
+    expect(html).not.toContain("tenth of a degree");
+  });
+
+  /**
    * The heading is what fixes a ship's light arcs, and a Class B transponder does not send
    * one. Standing the course over ground in for it is a judgement the reader has to be
    * told about - a panel that quietly substitutes it is asserting something the source
