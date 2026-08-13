@@ -138,16 +138,28 @@ You do not have to keep a dev server running to look at a reconstruction:
 
 ```bash
 npm run build:single -- examples/suo-nada-2025-11-27.voyage.json
-# → dist/suo-nada-2025-11-27.html   (about 720 kB, self-contained)
+# → dist/suo-nada-2025-11-27.html   (about 741 kB, self-contained)
 ```
 
 Everything — the player, the styles, the scenario — is inside that one file. Double-click it,
 attach it to an email, drop it into an article, or archive it beside the video it produced.
-There is nothing left to fetch, so it will still open years from now, which is the property
-worth having: a reconstruction whose viewer has rotted is not evidence of anything.
 
 The cost is that three.js travels inside every file. That is accepted; a CDN reference would
 be smaller and would trade away the only thing that makes the file worth keeping.
+
+**One thing is not inside it: the map under the water.** Tiles are fetched when the page is
+opened, which is what keeps them within the "display" half of the tile licence rather than the
+"reproduction" half — and what keeps the file from being tens of megabytes rather than hundreds
+of kilobytes. Offline, or years from now if that server has changed, the page opens and replays
+exactly as it did before the map existed: water and a grid where the land was. Everything the
+reconstruction actually claims — the tracks, the hulls, the lights, the times, the panels — is in
+the file. A missing basemap is a decoration gone; it is not a viewer that has rotted, which is the
+property worth having.
+
+Two consequences to know about before sending one to somebody. A reader with no network sees no
+land. And opening the file tells the tile server which sea area is being looked at, which matters
+if the case is somebody's confidential business. A coastline carried inside the scenario as
+vectors answers both, and is the follow-up ([#7](https://github.com/fune-gaku/voyage-replay/issues/7)).
 
 `check:config` exists because a rule that is not enabled reports nothing — see
 [`docs/verifying-config.md`](docs/verifying-config.md).
@@ -166,9 +178,9 @@ and `checkPlausibility` — but nothing is wired up for consumption outside this
 
 | | |
 |---|---|
-| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case, 3D renderer with the three cameras, timeline with variable time compression, webm capture, single-file build |
-| **Next** | Ship motion model (first-order response, so a hull carries its turn instead of sliding sideways) |
-| **After** | JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view |
+| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case, 3D renderer with the three cameras, timeline with variable time compression, plan view at a stated scale or following the ships, drag and wheel-zoom, an opening shot that says where in the world this is, date and time drawn into the frame, webm capture, single-file build, map tiles under the plan view |
+| **Next** | Sun and moon computed from the time and place, and stated in the panels — done; next the hull catalogue and the ship motion model (first-order response, so a hull carries its turn instead of sliding sideways), both of which have to come before the light is made physical |
+| **After** | Coastline as vectors inside the scenario, so a file sent to somebody shows land offline; JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view |
 
 Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
 reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)
@@ -197,6 +209,29 @@ Other issuing bodies publish under other terms. Check before adding an example f
 and record what you found in that file's `meta.license`.
 
 No source PDFs are vendored here.
+
+### The basemap
+
+The map under the water is [地理院タイル](https://maps.gsi.go.jp/development/ichiran.html) — the
+pale sheet published by the Geospatial Information Authority of Japan. It is fetched from their
+server when a page is opened and is never stored in this repository or in a built file.
+
+That distinction is the whole reason the tiles are fetched rather than baked. The Authority asks
+only that its tiles be credited when they are displayed, including as the background of a video;
+downloading and keeping them is reproduction, which is a different question with a different
+answer. So the page draws the credit **into the canvas**, not beside it — recording goes through
+`canvas.captureStream()`, which copies the drawing buffer and nothing else, so a caption in the
+surrounding page would be absent from every video the page produces.
+
+The tiles are tinted to sit under a night scene, which is a modification, so the credit names the
+source and says it was worked on: `Made by processing GSI Tiles (Pale map), Geospatial Information
+Authority of Japan` — the English of `地理院タイル（淡色地図）を加工して作成`, which is the wording
+to fall back on for a Japanese audience. Keep both halves. If you fork the renderer and change how
+the map is drawn, they are still true; if you swap the tile source, they are not, and
+`BASEMAP_CREDIT` in `src/render/basemap.ts` is the one place to fix.
+
+The tile set covers Japan. A scenario elsewhere gets no map — the server answers 404, the tiles
+stay hidden, and the credit never appears, because there is nothing to credit.
 
 ## Contributing
 

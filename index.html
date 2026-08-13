@@ -154,13 +154,52 @@
           <div class="group" id="views"></div>
           <button id="playPause">Play</button>
           <label class="group">
-            <select id="speed">
+            <select id="speed" title="Playback speed" aria-label="Playback speed">
               <option value="1">1&times;</option>
               <option value="10">10&times;</option>
               <option value="20" selected>20&times;</option>
               <option value="60">60&times;</option>
             </select>
           </label>
+          <label class="group">
+            <!--
+              Metres of sea from the top of the plan view to the bottom. Height rather than
+              width because it does not move when the window is resized, and a scale that
+              changed with the shape of the browser would be no scale at all.
+
+              The wide end is a locator, not an instrument. Everything is projected onto one
+              flat plane pinned at the scenario origin (see src/core/geodesy.ts), which costs
+              centimetres over the few kilometres a reconstruction actually spans and 1.1% of
+              east-west stretch a hundred kilometres away, 5.9% at five hundred, 13.3% at a
+              thousand. Read a distance off those and it is wrong; read "which sea is this"
+              off them and it is right.
+            -->
+            <select
+              id="scale"
+              title="Plan view: how much sea the frame covers, top to bottom. Past about 100 km it is a locator rather than a measurement - the flat local plane stretches east-west with distance."
+              aria-label="Plan view scale"
+            >
+              <option value="auto" selected>Scale: auto</option>
+              <option value="200">Scale: 200 m</option>
+              <option value="500">Scale: 500 m</option>
+              <option value="1000">Scale: 1 km</option>
+              <option value="2000">Scale: 2 km</option>
+              <option value="5000">Scale: 5 km</option>
+              <option value="10000">Scale: 10 km</option>
+              <option value="20000">Scale: 20 km</option>
+              <option value="50000">Scale: 50 km</option>
+              <option value="100000">Scale: 100 km</option>
+              <option value="200000">Scale: 200 km</option>
+              <option value="500000">Scale: 500 km</option>
+              <option value="1000000">Scale: 1000 km</option>
+            </select>
+          </label>
+          <button
+            id="recentre"
+            title="Plan view: follow the ships again after dragging the picture"
+          >
+            Recentre
+          </button>
           <span id="clock">&mdash;</span>
           <input id="scrub" type="range" min="0" max="1000" value="0" />
           <button id="record">Record</button>

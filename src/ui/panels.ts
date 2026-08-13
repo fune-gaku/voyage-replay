@@ -10,7 +10,9 @@
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
+import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { formatClock } from "../core/time.js";
 import {
   closestPointOfApproach,
   sampleAt,
@@ -28,31 +30,12 @@ export function renderPanels(scenario: Scenario, prepared: Prepared[]): string {
   const findings = prepared.flatMap((p) => checkPlausibility(p.track, p.actor.vessel));
   return [
     section("Scenario", overview(scenario)),
+    section("Sky at the moment in question", sky(scenario)),
     section("Actors", actorTable(prepared)),
     section("Closest approach", approach(prepared, scenario)),
     section("What each ship showed the other", aspects(prepared, scenario)),
     section(`Plausibility screening (${findings.length})`, findingList(findings, scenario)),
   ].join("");
-}
-
-/** Wall-clock in the zone the source report's own times refer to. */
-export function formatClock(epochSeconds: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(new Date(epochSeconds * 1000));
-}
-
-export function formatDate(epochSeconds: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(new Date(epochSeconds * 1000));
 }
 
 function overview(scenario: Scenario): string {
@@ -63,6 +46,70 @@ function overview(scenario: Scenario): string {
     ["Light condition", scenario.environment?.lightCondition ?? "unstated"],
     ["Source", scenario.meta.source?.citation ?? scenario.meta.source?.id ?? "-"],
   ]);
+}
+
+/**
+ * Where the sun and the moon were, computed rather than transcribed.
+ *
+ * The scenario carries a hand-entered light condition - "night" - which cannot be checked,
+ * cannot say how far below the horizon the sun was, and cannot mention the moon at all.
+ * All three follow from the time and the place the file already gives, so they are worked
+ * out here and printed beside what the file says, which is what makes the two comparable.
+ */
+function sky(scenario: Scenario): string {
+  const at = Date.parse(scenario.meta.occurredAt) / 1000;
+  const conditions = conditionsAt(scenario.origin, scenario.environment, at);
+  const { sun, moon } = conditions;
+
+  return (
+    keyValueTable([
+      ["At", `${formatClock(at, scenario.meta.timeZone)} local`],
+      [
+        "Sun",
+        `${sun.altitudeDegrees.toFixed(1)} deg altitude, bearing ${sun.azimuthDegrees.toFixed(0)}`,
+      ],
+      ["Sun level", conditions.sunLevel],
+      [
+        "Lights required",
+        conditions.navigationLightsRequired
+          ? "yes - after sunset (COLREG Rule 20)"
+          : "no - between sunrise and sunset (COLREG Rule 20)",
+      ],
+      [
+        "Moon",
+        `${moon.altitudeDegrees.toFixed(0)} deg altitude, bearing ${moon.azimuthDegrees.toFixed(0)}, ` +
+          `${(moon.illuminatedFraction * 100).toFixed(0)}% lit`,
+      ],
+      ["Stated in the file", conditions.statedLight ?? "not stated"],
+      ["Visibility", visibilityText(conditions)],
+    ]) + note(skyCaveat(conditions))
+  );
+}
+
+function visibilityText({ visibilityMetres }: Conditions): string {
+  if (visibilityMetres === null) return "not stated";
+  return `${visibilityMetres} m (${(visibilityMetres / 1852).toFixed(1)} NM)`;
+}
+
+/**
+ * What the computed sky is, and what it is not.
+ *
+ * It is geometry, so it is as good as the clock and the position. It is not a brightness:
+ * cloud is what decides whether a half moon forty degrees up lights the sea or nothing at
+ * all, and no report this project has met states it. Saying so is the difference between
+ * a figure and a claim.
+ */
+function skyCaveat(conditions: Conditions): string {
+  const disagreement =
+    conditions.statedLightAgrees === false
+      ? ` The file says "${String(conditions.statedLight)}", which the sun's altitude does not support - check the date, the time zone and the position.`
+      : "";
+  return (
+    "Computed from the time and the origin, to about a hundredth of a degree for the sun " +
+    "and a third of a degree for the moon. How much light actually reached the sea also " +
+    "depends on cloud, which the source does not state." +
+    disagreement
+  );
 }
 
 function actorTable(prepared: Prepared[]): string {
