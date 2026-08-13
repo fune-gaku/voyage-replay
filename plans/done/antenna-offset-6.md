@@ -1,0 +1,90 @@
+# AIS アンテナ位置の補正
+
+実装済み（PR #11 / issue #6）。**計画と違ったところは下に書き直してある**——次に読む人が
+必要なのは計画ではなく記録のほうなので。
+
+## 何を
+
+`src/render/player.ts` の `place()` が報告位置をそのまま船体グループの原点に入れていた。
+`src/render/hull.ts` は原点を「船体中心・喫水線上」と定義しているので、**AIS アンテナの位置に
+船体の中心が置かれていた**。`referencePointOffsets` を使って船体を正しい位置に置いた。
+
+## なぜ
+
+`examples/suo-nada-2025-11-27.voyage.json` での実測値:
+
+| | LOA | アンテナ（船首から） | 船体中心（船首から） | ずれ | 右舷へのずれ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Seitoku Maru | 49 m | 39 m | 24.5 m | **後方へ** 14.5 m | 0.5 m |
+| Spinner 2 | 121 m | 104 m | 60.5 m | **後方へ** 43.5 m | 2.5 m |
+
+**issue #6 の本文は「前方へずれている」と書いているが、逆だった。** アンテナは船橋の上、
+船橋は船尾寄り。つまりアンテナは船体中心より後ろにあり、**船体中心はアンテナより前方**にある。
+中心をアンテナに置いて描けば、船は後方へずれる。距離は合っていて向きだけが逆で、
+これは絵を見ても分からない種類の間違い（下の「符号」参照）。
+
+そして `docs/format.md` と `core/track.ts` の `closestPointOfApproach` は「報告位置はアンテナで
+あって船体ではない」と文章で警告していた。**言っていることと描いているものが食い違っている**、
+というのがこの変更の理由。
+
+## どう（実際にやったこと）
+
+- **`src/actors/vessel/reference-point.ts`（新規）** が補正量を1か所で決める。
+  `core/` には置けない（船の概念）ので `actors/vessel/`。3値を返す:
+  補正した / 既に船体基準（`positionAt: "reference-point"`）/ offsets が無い。
+  **この3つを区別するのはパネルのため**——「offsets どおりに置いた船」と「offsets が無いので
+  報告位置のまま描いた船」は画面上で見分けがつかず、主張している内容は船の長さぶん違う
+- **`player.ts` の `castMember`** が内側グループを1つ作り、`hull.group` と `lights.group` を
+  そこに入れる。オフセットはビルド時に1回、毎フレームの計算はゼロ。回転は外側にかかるので
+  船首方位に自動で追従し、灯火も船体と一緒に動く（舷灯はアンテナではなく船に付いている）
+
+オフセット（ローカル軸は +X 右舷 / −Z 前方）:
+
+```
+前方 = (fromBowMetres − fromSternMetres) / 2
+右舷 = (fromStarboardMetres − fromPortMetres) / 2
+```
+
+**素直な実装だと何が間違うか。**
+
+1. **符号を逆にする。** 計画時に書いていた `前方 = loa / 2 − fromBow` は逆で、適用すると
+   ずれが倍になる。**絵を見ても分からない**（どの符号でも「近くを航過する2隻」に見える）ので、
+   `test/examples.spec.ts` が周防灘事案で固定した: 最接近時、タンカーの船首は正しい符号のときだけ
+   押船列の船体の中（中心から 57.0m 後方・左舷へ 3.5m、121m×19m の船体の内側）に入る。
+   無補正なら舷側から 4m 外、逆符号なら 21m 外で、**衝突そのものが起きない**
+2. **横方向に `beamMetres` を使う。** Seitoku Maru は `beamMetres: 9.4` に対して offsets の和が 9
+   （AIS は m 単位に丸める）。混ぜると 0.2 m の作り物が出る。**offsets の中で閉じること**
+3. **`positionAt` を見ない。** `"reference-point"` はすでに移してある側なので、補正すると
+   二重にずれる
+4. **船首方位が無いときを特別扱いしようとする。** これは要らない。`place()` が既に「HDG が
+   無ければ COG を代用し、パネルでそう言う」方針を持っているので、補正はその方針をそのまま継承する
+5. **船橋カメラを忘れる。**（計画に無かった。）`bridgeOffsetForwardMetres` は船体中心からの
+   距離なので、船体だけ動かすと目線が船体の外に残る。BIG_SHIP なら船体から 107m——180m 船の外側で、
+   自分の居住区を斜め後ろから眺めることになる。`BridgeFit` を「**報告位置から**船橋まで」に
+   定義し直し、`castMember` で1回だけ足し込んだ
+
+## どのファイル
+
+- `src/actors/vessel/reference-point.ts` — 新規。補正量とその3値
+- `src/render/player.ts` — 内側グループ、`BridgeFit` への足し込み
+- `src/render/cameras.ts` — `BridgeFit` を報告位置基準に。横方向の成分も持つ
+- `src/render/hull.ts` — 原点の定義コメントを現状に合わせる
+- `src/ui/panels.ts` — 船の表に「hull offset」列。最接近の但し書きを
+  「上の絵は offsets に載せてある、この距離は載せていない」に
+- `docs/format.md` / `spec/voyage.schema.json` — `positionAt` の2値が何を意味するかを明記。
+  コードが分岐するようになったので、曖昧なままにできない
+- `test/reference-point.spec.ts`（新規）/ `test/player.spec.ts` / `test/cameras.spec.ts` /
+  `test/panels.spec.ts` / `test/examples.spec.ts` / `test/fixtures.ts`
+
+**`test/examples.spec.ts` の固定値は動かなかった**（計画では「見え方が変わるので更新」と
+書いていた）。あのファイルが固定しているのは `core/` の値で、レンダラには触れていない。
+代わりに増えたのが上の符号のテスト。
+
+## 未解決だったもの（どうしたか）
+
+- **CPA も直すか** → 直さず、**issue #10** にした。船体間の距離は船体形状が要るので
+  `core/` に置けない。パネルの但し書きが「この距離はアンテナ間」と明示するようにした
+- **`referencePointOffsets` が無い船** → 無補正で描き、表に「not stated: drawn as reported」と出す
+- **offsets の和と `loaMetres` が食い違う事案** → 補正は offsets の中だけで閉じるので、
+  この関数に関しては offsets が勝つ。船体の寸法そのものをどちらから取るかは別問題で、
+  `buildHull` は今も `loaMetres` / `beamMetres` を見ている（issue #8 の領分）

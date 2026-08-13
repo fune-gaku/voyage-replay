@@ -17,9 +17,15 @@ import type { LocalPosition } from "../core/geodesy.js";
 
 export type ViewKind = "overhead" | "bridge";
 
+/**
+ * Where the wheelhouse windows sit, measured from the position the track REPORTS - not from
+ * the hull's centre. The two differ by the antenna offset (see actors/vessel/reference-point),
+ * and measuring from the reported position is what keeps the eye inside the hull as drawn.
+ */
 export interface BridgeFit {
   eyeHeightMetres: number;
-  bridgeOffsetForwardMetres: number;
+  offsetForwardMetres: number;
+  offsetStarboardMetres: number;
 }
 
 export function makeOverheadCamera(): OrthographicCamera {
@@ -74,10 +80,18 @@ export function placeBridgeCamera(
 ): void {
   const rotationY = headingToRotationY(headingDegreesTrue);
 
-  // The bridge sits aft of the hull's centre; move along the ship's own fore-and-aft line.
-  const forward = new Vector3(0, 0, -1).applyAxisAngle(new Vector3(0, 1, 0), rotationY);
+  // Both offsets run along the ship's own axes, not along the world's, so they turn with
+  // her: the bridge stays aft however she is heading, and a wheelhouse offset to one side
+  // stays on that side.
+  const up = new Vector3(0, 1, 0);
+  const forward = new Vector3(0, 0, -1).applyAxisAngle(up, rotationY);
+  const starboard = new Vector3(1, 0, 0).applyAxisAngle(up, rotationY);
   const base = toWorld(position, fit.eyeHeightMetres);
-  camera.position.copy(base.addScaledVector(forward, fit.bridgeOffsetForwardMetres));
+  camera.position.copy(
+    base
+      .addScaledVector(forward, fit.offsetForwardMetres)
+      .addScaledVector(starboard, fit.offsetStarboardMetres),
+  );
 
   camera.rotation.set(0, rotationY, 0);
 }

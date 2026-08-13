@@ -15,8 +15,27 @@ import type { Actor, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 
 export const ORIGIN = { lat: 0, lon: 0 };
 
+/**
+ * One ship carrying her AIS reference-point offsets and one without them, which is the
+ * ordinary state of a two-ship reconstruction: the four distances come from message 5 or
+ * from a footnote to the report's track table, and either source can be silent about a
+ * ship. BIG_SHIP's four distances sum to her length overall and
+ * her beam exactly, and put her antenna well aft: her hull's centre lies 50 m forward of it
+ * and 4 m to starboard of it - both round, both checkable on paper, and neither zero,
+ * because an offset that is zero cannot tell a correct axis from a dropped one.
+ */
 export const COASTER: Vessel = { loaMetres: 49, beamMetres: 9.4, type: "tanker" };
-export const BIG_SHIP: Vessel = { loaMetres: 180, beamMetres: 28, type: "cargo" };
+export const BIG_SHIP: Vessel = {
+  loaMetres: 180,
+  beamMetres: 28,
+  type: "cargo",
+  referencePointOffsets: {
+    fromBowMetres: 140,
+    fromSternMetres: 40,
+    fromPortMetres: 10,
+    fromStarboardMetres: 18,
+  },
+};
 
 /**
  * One minute apart, making good due north at a shade under 6 knots - with her bow ten

@@ -191,7 +191,7 @@
       "properties": {
         "derivation": { "$ref": "#/$defs/derivation" },
         "positionAt": {
-          "description": "What the lat/lon in each point refers to. AIS reports the GPS antenna, which on a 180 m ship is over a hundred metres from the bow - close enough to matter when the question is whether the hulls touched.",
+          "description": "What the lat/lon in each point refers to. AIS reports the GPS antenna, which on a 180 m ship is over a hundred metres from the bow - close enough to matter when the question is whether the hulls touched. \"reference-point\" means the positions have already been moved onto the ship's own reference point, her centre, so a consumer must not apply referencePointOffsets to them a second time.",
           "enum": ["gps-antenna", "reference-point"]
         },
         "source": { "$ref": "#/$defs/source" },

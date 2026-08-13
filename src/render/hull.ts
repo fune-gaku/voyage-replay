@@ -7,8 +7,9 @@
  * what makes a reconstruction read as real is the motion and the lights, not the shading.
  *
  * Local axes: +X starboard, +Y up, -Z forward. Origin at the hull's centre on the
- * waterline, so a track whose positions have been moved to the reference point can be
- * dropped straight onto it.
+ * waterline - NOT at the position a track reports, which is the GPS antenna and can sit
+ * most of a ship's length from the centre. Moving between the two is the caller's job and
+ * is done once, in player.ts, from the offsets in actors/vessel/reference-point.
  */
 
 import {

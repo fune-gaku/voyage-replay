@@ -8,6 +8,7 @@
  */
 
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
+import { hullCentreOffset } from "../actors/vessel/reference-point.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
 import {
@@ -65,7 +66,17 @@ function overview(scenario: Scenario): string {
 }
 
 function actorTable(prepared: Prepared[]): string {
-  const head = ["id", "name", "LOA", "beam", "points", "derivation", "position at", "heading?"];
+  const head = [
+    "id",
+    "name",
+    "LOA",
+    "beam",
+    "points",
+    "derivation",
+    "position at",
+    "hull offset",
+    "heading?",
+  ];
   const rows = prepared.map(({ actor, track }) => {
     const withHeading = track.points.filter((p) => p.headingDegreesTrue !== undefined).length;
     return [
@@ -76,10 +87,25 @@ function actorTable(prepared: Prepared[]): string {
       String(track.points.length),
       actor.track.derivation,
       actor.track.positionAt,
+      hullOffsetCell(actor),
       `${withHeading}/${track.points.length}`,
     ];
   });
   return dataTable(head, rows);
+}
+
+/**
+ * How far the hull in the view was moved off the position the source reports.
+ *
+ * A reader checking the reconstruction has to be able to tell a ship that was put where her
+ * offsets say from one drawn at her antenna because nobody wrote the offsets down. The two
+ * look identical on screen and are a ship's length apart in what they claim.
+ */
+function hullOffsetCell(actor: Actor): string {
+  const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
+  if (offset.kind === "already-the-hull") return "none: already the hull";
+  if (offset.kind === "not-stated") return "not stated: drawn as reported";
+  return `${offset.forwardMetres.toFixed(1)} m fwd, ${offset.starboardMetres.toFixed(1)} m stbd`;
 }
 
 function pair(prepared: Prepared[]): [Prepared, Prepared] | null {
@@ -95,10 +121,14 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
   const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
 
+  // The hulls in the view are moved onto their offsets; this figure deliberately is not,
+  // and saying which is which matters more now that the two disagree. A range between
+  // hulls needs their shapes, not two points - see issue #10.
   const offsets = first.actor.vessel?.referencePointOffsets;
   const caveat = offsets
-    ? `Reported positions are the GPS antenna. On ${first.actor.id} the antenna sits ` +
-      `${offsets.fromBowMetres} m from the bow, so this is not the gap between hulls.`
+    ? `Antenna to antenna. On ${first.actor.id} the antenna sits ` +
+      `${offsets.fromBowMetres} m from the bow, so this is not the gap between hulls - ` +
+      `the hulls in the view above are placed from those offsets, this range is not.`
     : "";
 
   return (
