@@ -6,15 +6,19 @@
 import type { PerspectiveCamera } from "three";
 import { Group, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
 
-import { hullCentreOffset, offsetMetres } from "../actors/vessel/reference-point.js";
-import { prepareActor, sampleAt, type PreparedTrack } from "../core/track.js";
+import {
+  hullCentreOffset,
+  NO_OFFSET,
+  offsetMetres,
+  type OffsetMetres,
+} from "../actors/vessel/reference-point.js";
+import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import {
   frameOverheadCamera,
   makeBridgeCamera,
   makeOverheadCamera,
   placeBridgeCamera,
-  type BridgeFit,
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildHull } from "./hull.js";
@@ -37,8 +41,31 @@ interface Cast {
   track: PreparedTrack;
   vessel: Vessel;
   group: Group;
+  /** Holds the hull and the lamps, offset from the reported position to the hull's centre. */
+  onHull: Group;
   sectors: Group;
-  fit: BridgeFit;
+  /** That offset, along the ship's own axes. Only applies while she has a direction. */
+  hullOffset: OffsetMetres;
+  eyeHeightMetres: number;
+  /** The bridge, forward of the HULL's centre - hull.ts's frame, not the reported one. */
+  bridgeOffsetForwardMetres: number;
+}
+
+/**
+ * What the source says about where she is pointing, and what follows for the hull.
+ *
+ * A hull has to be pointed somewhere: with no heading and no course there is still a ship to
+ * draw, so she points north and the panels' aspect column says the geometry cannot be read.
+ * She must not be MOVED somewhere on the same footing. The antenna offset runs along her
+ * heading, so applying it to an invented one displaces her tens of metres away from the one
+ * thing the source does state - her position - and the result looks exactly like a ship that
+ * was placed correctly.
+ */
+function placementOf(member: Cast, state: SampledState): { heading: number; offset: OffsetMetres } {
+  const stated = state.headingDegreesTrue ?? state.cogDegreesTrue;
+  return stated === undefined
+    ? { heading: 0, offset: NO_OFFSET }
+    : { heading: stated, offset: member.hullOffset };
 }
 
 /**
@@ -171,14 +198,15 @@ export class Replay {
     if (!state) return;
 
     // The reported position, which is the antenna. The hull hangs off this group at the
-    // offset worked out in castMember, so what moves here is the point the source states.
+    // offset below, so what moves here is the point the source states.
     member.group.position.copy(toWorld(state.position));
 
     // Heading is what the hull points along. Where the source has none - a Class B
     // transponder transmits no heading - the course over ground stands in, because
     // something has to be drawn; the panel says so rather than hiding it.
-    const heading = state.headingDegreesTrue ?? state.cogDegreesTrue ?? 0;
+    const { heading, offset } = placementOf(member, state);
     member.group.rotation.y = headingToRotationY(heading);
+    member.onHull.position.set(offset.starboardMetres, 0, -offset.forwardMetres);
 
     // The arcs are a diagram for the plan view. From a bridge they would be a picture
     // of the rules rather than of the night.
@@ -214,12 +242,13 @@ export class Replay {
     const state = sampleAt(member.track, this.currentSeconds);
     if (!state) return this.overhead;
 
-    placeBridgeCamera(
-      this.bridge,
-      state.position,
-      state.headingDegreesTrue ?? state.cogDegreesTrue ?? 0,
-      member.fit,
-    );
+    // The eye goes wherever the hull went, or it ends up outside the ship it belongs to.
+    const { heading, offset } = placementOf(member, state);
+    placeBridgeCamera(this.bridge, state.position, heading, {
+      eyeHeightMetres: member.eyeHeightMetres,
+      offsetForwardMetres: member.bridgeOffsetForwardMetres + offset.forwardMetres,
+      offsetStarboardMetres: offset.starboardMetres,
+    });
     return this.bridge;
   }
 
@@ -289,14 +318,9 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
 
   // The track reports the GPS antenna; a hull is drawn about its own centre. Everything
   // bolted to the ship - hull and lamps alike, since a sidelight is on the ship and not on
-  // the antenna - hangs off one inner group carrying that offset. Applying it here rather
-  // than in place() costs nothing per frame, and the outer group's rotation carries it
-  // round with the heading, so it stays along the ship's own axes without being recomputed.
-  const offset = offsetMetres(
-    hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets),
-  );
+  // the antenna - hangs off one inner group carrying that offset, so the outer group's
+  // rotation carries it round with the heading and it stays along the ship's own axes.
   const onHull = new Group();
-  onHull.position.set(offset.starboardMetres, 0, -offset.forwardMetres);
   onHull.add(hull.group);
   onHull.add(lights.group);
 
@@ -308,15 +332,13 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     track,
     vessel,
     group,
+    onHull,
     sectors: lights.sectors,
-    fit: {
-      eyeHeightMetres: hull.eyeHeightMetres,
-      // Folded once, so the eye stays in the wheelhouse of the hull as drawn. Left out,
-      // the camera sits where the wheelhouse would have been had the ship not been moved -
-      // outside her, looking at her own superstructure from astern.
-      offsetForwardMetres: hull.bridgeOffsetForwardMetres + offset.forwardMetres,
-      offsetStarboardMetres: offset.starboardMetres,
-    },
+    hullOffset: offsetMetres(
+      hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets),
+    ),
+    eyeHeightMetres: hull.eyeHeightMetres,
+    bridgeOffsetForwardMetres: hull.bridgeOffsetForwardMetres,
   };
 }
 

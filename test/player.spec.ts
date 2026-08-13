@@ -12,6 +12,7 @@ import {
   COASTER,
   northboundPoints,
   scenario,
+  silentPoints,
   westboundPoints,
 } from "./fixtures.js";
 
@@ -95,6 +96,18 @@ function ships(scene: Scene): Object3D[] {
  */
 function partsOf(ship: Object3D): Object3D[] {
   return ship.children.flatMap((child) => child.children);
+}
+
+/**
+ * Where the eye sits in the drawn hull's own frame: +X to starboard, -Z forward, both from
+ * her centre. Asking it this way is what makes the answer checkable without repeating any of
+ * the renderer's arithmetic - a wheelhouse is on the centreline and abaft the middle, and
+ * both halves stay true whatever heading she is on and wherever her antenna is.
+ */
+function eyeInHullFrame(ship: Object3D, eye: Vector3): Vector3 {
+  const hull = partsOf(ship)[0]!;
+  hull.updateWorldMatrix(true, false);
+  return hull.worldToLocal(eye.clone());
 }
 
 beforeEach(() => {
@@ -247,6 +260,46 @@ describe("where each ship is put", () => {
     expect(world.z).toBeCloseTo(reported.z, 6);
   });
 
+  /**
+   * A hull can be POINTED somewhere for want of anything better - she points north and the
+   * panels' aspect column says the geometry cannot be read off her. She cannot be MOVED
+   * somewhere on the same footing: the offset runs along her heading, so applying it to an
+   * invented one would carry her 50 m north of the only thing the source actually states.
+   */
+  it("does not displace a ship that reports neither heading nor course", () => {
+    const subject = scenario([
+      actor("A", northboundPoints(), COASTER),
+      actor("B", silentPoints(), BIG_SHIP),
+    ]);
+    const replay = replayOf(subject);
+    replay.seek(replay.startSeconds + 30);
+
+    const track = prepareActor(subject.actors[1]!, subject.origin);
+    const reported = toWorld(sampleAt(track, replay.timeSeconds)!.position);
+    const world = partsOf(ships(lastFrame().scene)[1]!)[0]!.getWorldPosition(new Vector3());
+
+    expect(world.x).toBeCloseTo(reported.x, 6);
+    expect(world.z).toBeCloseTo(reported.z, 6);
+  });
+
+  it("keeps the eye in the wheelhouse of a ship reporting neither heading nor course", () => {
+    const replay = replayOf(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", silentPoints(), BIG_SHIP)]),
+    );
+    replay.setView({ kind: "bridge", actorId: "B" });
+
+    const eye = eyeInHullFrame(
+      ships(lastFrame().scene)[1]!,
+      (lastFrame().camera as PerspectiveCamera).position,
+    );
+
+    // Suppress the offset for the hull but not for the eye and she looks out 4 m off her own
+    // centreline, from a wheelhouse 50 m further forward than the one that is drawn.
+    expect(eye.x, "a wheelhouse is on the centreline").toBeCloseTo(0, 6);
+    expect(eye.z, "and abaft the middle, which is +Z").toBeGreaterThan(0);
+    expect(eye.z, "and inside her").toBeLessThan(BIG_SHIP.loaMetres / 2);
+  });
+
   it("hides a ship at an instant her own track does not reach", () => {
     const short = actor("B", westboundPoints().slice(0, 2), BIG_SHIP);
     const replay = replayOf(scenario([actor("A", northboundPoints(), COASTER), short]));
@@ -281,10 +334,14 @@ describe("the two views", () => {
     const replay = replayOf();
     replay.setView({ kind: "bridge", actorId: "B" });
 
-    const eye = (lastFrame().camera as PerspectiveCamera).position;
-    const hull = partsOf(ships(lastFrame().scene)[1]!)[0]!.getWorldPosition(new Vector3());
+    const eye = eyeInHullFrame(
+      ships(lastFrame().scene)[1]!,
+      (lastFrame().camera as PerspectiveCamera).position,
+    );
 
-    expect(Math.hypot(eye.x - hull.x, eye.z - hull.z)).toBeLessThan(BIG_SHIP.loaMetres / 2);
+    expect(eye.x, "a wheelhouse is on the centreline").toBeCloseTo(0, 6);
+    expect(eye.z, "and abaft the middle, which is +Z").toBeGreaterThan(0);
+    expect(eye.z, "and inside her").toBeLessThan(BIG_SHIP.loaMetres / 2);
   });
 
   it("falls back to the plan view rather than guessing at an unknown ship", () => {
