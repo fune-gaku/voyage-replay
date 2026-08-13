@@ -87,7 +87,7 @@ function actorTable(prepared: Prepared[]): string {
       String(track.points.length),
       actor.track.derivation,
       actor.track.positionAt,
-      hullOffsetCell(actor),
+      hullOffsetCell({ actor, track }),
       `${withHeading}/${track.points.length}`,
     ];
   });
@@ -100,12 +100,32 @@ function actorTable(prepared: Prepared[]): string {
  * A reader checking the reconstruction has to be able to tell a ship that was put where her
  * offsets say from one drawn at her antenna because nobody wrote the offsets down. The two
  * look identical on screen and are a ship's length apart in what they claim.
+ *
+ * Having the offsets is not enough to have used them. The offset runs along the ship's
+ * heading, so the renderer declines to apply it at an instant where the source states no
+ * heading and no course, and a cell that reported the arithmetic alone would say a hull had
+ * been placed that was in fact drawn exactly where it was before.
  */
-function hullOffsetCell(actor: Actor): string {
+function hullOffsetCell({ actor, track }: Prepared): string {
   const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
   if (offset.kind === "already-the-hull") return "none: already the hull";
   if (offset.kind === "not-stated") return "not stated: drawn as reported";
-  return `${offset.forwardMetres.toFixed(1)} m fwd, ${offset.starboardMetres.toFixed(1)} m stbd`;
+
+  const moved = `${offset.forwardMetres.toFixed(1)} m fwd, ${offset.starboardMetres.toFixed(1)} m stbd`;
+  const stated = track.points.filter((p) => statedDirection(p) !== undefined).length;
+  if (stated === 0) return `${moved}, never applied: no direction stated`;
+  if (stated < track.points.length) {
+    return `${moved}, applied where she states a direction (${stated}/${track.points.length})`;
+  }
+  return moved;
+}
+
+/** Heading if the source gives one, course if it gives that instead, nothing if neither. */
+function statedDirection(point: {
+  headingDegreesTrue: number | undefined;
+  cogDegreesTrue: number | undefined;
+}): number | undefined {
+  return point.headingDegreesTrue ?? point.cogDegreesTrue;
 }
 
 function pair(prepared: Prepared[]): [Prepared, Prepared] | null {
@@ -121,23 +141,45 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
   const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
 
-  // The hulls in the view are moved onto their offsets; this figure deliberately is not,
-  // and saying which is which matters more now that the two disagree. A range between
-  // hulls needs their shapes, not two points - see issue #10.
-  const offsets = first.actor.vessel?.referencePointOffsets;
-  const caveat = offsets
-    ? `Antenna to antenna. On ${first.actor.id} the antenna sits ` +
-      `${offsets.fromBowMetres} m from the bow, so this is not the gap between hulls - ` +
-      `the hulls in the view above are placed from those offsets, this range is not.`
-    : "";
-
   return (
     keyValueTable([
       ["Between", `${first.actor.id} and ${second.actor.id}`],
       ["At", `${formatClock(cpa.epochSeconds, scenario.meta.timeZone)} local`],
       ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
-    ]) + (caveat ? `<p style="color:var(--muted)">${escapeHtml(caveat)}</p>` : "")
+    ]) + note(approachCaveat(both))
   );
+}
+
+/**
+ * What that range is a distance BETWEEN.
+ *
+ * Each track says for itself what its positions refer to, and the two need not agree: one
+ * ship's may be her antenna and the other's already moved to her reference point. Naming
+ * both is the only version that stays true when they differ - and the hulls in the view are
+ * placed from the offsets while this figure is not, which is a disagreement worth stating
+ * rather than leaving for the reader to notice. A range between hulls needs their shapes
+ * and not two points at all; that is issue #10.
+ */
+function approachCaveat([first, second]: [Prepared, Prepared]): string {
+  const between = `${reportedPoint(first)} to ${reportedPoint(second)}`;
+  // Whichever of the two states its offsets, for the sake of one concrete distance. Either
+  // may be the one that has them, and neither need be.
+  const withOffsets = [first, second].find((p) => p.actor.vessel?.referencePointOffsets);
+  const offsets = withOffsets?.actor.vessel?.referencePointOffsets;
+  const howFar = offsets
+    ? ` On ${withOffsets.actor.id} that point sits ${offsets.fromBowMetres} m from the bow.`
+    : "";
+
+  return (
+    `Measured ${between}, which is what the sources state.${howFar} ` +
+    `The hulls in the view are placed from these offsets; this range is not, so it is not ` +
+    `the gap between hulls.`
+  );
+}
+
+function reportedPoint({ actor }: Prepared): string {
+  const point = actor.track.positionAt === "reference-point" ? "reference point" : "GPS antenna";
+  return `${actor.id}'s ${point}`;
 }
 
 /**
@@ -170,7 +212,16 @@ function aspects(prepared: Prepared[], scenario: Scenario): string {
     const row = aspectRow(encounter, cpa.epochSeconds - back);
     if (row) rows.push(row);
   }
-  return dataTable(["time", `bearing of ${target.actor.id}`, "range", "aspect"], rows);
+  return (
+    dataTable(["time", `bearing of ${target.actor.id}`, "range", "aspect"], rows) +
+    note(
+      "Bearings and ranges here are between the positions the sources report, not between " +
+        "the hulls in the view. On the reference case the two agree to a tenth of a degree " +
+        "at a mile and part company as the range closes; in the last row they differ by " +
+        "tens of degrees, by which point the hulls are touching and no bearing between two " +
+        "points means much. Ranges and bearings between hulls need their shapes - issue #10.",
+    )
+  );
 }
 
 /** One minute of the approach: where the other ship was, and what she was showing. */
@@ -211,6 +262,11 @@ function findingList(findings: Finding[], scenario: Scenario): string {
     f.message,
   ]);
   return dataTable(["actor", "from", "kind", "detail"], rows);
+}
+
+/** A line under a table saying what the figures in it are, and are not. */
+function note(text: string): string {
+  return `<p style="color:var(--muted)">${escapeHtml(text)}</p>`;
 }
 
 export function section(title: string, body: string): string {
