@@ -141,7 +141,7 @@ describe("renderPanels", () => {
    * hull ends up unplaced are the three cases below.
    */
   it("says only B's hull was placed, when only B carries offsets", () => {
-    expect(html).toContain("B&#39;s hull is placed from her offsets in the view");
+    expect(html).toContain("B&#39;s hull in the view is placed from her offsets");
   });
 
   it("claims no placement when neither ship carries offsets", () => {
@@ -149,7 +149,7 @@ describe("renderPanels", () => {
       scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), COASTER)]),
     );
 
-    expect(html).toContain("No hull in the view was moved off the position reported for her");
+    expect(html).toContain("neither hull in the view is moved off the position reported for her");
     expect(html).toContain("also the distance between the hulls as drawn");
   });
 
@@ -158,7 +158,7 @@ describe("renderPanels", () => {
     moved.track.positionAt = "reference-point";
     const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), moved]));
 
-    expect(html).toContain("No hull in the view was moved off the position reported for her");
+    expect(html).toContain("neither hull in the view is moved off the position reported for her");
   });
 
   it("claims no placement for an antenna the offsets put amidships", () => {
@@ -177,7 +177,7 @@ describe("renderPanels", () => {
       scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), amidships)]),
     );
 
-    expect(html).toContain("No hull in the view was moved off the position reported for her");
+    expect(html).toContain("neither hull in the view is moved off the position reported for her");
   });
 
   it("claims no placement for offsets that nothing gave a direction to hang on", () => {
@@ -185,7 +185,30 @@ describe("renderPanels", () => {
       scenario([actor("A", northboundPoints(), COASTER), actor("B", silentPoints(), BIG_SHIP)]),
     );
 
-    expect(html).toContain("No hull in the view was moved off the position reported for her");
+    expect(html).toContain("neither hull in the view is moved off the position reported for her");
+  });
+
+  /**
+   * Placement is not a property of a ship, or even of a track. The renderer decides it from
+   * the sample it is drawing, so a track that states a course at some points and not at
+   * others is placed for part of its length and not the rest - and this sentence is about one
+   * moment, the closest approach. Here that moment lands on the one point that says nothing,
+   * so the hull is sitting on her antenna while a track-wide answer would call her placed.
+   */
+  it("answers for the moment of closest approach, not for the track as a whole", () => {
+    const closesAtASilentPoint = westboundPoints().map((p, i) =>
+      i === 2 ? { t: p.t, lat: p.lat, lon: p.lon } : p,
+    );
+    const html = panelsFor(
+      scenario([
+        actor("A", northboundPoints(), COASTER),
+        actor("B", closesAtASilentPoint, BIG_SHIP),
+      ]),
+    );
+
+    // Two of her three points do state a course, and the actor table says so.
+    expect(html).toContain("applied where she states a direction (2/3)");
+    expect(html).toContain("neither hull in the view is moved off the position reported for her");
   });
 
   /**
