@@ -9,6 +9,7 @@ import {
   COASTER,
   northboundPoints,
   scenario,
+  silentPoints,
   westboundPoints,
 } from "./fixtures.js";
 
@@ -97,9 +98,8 @@ describe("renderPanels", () => {
   });
 
   it("refuses to name an aspect when the source gives neither heading nor course", () => {
-    const silent: TrackPoint[] = westboundPoints().map(({ t, lat, lon }) => ({ t, lat, lon }));
     const html = panelsFor(
-      scenario([actor("A", northboundPoints(), COASTER), actor("B", silent, BIG_SHIP)]),
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", silentPoints(), BIG_SHIP)]),
     );
 
     expect(html).toContain("no heading and no course: cannot say");

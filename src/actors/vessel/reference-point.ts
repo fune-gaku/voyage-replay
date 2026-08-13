@@ -35,7 +35,11 @@ export interface OffsetMetres {
 export type HullOffset =
   ({ kind: "offset" } & OffsetMetres) | { kind: "already-the-hull" } | { kind: "not-stated" };
 
-const NO_OFFSET: OffsetMetres = { forwardMetres: 0, starboardMetres: 0 };
+/**
+ * Nothing to apply: the hull is drawn at the position her track reports. Frozen because it
+ * is shared - a caller that reached in and adjusted it would move every other ship using it.
+ */
+export const NO_OFFSET: OffsetMetres = Object.freeze({ forwardMetres: 0, starboardMetres: 0 });
 
 export function hullCentreOffset(
   positionAt: Track["positionAt"],

@@ -68,6 +68,17 @@ export function westboundPoints(): TrackPoint[] {
   ];
 }
 
+/**
+ * The same track with nothing said about where she is pointing: no heading and no course.
+ *
+ * The schema allows it - only time and position are required - and it is the case where a
+ * renderer has to decide what NOT to do. A hull still has to be drawn somewhere, but there
+ * is no direction to hang anything measured off.
+ */
+export function silentPoints(): TrackPoint[] {
+  return westboundPoints().map(({ t, lat, lon }) => ({ t, lat, lon }));
+}
+
 export function actor(id: string, points: TrackPoint[], vessel?: Vessel): Actor {
   return {
     id,
