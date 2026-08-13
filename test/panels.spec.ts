@@ -83,8 +83,55 @@ describe("renderPanels", () => {
     expect(html).toContain("none: already the hull");
   });
 
+  /**
+   * Having the offsets is not the same as having used them. The offset runs along the ship's
+   * heading, so a track that never says which way she points never gets moved - and a table
+   * that printed the arithmetic anyway would claim a placement the view never made, which is
+   * the exact disagreement between what this project says and what it draws that the
+   * offsets were applied to close.
+   */
+  it("does not claim a hull was placed when nothing said which way she points", () => {
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", silentPoints(), BIG_SHIP)]),
+    );
+
+    expect(html).toContain("never applied: no direction stated");
+  });
+
+  it("says so when only part of a track states a direction", () => {
+    // The middle point says nothing; the two either side give a course.
+    const patchy = westboundPoints().map((p, i) =>
+      i === 1 ? { t: p.t, lat: p.lat, lon: p.lon } : p,
+    );
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", patchy, BIG_SHIP)]),
+    );
+
+    expect(html).toContain("applied where she states a direction (2/3)");
+  });
+
   it("reports the closest approach in both metres and miles", () => {
     expect(html).toMatch(/\d+ m \(\d+\.\d\d NM\)/);
+  });
+
+  /**
+   * Each track says for itself what its positions refer to, and the two need not agree. A
+   * caveat that named one ship's antenna and assumed the other's would describe a distance
+   * nobody measured - and the reader checking a closest approach of tens of metres is
+   * exactly the reader who needs to know which two points it runs between.
+   */
+  it("names the point on each ship that the closest approach was measured between", () => {
+    const moved = actor("B", westboundPoints(), BIG_SHIP);
+    moved.track.positionAt = "reference-point";
+    const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), moved]));
+
+    expect(html).toContain("A&#39;s GPS antenna to B&#39;s reference point");
+  });
+
+  it("still says what the range runs between when only the second ship states offsets", () => {
+    // A carries no offsets at all; the caveat used to vanish with them.
+    expect(html).toContain("A&#39;s GPS antenna to B&#39;s GPS antenna");
+    expect(html).toContain("that point sits 140 m from the bow");
   });
 
   /**
