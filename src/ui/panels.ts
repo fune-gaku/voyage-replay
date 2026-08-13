@@ -122,20 +122,25 @@ function hullOffsetCell(prepared: Prepared): string {
 }
 
 /**
- * Whether the view really moved this hull off the position her track reports.
+ * Whether the view really moved this hull off the position her track reports, AT ONE INSTANT.
  *
- * Everything on the page that describes the picture has to agree about this, or one section
- * contradicts another a paragraph apart - which is the failure the offsets were applied to
- * fix, reappearing in the prose instead of in the geometry.
+ * The instant is the whole point. Placement is not a property of a ship, or even of a track:
+ * the renderer decides it from the sample it is drawing, and declines wherever that sample
+ * states no heading and no course. A track that says which way she points at some points and
+ * not at others is placed for part of its length and not for the rest, so a sentence about
+ * one moment - the closest approach - has to be answered for that moment. Answering it from
+ * the track as a whole says "placed" over a hull sitting on its antenna.
  */
-function isPlacedFromOffsets({ actor, track }: Prepared): boolean {
+function isPlacedAt({ actor, track }: Prepared, epochSeconds: number): boolean {
   const offset = hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets);
   if (offset.kind !== "offset") return false;
 
   // An antenna stated as being exactly amidships is a real arrangement, not a missing value,
   // and it moves the hull nowhere. Having done the arithmetic is not having moved anything.
-  const moves = offset.forwardMetres !== 0 || offset.starboardMetres !== 0;
-  return moves && statedDirectionCount(track) > 0;
+  if (offset.forwardMetres === 0 && offset.starboardMetres === 0) return false;
+
+  const state = sampleAt(track, epochSeconds);
+  return state !== null && (state.headingDegreesTrue ?? state.cogDegreesTrue) !== undefined;
 }
 
 function statedDirectionCount(track: PreparedTrack): number {
@@ -161,7 +166,7 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
       ["Between", `${first.actor.id} and ${second.actor.id}`],
       ["At", `${formatClock(cpa.epochSeconds, scenario.meta.timeZone)} local`],
       ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
-    ]) + note(approachCaveat(both))
+    ]) + note(approachCaveat(both, cpa.epochSeconds))
   );
 }
 
@@ -172,12 +177,12 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
  * ship's may be her antenna and the other's already moved to her reference point. Naming
  * both is the only version that stays true when they differ.
  *
- * Whether the view disagrees with the figure depends on whether the view moved anything, so
- * that half is written from the same test the actor table uses rather than assumed. A page
- * that says "the hulls are placed from these offsets" beside two hulls drawn at their
+ * Whether the view disagrees with the figure depends on whether the view moved anything at
+ * the moment this figure describes, so that half is asked of that moment rather than assumed.
+ * A page that says "the hulls are placed from these offsets" beside two hulls drawn at their
  * antennae has reproduced, in prose, the fault the offsets were applied to fix.
  */
-function approachCaveat(both: [Prepared, Prepared]): string {
+function approachCaveat(both: [Prepared, Prepared], epochSeconds: number): string {
   const [first, second] = both;
   const between = `${reportedPoint(first)} to ${reportedPoint(second)}`;
   // Whichever of the two states its offsets, for the sake of one concrete distance. Either
@@ -188,25 +193,26 @@ function approachCaveat(both: [Prepared, Prepared]): string {
     ? ` On ${withOffsets.actor.id} that point sits ${offsets.fromBowMetres} m from the bow.`
     : "";
 
-  return `Measured ${between}, which is what the sources state.${howFar} ${viewCaveat(both)}`;
+  const caveat = viewCaveat(both, epochSeconds);
+  return `Measured ${between}, which is what the sources state.${howFar} ${caveat}`;
 }
 
-/** How the picture stands to that figure, which depends on what the picture actually did. */
-function viewCaveat(both: [Prepared, Prepared]): string {
-  const placed = both.filter(isPlacedFromOffsets).map((p) => p.actor.id);
+/** How the picture stands to that figure, at the moment the figure is about. */
+function viewCaveat(both: [Prepared, Prepared], epochSeconds: number): string {
+  const placed = both.filter((p) => isPlacedAt(p, epochSeconds)).map((p) => p.actor.id);
   const gap = "the gap between hulls, which needs their shapes rather than two points: issue #10";
 
   if (placed.length === 0) {
     return (
-      "No hull in the view was moved off the position reported for her, so this is also the " +
-      `distance between the hulls as drawn - though still not ${gap}.`
+      "At that moment neither hull in the view is moved off the position reported for her, " +
+      `so this is also the distance between the hulls as drawn - though still not ${gap}.`
     );
   }
 
   const clause =
     placed.length === 1
-      ? `${placed[0]}'s hull is placed from her offsets in the view`
-      : "Both hulls are placed from their offsets in the view";
+      ? `At that moment ${placed[0]}'s hull in the view is placed from her offsets`
+      : "At that moment both hulls in the view are placed from their offsets";
   return `${clause}; this range is not, so it is not ${gap}.`;
 }
 
