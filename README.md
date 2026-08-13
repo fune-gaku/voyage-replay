@@ -200,7 +200,9 @@ No source PDFs are vendored here.
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) first — open an issue with a plan before writing code.
+An issue is the only way in. Bug reports, feature proposals and corrections to the domain
+reasoning are all welcome; pull requests from outside the development team are not accepted, and
+the reasoning is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
