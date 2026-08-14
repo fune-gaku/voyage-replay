@@ -1,11 +1,11 @@
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import type * as THREE from "three";
-import type { Group, Object3D, Scene } from "three";
+import type { Group, Object3D, Points, PointsMaterial, Scene } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
 import { prepareActor, sampleAt } from "../src/core/track.js";
-import type { Scenario } from "../src/core/types.js";
+import type { Scenario, TrackPoint } from "../src/core/types.js";
 import {
   actor,
   BIG_SHIP,
@@ -393,6 +393,80 @@ describe("the two views", () => {
 
     const camera = lastFrame().camera as OrthographicCamera;
     expect((camera.right - camera.left) / (camera.top - camera.bottom)).toBeCloseTo(2, 6);
+  });
+});
+
+/**
+ * Rule 21 gives the sidelights 112.5 degrees each, on opposite sides, and they do not
+ * overlap: a ship shows one of them or the other and never both at once. The renderer drew
+ * every lamp she carried whatever it was being watched from, so a bridge view showed a red
+ * and a green together - a picture of an observer standing in two places, contradicted in
+ * words by the panel underneath it, which has always asked `visibleLights`.
+ *
+ * The two cases below are the same ship watched from opposite sides. Both have to hold: one
+ * alone passes just as well with the bearing measured from the wrong bow, which is the
+ * mistake that comes out exactly 180 degrees round and still looks like a ship.
+ */
+describe("which of another ship's lamps a bridge can see", () => {
+  const GREEN = 0x2ad04a;
+  const RED = 0xf0323c;
+  const WHITE = 0xfff6e0;
+
+  /** Two points in the same place: this test is about aspect, and nothing here moves. */
+  function moored(lat: number, lon: number, headingDegreesTrue: number): TrackPoint[] {
+    return [0, 1].map((minute) => ({
+      t: `2025-01-01T00:0${minute}:00Z`,
+      lat,
+      lon,
+      cogDegreesTrue: headingDegreesTrue,
+      headingDegreesTrue,
+    }));
+  }
+
+  function lampsLitOnTheWatched(watcherLon: number): number[] {
+    // She heads due north; the watcher lies a kilometre off, east or west, so the bearing
+    // of him from her bow is a right angle one way or the other. No boundary to argue with.
+    const watched = actor("B", moored(0, 0, 0), BIG_SHIP);
+    const watcher = actor("A", moored(0, watcherLon, 0), COASTER);
+    const replay = replayOf(scenario([watcher, watched]));
+
+    replay.setView({ kind: "bridge", actorId: "A" });
+
+    const ship = ships(lastFrame().scene)[1]!;
+    return partsOf(ship)[1]!
+      .children.filter((child) => child.visible && child.type === "Points")
+      .map((lamp) => ((lamp as Points).material as PointsMaterial).color.getHex());
+  }
+
+  it("shows her starboard side to a bridge on her starboard beam", () => {
+    const lit = lampsLitOnTheWatched(0.01);
+
+    expect(lit).toContain(GREEN);
+    expect(lit).not.toContain(RED);
+    // Two masthead lights: she is 180 m, and Rule 23 makes the second one obligatory at 50.
+    expect(lit.filter((colour) => colour === WHITE)).toHaveLength(2);
+  });
+
+  it("shows her port side to a bridge on her port beam", () => {
+    const lit = lampsLitOnTheWatched(-0.01);
+
+    expect(lit).toContain(RED);
+    expect(lit).not.toContain(GREEN);
+  });
+
+  /**
+   * The plan view is where the sectors are drawn, and they annotate the lamps. Blanking the
+   * lamps there would leave a wedge coming out of nothing.
+   */
+  it("leaves every lamp lit in the plan view, which is a diagram", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    replay.setView({ kind: "overhead" });
+
+    const lamps = partsOf(ships(lastFrame().scene)[1]!)[1]!.children.filter(
+      (child) => child.type === "Points",
+    );
+    expect(lamps.every((lamp) => lamp.visible)).toBe(true);
   });
 });
 

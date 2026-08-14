@@ -12,6 +12,7 @@ import {
   offsetMetres,
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
+import { relativeBearingDegrees, type LocalPosition } from "../core/geodesy.js";
 import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import {
@@ -22,7 +23,7 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildHull } from "./hull.js";
-import { buildNavigationLights } from "./navlights.js";
+import { buildNavigationLights, type NavigationLightGroup } from "./navlights.js";
 import { buildScene, buildTrackLine, type SceneParts } from "./scene.js";
 
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
@@ -43,7 +44,7 @@ interface Cast {
   group: Group;
   /** Holds the hull and the lamps, offset from the reported position to the hull's centre. */
   onHull: Group;
-  sectors: Group;
+  lights: NavigationLightGroup;
   /** That offset, along the ship's own axes. Only applies while she has a direction. */
   hullOffset: OffsetMetres;
   eyeHeightMetres: number;
@@ -189,8 +190,12 @@ export class Replay {
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
     const diagramMode = this.view.kind === "overhead";
+    // Whose eyes, and where they are. A ship does not observe her own lights, so she is
+    // handed no observer and keeps every lamp she carries.
+    const viewer = diagramMode ? null : this.viewer();
+    const eye = viewer ? (sampleAt(viewer.track, this.currentSeconds)?.position ?? null) : null;
     for (const member of this.stage.cast) {
-      this.place(member, diagramMode);
+      this.place(member, diagramMode, member === viewer ? null : eye);
     }
 
     this.stage.diagram.visible = diagramMode;
@@ -198,8 +203,15 @@ export class Replay {
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
   }
 
+  /** The ship the camera is standing on, if it is standing on one. */
+  private viewer(): Cast | null {
+    if (this.view.kind !== "bridge") return null;
+    const cast = this.stage.cast;
+    return cast.find((c) => c.actor.id === this.view.actorId) ?? cast[0] ?? null;
+  }
+
   /** One ship at the current instant, or hidden if her track does not reach it. */
-  private place(member: Cast, diagramMode: boolean): void {
+  private place(member: Cast, diagramMode: boolean, eye: LocalPosition | null): void {
     const state = sampleAt(member.track, this.currentSeconds);
     member.group.visible = state !== null;
     if (!state) return;
@@ -217,7 +229,14 @@ export class Replay {
 
     // The arcs are a diagram for the plan view. From a bridge they would be a picture
     // of the rules rather than of the night.
-    member.sectors.visible = diagramMode;
+    member.lights.sectors.visible = diagramMode;
+
+    // And from a bridge, only the lamps whose arc reaches that bridge. The argument is
+    // the observer's bearing from THIS ship's bow, which is the order that goes wrong:
+    // reversed, it is out by 180 degrees and still looks like a ship.
+    member.lights.showFrom(
+      eye === null ? null : relativeBearingDegrees(state.position, eye, heading),
+    );
   }
 
   /** Follow whoever is on stage, wide enough to hold them all with room to read. */
@@ -340,7 +359,7 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     vessel,
     group,
     onHull,
-    sectors: lights.sectors,
+    lights,
     hullOffset: offsetMetres(
       hullCentreOffset(actor.track.positionAt, actor.vessel?.referencePointOffsets),
     ),
