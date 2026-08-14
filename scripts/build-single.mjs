@@ -11,12 +11,19 @@
  *
  * What comes out here opens by double-clicking it. It can be attached to an email, dropped
  * into an article, or archived next to the video it produced, and it will still open in ten
- * years because there is nothing left to fetch. That last property is the point: a
+ * years because everything it needs is inside it. That property is the point: a
  * reconstruction whose viewer has rotted is not evidence of anything.
  *
  * The cost is size - three.js travels inside every file - which is accepted. A few hundred
  * kilobytes is nothing against a video, and a CDN reference would trade the one property
  * worth having for it.
+ *
+ * ONE thing is deliberately outside: the map tiles under the plan view, which the page
+ * fetches when it is opened (see src/render/basemap.ts for why - licence and size, in that
+ * order). The check below therefore still means what it always did, and is worth reading
+ * precisely: nothing may be left that the page needs in order to WORK. Offline, the
+ * reconstruction runs exactly as it did before there was a map, with water and a grid where
+ * the land was. A decoration that did not load is not a viewer that has rotted.
  */
 
 import { execFileSync } from "node:child_process";
@@ -87,7 +94,10 @@ single = single.replace(
 );
 if (single === before) throw new Error("did not find the scenario placeholder to fill");
 
-// Nothing may be left pointing outside the file, or the whole point is lost.
+// Nothing the page needs in order to load may be left pointing outside the file, or the
+// whole point is lost. Tags are what this looks at, which is exactly the right scope: a
+// script or a stylesheet fetched here is a page that does not open, while the tile URLs the
+// renderer builds at run time are a map that may or may not arrive.
 const leftovers = [
   ...single.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)="([^"]+)"/g),
 ]
@@ -106,3 +116,4 @@ writeFileSync(target, single);
 const kilobytes = Math.round(Buffer.byteLength(single) / 1024);
 console.log(`\nwrote ${target} (${kilobytes} kB, self-contained)`);
 console.log("open it directly - no server needed.");
+console.log("the map under the plan view is fetched on opening; offline it draws water.");

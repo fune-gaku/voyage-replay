@@ -1,4 +1,4 @@
-import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
+import { OrthographicCamera, PerspectiveCamera, Texture, Vector3 } from "three";
 import type * as THREE from "three";
 import type { Group, Object3D, Points, PointsMaterial, Scene } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,29 +17,38 @@ import {
   silentPoints,
   westboundPoints,
 } from "./fixtures.js";
+import { fakeDocument } from "./dom.js";
 
 const gl = vi.hoisted(() => ({
-  frames: [] as { scene: Scene; camera: unknown }[],
+  frames: [] as { scene: Scene; camera: unknown; cleared: boolean }[],
   sizes: [] as [number, number][],
   pixelRatios: [] as number[],
+  tiles: [] as ((texture: unknown) => void)[],
+  tileUrls: [] as string[],
   disposals: 0,
 }));
 
 /**
- * The only part of three.js that wants a GL context.
+ * The two parts of three.js that want a browser.
  *
  * Everything else it provides - scenes, geometry, cameras, and the arithmetic that puts a
  * hull where the track says it was - runs in Node exactly as it does in a browser. Standing
- * in for this one class is what makes the rest of this file reachable, and recording what
- * it was handed is what makes it worth reaching: the camera passed to `render` is the
- * answer to "what was the viewer looking through", which is the question this class exists
+ * in for these is what makes the rest of this file reachable, and recording what the
+ * renderer was handed is what makes it worth reaching: the camera passed to `render` is the
+ * answer to "what was the viewer looking through", which is the question that class exists
  * to settle.
+ *
+ * `TextureLoader` is here because the basemap asks it for map tiles the moment a stage is
+ * built. Its stand-in never calls anything back, which is also the state of a page whose
+ * tiles have not arrived - so every test below sees the scene without a map, which is the
+ * one the geometry claims in this file are about.
  */
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof THREE>();
   return {
     ...actual,
     WebGLRenderer: class {
+      autoClear = true;
       setPixelRatio(ratio: number): void {
         gl.pixelRatios.push(ratio);
       }
@@ -47,10 +56,24 @@ vi.mock("three", async (importOriginal) => {
         gl.sizes.push([width, height]);
       }
       render(scene: Scene, camera: unknown): void {
-        gl.frames.push({ scene, camera });
+        // `cleared` is the state of autoClear at the moment of the draw. An overlay pass
+        // has to turn it off and put it back; leaving it off means the next frame is
+        // painted on top of this one, which on a dark scene shows up as a smear rather
+        // than as anything obviously broken.
+        gl.frames.push({ scene, camera, cleared: this.autoClear });
       }
       dispose(): void {
         gl.disposals += 1;
+      }
+    },
+    TextureLoader: class {
+      setCrossOrigin(): void {
+        // What it guards against is a browser refusing to sample the texture, which no
+        // test here can reach.
+      }
+      load(url: string, onLoad: (texture: unknown) => void): void {
+        gl.tileUrls.push(url);
+        gl.tiles.push(onLoad);
       }
     },
   };
@@ -71,20 +94,38 @@ function replayOf(
   return new Replay(canvas, subject);
 }
 
-/** The last frame drawn. Nothing is asserted about frames nobody would have seen. */
+/**
+ * The last frame of the SCENE. Nothing is asserted about frames nobody would have seen.
+ *
+ * Every draw is now two passes - the world, then the captions over it in pixel space - so
+ * taking simply the last one would hand back the overlay's own scene and camera, and every
+ * claim below about what the viewer was looking through would be about the wrong one.
+ */
 function lastFrame(): { scene: Scene; camera: unknown } {
-  const frame = gl.frames.at(-1);
+  const frame = gl.frames.filter((f) => f.scene.name !== "overlay").at(-1);
   if (!frame) throw new Error("nothing was rendered");
   return frame;
 }
 
+/** The captions drawn over that frame, if any were. */
+function overlayFrames(): { scene: Scene; camera: unknown; cleared: boolean }[] {
+  return gl.frames.filter((f) => f.scene.name === "overlay");
+}
+
 /**
- * Scene layout, fixed by `buildScene` and `buildStage`: water, ambient, key, the cast,
- * the grid, then the diagram. The two Groups are the cast and the diagram, in that order.
+ * The cast and the diagram, by name.
+ *
+ * By name rather than by position among the scene's Groups, because the scene has since
+ * grown a third - the basemap - and an index that silently moved would have returned the
+ * map where the ships were asked for, with every assertion below still reading sensibly.
  */
 function groupsOf(scene: Scene): [Group, Group] {
-  const groups = scene.children.filter((child): child is Group => child.type === "Group");
-  return [groups[0]!, groups[1]!];
+  const named = (name: string): Group => {
+    const group = scene.children.find((child) => child.name === name);
+    if (!group) throw new Error(`no ${name} group in the scene`);
+    return group as Group;
+  };
+  return [named("actors"), named("diagram")];
 }
 
 function ships(scene: Scene): Object3D[] {
@@ -116,9 +157,14 @@ beforeEach(() => {
   gl.frames = [];
   gl.sizes = [];
   gl.pixelRatios = [];
+  gl.tiles = [];
+  gl.tileUrls = [];
   gl.disposals = 0;
   frameCallbacks = [];
   vi.stubGlobal("window", { devicePixelRatio: 1 });
+  // The clock caption is written on every frame, so the renderer now wants a 2D canvas
+  // from the first one - there is no longer a path through this class that draws no text.
+  vi.stubGlobal("document", fakeDocument());
   vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
     frameCallbacks.push(cb);
   });
@@ -389,6 +435,155 @@ describe("the two views", () => {
     expect(camera.top - camera.bottom).toBeGreaterThanOrEqual(BIG_SHIP.loaMetres * 7);
   });
 
+  /**
+   * The automatic framing is the right default and the wrong thing to be stuck with, so a
+   * scale can be stated - and a stated one is also the only way two frames can be compared,
+   * since a distance read off a picture whose zoom moved on its own means nothing.
+   */
+  it("holds the plan view at a scale when given one", () => {
+    const replay = replayOf();
+    replay.setScale(4000);
+    replay.seek(replay.endSeconds);
+
+    const camera = lastFrame().camera as OrthographicCamera;
+    expect(camera.top - camera.bottom).toBeCloseTo(4000, 6);
+  });
+
+  /**
+   * The floor on the automatic framing stops the frame collapsing onto two hulls at the
+   * moment they touch when nobody asked it to. Somebody choosing 200 m has asked, and a
+   * control silently refusing the value it was set to is worse than no control.
+   */
+  it("lets a chosen scale go closer than the automatic framing would", () => {
+    const replay = replayOf();
+    replay.setScale(200);
+
+    const camera = lastFrame().camera as OrthographicCamera;
+    expect(camera.top - camera.bottom).toBeCloseTo(200, 6);
+    expect(200).toBeLessThan(BIG_SHIP.loaMetres * 7);
+  });
+
+  it("goes back to following the ships when the scale is cleared", () => {
+    const replay = replayOf();
+    replay.setScale(200);
+    replay.setScale(null);
+    replay.seek(replay.endSeconds);
+
+    const camera = lastFrame().camera as OrthographicCamera;
+    expect(camera.top - camera.bottom).toBeGreaterThanOrEqual(BIG_SHIP.loaMetres * 7);
+  });
+
+  // Only the scale. The frame still centres on whoever is on stage, which is what makes it
+  // a picture of the encounter rather than of a patch of sea.
+  it("keeps the frame on the ships at a chosen scale", () => {
+    const replay = replayOf();
+    replay.setScale(4000);
+
+    const camera = lastFrame().camera as OrthographicCamera;
+    const ship = ships(lastFrame().scene)[0]!.position;
+    expect(Math.abs(camera.position.x - ship.x)).toBeLessThan(4000);
+  });
+
+  /**
+   * Tracks rarely start together - in this project's reference case one transponder is
+   * recorded half an hour before the other - and a frame that held only what was on stage
+   * collapsed onto a single ship for the first ninety seconds of the replay, which is the
+   * part meant to show two ships approaching from opposite ends of the sea.
+   *
+   * The ship herself stays hidden until her own record begins. It is the frame that has to
+   * hold her, and what fills the space until she appears is her track line.
+   */
+  it("holds every ship in the case, including one whose track has not reached this moment", () => {
+    const subject = scenario([
+      actor("A", northboundPoints(), COASTER),
+      actor("B", westboundPoints().slice(0, 2), BIG_SHIP),
+    ]);
+    const replay = replayOf(subject);
+    replay.seek(replay.endSeconds);
+
+    const track = prepareActor(subject.actors[1]!, subject.origin);
+    const parted = toWorld(sampleAt(track, track.endSeconds)!.position);
+    const camera = lastFrame().camera as OrthographicCamera;
+
+    expect(ships(lastFrame().scene)[1]!.visible, "her track ended a minute ago").toBe(false);
+    expect(Math.abs(parted.x - camera.position.x), "and she is still in frame").toBeLessThan(
+      (camera.right - camera.left) / 2,
+    );
+    expect(Math.abs(parted.z - camera.position.z)).toBeLessThan((camera.top - camera.bottom) / 2);
+  });
+
+  /**
+   * What the wheel over the picture starts from. Reporting the scale in use, rather than
+   * the one that was set, is the whole of it: on automatic nothing has been set, and a
+   * control that started from that would send the first notch to an end of the range
+   * instead of to the step next to what is on screen.
+   */
+  it("reports how much sea it is showing, set or not", () => {
+    const replay = replayOf();
+    replay.seek(replay.endSeconds);
+    const framed = replay.planExtentMetres;
+    expect(framed).toBeGreaterThan(0);
+
+    replay.setScale(4000);
+    expect(replay.planExtentMetres).toBeCloseTo(4000, 6);
+    replay.setScale(null);
+    expect(replay.planExtentMetres).toBeCloseTo(framed, 6);
+  });
+
+  /**
+   * The frame follows the ships until somebody takes it somewhere else. In pixels because
+   * the caller has a pointer and this class has the projection: on a canvas 400 px tall
+   * showing 4 km, one pixel is ten metres.
+   *
+   * The ground goes the way the pointer goes, so the frame goes the other way. Pull the
+   * picture thirty pixels right and the view has moved three hundred metres WEST; pull it
+   * ten pixels down and the view has moved a hundred metres NORTH, because screen up is
+   * north. Get either sign wrong and the map slides away from the pointer instead of
+   * sticking to it, which is the one thing a drag has to do.
+   */
+  it("moves the plan view by a drag, in metres worked out from the scale", () => {
+    const replay = replayOf(scenario(), fakeCanvas(800, 400));
+    replay.setScale(4000);
+    const before = (lastFrame().camera as OrthographicCamera).position.clone();
+
+    replay.panByPixels(30, 10);
+    const after = (lastFrame().camera as OrthographicCamera).position;
+
+    expect(after.x - before.x, "west, ten metres a pixel").toBeCloseTo(-300, 6);
+    // World Z is south, so a hundred metres north is a hundred less Z.
+    expect(after.z - before.z, "and north").toBeCloseTo(-100, 6);
+  });
+
+  it("keeps the drag where it was put as playback runs on", () => {
+    const replay = replayOf();
+    replay.setScale(4000);
+    replay.panByPixels(100, 0);
+    const dragged = (lastFrame().camera as OrthographicCamera).position.x;
+
+    replay.seek(replay.startSeconds + 60);
+    expect((lastFrame().camera as OrthographicCamera).position.x).toBeCloseTo(dragged, 6);
+  });
+
+  it("follows the ships again when handed back", () => {
+    const replay = replayOf();
+    const following = (lastFrame().camera as OrthographicCamera).position.x;
+
+    replay.panByPixels(200, 0);
+    expect((lastFrame().camera as OrthographicCamera).position.x).not.toBeCloseTo(following, 6);
+
+    replay.recentre();
+    expect((lastFrame().camera as OrthographicCamera).position.x).toBeCloseTo(following, 6);
+  });
+
+  // A drag is only the centre. Zooming out still opens to the ships' separation, which is
+  // what makes the two worth overriding separately.
+  it("leaves the scale alone when the view is dragged", () => {
+    const replay = replayOf();
+    const extent = replay.planExtentMetres;
+    replay.panByPixels(50, 50);
+    expect(replay.planExtentMetres).toBeCloseTo(extent, 6);
+  });
+
   it("widens the plan view to the shape of the canvas", () => {
     const replay = replayOf(scenario(), fakeCanvas(800, 400));
     replay.seek(replay.endSeconds);
@@ -535,6 +730,9 @@ describe("playback", () => {
   it("advances by the elapsed time multiplied by the speed", () => {
     vi.useFakeTimers();
     const replay = replayOf();
+    // Away from the very start, so this is a resume rather than an opening: the opening
+    // shot holds the clock while the camera flies in, which is its own case below.
+    replay.seek(replay.startSeconds + 10);
     replay.setSpeed(20);
     replay.play();
     expect(replay.isPlaying).toBe(true);
@@ -549,6 +747,7 @@ describe("playback", () => {
   it("stops of its own accord at the end of the tracks", () => {
     vi.useFakeTimers();
     const replay = replayOf();
+    replay.seek(replay.startSeconds + 10);
     replay.setSpeed(1000);
     replay.play();
 
@@ -586,6 +785,162 @@ describe("playback", () => {
     const replay = replayOf();
     replay.setSpeed(5);
     expect(replay.speedMultiplier).toBe(5);
+  });
+});
+
+describe("what the frame says about itself", () => {
+  /**
+   * Both captions are drawn INTO the picture, not beside it. Recording goes through
+   * `canvas.captureStream()`, which copies the drawing buffer and nothing else - so a
+   * caption in the page around the canvas is absent from every video the page produces.
+   */
+  function captionsOf(): Object3D[] {
+    return overlayFrames().at(-1)!.scene.children;
+  }
+
+  function deliverATile(): void {
+    gl.tiles[0]!(new Texture());
+  }
+
+  it("asks for map tiles as soon as there is a stage", () => {
+    replayOf();
+    expect(gl.tileUrls.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The clock goes on every frame. It is the one thing a recording cannot recover for
+   * itself, and the plan view no longer says night by being dark - so if the picture does
+   * not state the time, a night collision reads as an afternoon one.
+   */
+  it("draws the captions over the picture, in pixel space", () => {
+    const replay = replayOf();
+    gl.frames = [];
+    replay.seek(replay.startSeconds + 30);
+
+    const [picture, captions] = gl.frames;
+    expect(gl.frames).toHaveLength(2);
+    expect(captions!.scene).not.toBe(picture!.scene);
+    expect((captions!.camera as OrthographicCamera).right, "canvas pixels").toBe(800);
+  });
+
+  it("keeps the clock showing whichever view is up", () => {
+    const replay = replayOf();
+    expect(captionsOf()[0]!.visible, "from above").toBe(true);
+    replay.setView({ kind: "bridge", actorId: "A" });
+    expect(captionsOf()[0]!.visible, "and from a bridge").toBe(true);
+  });
+
+  /**
+   * Off for the overlay and back on afterwards. Left off, the next frame is painted over
+   * the last one - which on a night scene reads as motion blur rather than as a fault.
+   */
+  it("puts the frame buffer back to clearing itself", () => {
+    const replay = replayOf();
+    expect(overlayFrames().at(-1)!.cleared).toBe(false);
+
+    replay.seek(replay.startSeconds + 30);
+    expect(gl.frames.at(-2)!.cleared).toBe(true);
+  });
+
+  // A page whose tiles never came back must not carry a line crediting the map it did not
+  // draw. Having asked for them is not having got them.
+  it("credits no map until a tile has arrived", () => {
+    replayOf();
+    expect(captionsOf()[1]!.visible).toBe(false);
+
+    deliverATile();
+    expect(captionsOf()[1]!.visible).toBe(true);
+  });
+
+  // The map is drawn from above and not from a bridge, so from a bridge there is again
+  // nothing to credit.
+  it("does not credit a map over a view that is not showing one", () => {
+    const replay = replayOf();
+    deliverATile();
+
+    replay.setView({ kind: "bridge", actorId: "A" });
+    expect(captionsOf()[1]!.visible).toBe(false);
+  });
+});
+
+/**
+ * A reconstruction answers "what happened" and says nothing about "where". Framed on the
+ * action from the first frame, every case looks like the same patch of open water - so
+ * pressing play opens a thousand kilometres out, holds the clock while the camera closes
+ * in, and lets go where the encounter starts.
+ */
+describe("the opening shot", () => {
+  function playFromTheTop(): InstanceType<typeof Replay> {
+    vi.useFakeTimers();
+    const replay = replayOf();
+    replay.play();
+    return replay;
+  }
+
+  function runFor(milliseconds: number): void {
+    vi.advanceTimersByTime(milliseconds);
+    frameCallbacks.pop()!();
+  }
+
+  it("opens far enough out to hold a country", () => {
+    const replay = replayOf();
+    const settled = replay.planExtentMetres;
+    vi.useFakeTimers();
+    replay.play();
+
+    expect(replay.planExtentMetres).toBeCloseTo(1_000_000, -1);
+    expect(replay.planExtentMetres).toBeGreaterThan(settled * 10);
+  });
+
+  it("holds the clock while the camera is still travelling", () => {
+    const replay = playFromTheTop();
+    runFor(1000);
+    expect(replay.timeSeconds).toBe(replay.startSeconds);
+  });
+
+  it("closes in, and lets go where the encounter starts", () => {
+    const replay = playFromTheTop();
+    runFor(1000);
+    const partway = replay.planExtentMetres;
+    expect(partway).toBeLessThan(1_000_000);
+
+    runFor(4000);
+    expect(replay.planExtentMetres).toBeLessThan(partway);
+    expect(replay.timeSeconds, "and the clock is running again").toBe(replay.startSeconds);
+
+    runFor(100);
+    expect(replay.timeSeconds).toBeGreaterThan(replay.startSeconds);
+  });
+
+  // Resuming after a pause is not an opening: flying out to a thousand kilometres in the
+  // middle of an encounter loses the reader's place rather than giving them one.
+  it("does not run when playback is resumed part way through", () => {
+    vi.useFakeTimers();
+    const replay = replayOf();
+    replay.seek(replay.startSeconds + 30);
+    const settled = replay.planExtentMetres;
+
+    replay.play();
+    expect(replay.planExtentMetres).toBeCloseTo(settled, 6);
+  });
+
+  // A chosen scale is somebody having said where they want to be looking.
+  it("does not overrule a scale that was chosen", () => {
+    vi.useFakeTimers();
+    const replay = replayOf();
+    replay.setScale(4000);
+    replay.play();
+
+    expect(replay.planExtentMetres).toBeCloseTo(4000, 6);
+  });
+
+  it("gets out of the way as soon as the view is touched", () => {
+    const replay = playFromTheTop();
+    runFor(500);
+    expect(replay.planExtentMetres).toBeGreaterThan(100_000);
+
+    replay.setScale(null);
+    expect(replay.planExtentMetres, "back to following the ships at once").toBeLessThan(100_000);
   });
 });
 

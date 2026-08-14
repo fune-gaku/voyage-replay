@@ -7,9 +7,10 @@
 
 import { prepareActor } from "./core/track.js";
 import type { Scenario, ScenarioMeta } from "./core/types.js";
+import { formatDate } from "./core/time.js";
 import { parseScenario, validateScenario } from "./core/validate.js";
 import { Replay } from "./render/player.js";
-import { escapeHtml, formatDate, renderPanels, section } from "./ui/panels.js";
+import { escapeHtml, renderPanels, section } from "./ui/panels.js";
 import { wireRecordingButton } from "./ui/recording-button.js";
 import { wireTransport } from "./ui/transport.js";
 
@@ -79,10 +80,13 @@ function show(scenario: Scenario, report: Report): void {
 function wireControls(replay: Replay, meta: ScenarioMeta): void {
   const { startFollowing } = wireTransport({
     replay,
+    canvas: must("#view", HTMLCanvasElement),
     clock: must("#clock", HTMLElement),
     playPause: must("#playPause", HTMLButtonElement),
     scrub: must("#scrub", HTMLInputElement),
     speed: must("#speed", HTMLSelectElement),
+    scale: must("#scale", HTMLSelectElement),
+    recentre: must("#recentre", HTMLButtonElement),
     views: must("#views", HTMLElement),
     timeZone: meta.timeZone,
   });

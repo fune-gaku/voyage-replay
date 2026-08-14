@@ -2,7 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
-import { escapeHtml, formatClock, formatDate, renderPanels } from "../src/ui/panels.js";
+import { formatClock, formatDate } from "../src/core/time.js";
+import { escapeHtml, renderPanels } from "../src/ui/panels.js";
+
+/** The reference case's instant and place, which is what makes the sky figures checkable. */
+const SUO_NADA_LIKE: Scenario = {
+  formatVersion: "0.1",
+  meta: {
+    title: "Suo-nada",
+    occurredAt: "2025-11-27T18:13:30+09:00",
+    timeZone: "Asia/Tokyo",
+  },
+  origin: { lat: 33.905, lon: 131.7116667 },
+  environment: { lightCondition: "night" },
+  actors: [],
+};
 import {
   actor,
   BIG_SHIP,
@@ -20,6 +34,36 @@ function panelsFor(subject: Scenario): string {
   }));
   return renderPanels(subject, prepared);
 }
+
+describe("the sky panel", () => {
+  /**
+   * The scenario says "night" by hand. The sky says how far down the sun was, that the
+   * lights were required by Rule 20, and that there was a half moon forty degrees up -
+   * none of which a transcribed field can carry.
+   */
+  it("states the sun, the moon and the rule, computed from the time and the place", () => {
+    const html = renderPanels(SUO_NADA_LIKE, []);
+    expect(html).toContain("Sun level");
+    expect(html).toContain("astronomical-twilight");
+    expect(html).toContain("COLREG Rule 20");
+    expect(html).toMatch(/\d+% lit/);
+  });
+
+  // Cloud is what decides whether that moon lit the sea or nothing at all, and no report
+  // this project has met states it. A figure without that beside it is a claim.
+  it("says what the figures do not cover", () => {
+    expect(renderPanels(SUO_NADA_LIKE, [])).toContain("cloud");
+  });
+
+  it("calls out a file whose light condition the sun does not support", () => {
+    const daylit = {
+      ...SUO_NADA_LIKE,
+      environment: { lightCondition: "day" as const },
+    };
+    expect(renderPanels(daylit, [])).toContain("does not support");
+    expect(renderPanels(SUO_NADA_LIKE, [])).not.toContain("does not support");
+  });
+});
 
 describe("escapeHtml", () => {
   // Titles, localities and citations come out of a PDF and go straight into innerHTML.
