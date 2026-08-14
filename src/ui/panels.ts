@@ -123,6 +123,7 @@ function actorTable(prepared: Prepared[]): string {
     "position at",
     "hull offset",
     "heading?",
+    "hull",
   ];
   const rows = prepared.map(({ actor, track }) => {
     const withHeading = track.points.filter((p) => p.headingDegreesTrue !== undefined).length;
@@ -136,6 +137,7 @@ function actorTable(prepared: Prepared[]): string {
       actor.track.positionAt,
       hullOffsetCell({ actor, track }),
       `${withHeading}/${track.points.length}`,
+      hullShapeCell(actor.vessel),
     ];
   });
   return dataTable(head, rows);
@@ -166,6 +168,22 @@ function hullOffsetCell(prepared: Prepared): string {
     return `${moved}, applied where she states a direction (${stated}/${track.points.length})`;
   }
   return moved;
+}
+
+/**
+ * What the drawn hull rests on, which is not the same for every ship.
+ *
+ * The shape is generated from length and beam - it is the right SIZE and a generic form, not
+ * this ship's lines - and everything vertical is still a fraction of the beam rather than a
+ * class's depth (issue #8). The one part that can be measured is where the bridge sits: a
+ * ship that transmits her four AIS dimensions has said where her antenna is, and that is the
+ * wheelhouse. A reader has to be able to tell that ship from one whose bridge was put at a
+ * fraction of her length because nothing said otherwise, because on screen they look alike.
+ */
+function hullShapeCell(vessel: Vessel | undefined): string {
+  if (!vessel) return "-";
+  const bow = vessel.type === "pushing-ahead" ? "box bow" : "generic";
+  return vessel.referencePointOffsets ? `${bow}, bridge measured` : `${bow}, bridge assumed`;
 }
 
 /**
