@@ -4,6 +4,7 @@ import type { Group, Object3D, Points, PointsMaterial, Scene } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
+import { toLatLon } from "../src/core/geodesy.js";
 import { prepareActor, sampleAt } from "../src/core/track.js";
 import type { Actor, Scenario, TrackPoint } from "../src/core/types.js";
 import {
@@ -11,6 +12,7 @@ import {
   BIG_SHIP,
   COASTER,
   northboundPoints,
+  ORIGIN,
   scenario,
   silentPoints,
   westboundPoints,
@@ -475,6 +477,29 @@ describe("which of another ship's lamps a bridge can see", () => {
 
     expect(lit).toContain(RED);
     expect(lit).not.toContain(GREEN);
+  });
+
+  /**
+   * The other end of the same line. Her lamps and her sectors hang off the group carrying
+   * the antenna offset, so the arcs have to be read from the hull's centre - the place they
+   * are drawn - and not from the position her track reports.
+   *
+   * BIG_SHIP's centre is 50 m forward of her antenna and 4 m to starboard of it. Heading
+   * north with the watcher 100 m due east of that antenna, the two origins fall on opposite
+   * sides of a Rule 21 boundary: 98.9 degrees from the antenna, which is her starboard side,
+   * and 124.4 from her centre, which is abaft the beam and therefore her stern light. Twelve
+   * degrees of margin either way, so this is not a rounding argument.
+   */
+  it("reads the arcs from the hull, where the lamps are, and not from the antenna", () => {
+    const eastOfHer = toLatLon({ east: 100, north: 0 }, ORIGIN);
+    const lit = watch(
+      actor("A", moored(eastOfHer.lat, eastOfHer.lon, 0), COASTER),
+      actor("B", moored(0, 0, 0), BIG_SHIP),
+    );
+
+    expect(lit).not.toContain(GREEN);
+    // Her stern light alone: the masthead arc stops 22.5 degrees abaft the beam as well.
+    expect(lit.filter((colour) => colour === WHITE)).toHaveLength(1);
   });
 
   /**

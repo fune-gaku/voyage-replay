@@ -294,7 +294,18 @@ export class Replay {
     // of the rules rather than of the night.
     member.lights.sectors.visible = diagramMode;
 
-    member.lights.showFor(audienceFor(member, state.position, heading, eye));
+    // Her lamps and her sectors hang off onHull, so the arcs have to be answered from the
+    // hull's centre too. Answering from the reported position instead puts the wedge the
+    // plan view draws and the lamp the bridge view lights on different bearings, by the
+    // whole antenna offset - fifty metres on the ship in the fixtures.
+    member.lights.showFor(
+      audienceFor(
+        member,
+        offsetAlongHeading(state.position, heading, offset.forwardMetres, offset.starboardMetres),
+        heading,
+        eye,
+      ),
+    );
   }
 
   /** Follow whoever is on stage, wide enough to hold them all with room to read. */

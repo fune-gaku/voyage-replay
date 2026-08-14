@@ -2,9 +2,9 @@
 
 **Replay and reconstruct marine incidents in 3D — from overhead, from your own bridge, or from the other ship's.**
 
-![From the tanker's bridge in the seven minutes before a collision: two masthead lights and a green
-sidelight approach on a bearing that barely moves, growing into a hull that fills the
-window.](docs/images/bridge-approach.gif)
+![From the tanker's bridge in the seven minutes before a collision: masthead lights and a green
+sidelight approach on a bearing that barely moves, growing into a hull that fills the window, and
+the green goes out as she passes abaft the beam.](docs/images/bridge-approach.gif)
 
 *The reference case, from the bridge of the tanker, 18:06 to contact at 18:13:30. She reports her
 heading, so the camera looks where her bow pointed. The pushing unit reports none — her simplified
@@ -12,7 +12,8 @@ AIS does not transmit it — so she is drawn along her course over ground, and t
 show over follow from that rather than from a stated heading. On those terms she shows a white
 light and a green one, which is what the report's own analysis records the officer of the watch
 seeing, on a bearing that barely moves while the range falls. The swing at the end is the tanker's
-own heading coming round, 272° to 300° in the last two minutes.*
+own heading coming round, 272° to 300° in the last two minutes; the green going out in the last
+seconds is the tanker crossing abaft the unit's beam, into the arc of her stern light.*
 
 Give it a timestamped track for each vessel and it rebuilds the encounter: hulls at true scale,
 navigation lights showing over their real arcs, and a camera you can put anywhere, including on
