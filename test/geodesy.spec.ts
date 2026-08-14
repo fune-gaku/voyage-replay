@@ -6,6 +6,7 @@ import {
   interpolateDegrees,
   METRES_PER_NAUTICAL_MILE,
   normaliseDegrees,
+  offsetAlongHeading,
   parseDegreesMinutesSeconds,
   relativeBearingDegrees,
   toLatLon,
@@ -92,5 +93,40 @@ describe("angles", () => {
     expect(interpolateDegrees(350, 10, 0.5)).toBeCloseTo(0, 9);
     expect(interpolateDegrees(10, 350, 0.5)).toBeCloseTo(0, 9);
     expect(interpolateDegrees(90, 180, 1 / 3)).toBeCloseTo(120, 9);
+  });
+});
+
+/**
+ * The wheelhouse is abaft the bow along the ship's OWN fore-and-aft line, not along a world
+ * axis, and the same is true of a wheelhouse offset to one side. Doing it in world axes
+ * gives an eye that swings out of the hull as she turns, and it looks like a camera bug
+ * rather than like arithmetic.
+ *
+ * This is also what decides which of another ship's lamps can be seen from that eye, so it
+ * has one home and both callers use it - see `render/cameras.ts`.
+ */
+describe("offsetting along a ship's own axes", () => {
+  it("puts a fore-and-aft offset along the heading", () => {
+    const northbound = offsetAlongHeading({ east: 0, north: 0 }, 0, -30, 0);
+    expect(northbound.north).toBeCloseTo(-30, 9);
+    expect(northbound.east).toBeCloseTo(0, 9);
+
+    const eastbound = offsetAlongHeading({ east: 0, north: 0 }, 90, -30, 0);
+    expect(eastbound.east).toBeCloseTo(-30, 9);
+    expect(eastbound.north).toBeCloseTo(0, 9);
+  });
+
+  it("puts an athwartships offset ninety degrees to the right of it", () => {
+    // Heading east, "to starboard" is south.
+    const eastbound = offsetAlongHeading({ east: 0, north: 0 }, 90, 0, 4);
+    expect(eastbound.north).toBeCloseTo(-4, 9);
+    expect(eastbound.east).toBeCloseTo(0, 9);
+  });
+
+  it("adds both, from wherever she is", () => {
+    const eye = offsetAlongHeading({ east: 100, north: 200 }, 180, 50, 10);
+    // Heading south: forward is -north, starboard is -east.
+    expect(eye.north).toBeCloseTo(150, 9);
+    expect(eye.east).toBeCloseTo(90, 9);
   });
 });

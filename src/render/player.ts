@@ -12,7 +12,7 @@ import {
   offsetMetres,
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
-import { relativeBearingDegrees, type LocalPosition } from "../core/geodesy.js";
+import { offsetAlongHeading, relativeBearingDegrees, type LocalPosition } from "../core/geodesy.js";
 import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import {
@@ -23,7 +23,11 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildHull } from "./hull.js";
-import { buildNavigationLights, type NavigationLightGroup } from "./navlights.js";
+import {
+  buildNavigationLights,
+  type LampAudience,
+  type NavigationLightGroup,
+} from "./navlights.js";
 import { buildScene, buildTrackLine, type SceneParts } from "./scene.js";
 
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
@@ -74,6 +78,39 @@ function placementOf(member: Cast, state: SampledState): { heading: number; offs
   return stated === undefined
     ? { heading: 0, offset: NO_OFFSET }
     : { heading: stated, offset: member.hullOffset };
+}
+
+/** The watchkeeper the picture is being drawn for: which ship, where her eyes are, and her bow. */
+interface Eye {
+  member: Cast;
+  position: LocalPosition;
+  heading: number;
+}
+
+/**
+ * Who this ship's lamps are being lit for.
+ *
+ * The bearing handed on is the observer's, measured from the bow of the ship carrying the
+ * lamps - the argument order CLAUDE.md warns about, because reversing it comes out exactly
+ * 180 degrees round and still looks like a ship. Note which heading it is measured against:
+ * hers, never the watcher's.
+ *
+ * No eye at all means the plan view, or a bridge whose own track has run out; both want the
+ * diagram, which is what the renderer drew before any of this and is right for a picture
+ * that is annotating itself rather than reporting a sighting.
+ */
+function audienceFor(
+  member: Cast,
+  position: LocalPosition,
+  heading: number,
+  eye: Eye | null,
+): LampAudience {
+  if (!eye) return { kind: "diagram" };
+  if (eye.member === member) return { kind: "self" };
+  return {
+    kind: "observer",
+    relativeBearingDegrees: relativeBearingDegrees(position, eye.position, heading),
+  };
 }
 
 /**
@@ -190,12 +227,9 @@ export class Replay {
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
     const diagramMode = this.view.kind === "overhead";
-    // Whose eyes, and where they are. A ship does not observe her own lights, so she is
-    // handed no observer and keeps every lamp she carries.
-    const viewer = diagramMode ? null : this.viewer();
-    const eye = viewer ? (sampleAt(viewer.track, this.currentSeconds)?.position ?? null) : null;
+    const eye = diagramMode ? null : this.eye();
     for (const member of this.stage.cast) {
-      this.place(member, diagramMode, member === viewer ? null : eye);
+      this.place(member, diagramMode, eye);
     }
 
     this.stage.diagram.visible = diagramMode;
@@ -210,8 +244,37 @@ export class Replay {
     return cast.find((c) => c.actor.id === this.view.actorId) ?? cast[0] ?? null;
   }
 
+  /**
+   * Where the watchkeeper's eyes are, worked out once.
+   *
+   * The camera goes here and the light arcs are answered from here, and they have to be the
+   * same point or the picture disagrees with itself: this is tens of metres from the
+   * reported position on a large ship - antenna to hull centre, then hull centre to the
+   * wheelhouse - which is nothing at four miles and decides which sidelight shows at a
+   * cable.
+   */
+  private eye(): Eye | null {
+    const member = this.viewer();
+    if (!member) return null;
+
+    const state = sampleAt(member.track, this.currentSeconds);
+    if (!state) return null;
+
+    const { heading, offset } = placementOf(member, state);
+    return {
+      member,
+      heading,
+      position: offsetAlongHeading(
+        state.position,
+        heading,
+        member.bridgeOffsetForwardMetres + offset.forwardMetres,
+        offset.starboardMetres,
+      ),
+    };
+  }
+
   /** One ship at the current instant, or hidden if her track does not reach it. */
-  private place(member: Cast, diagramMode: boolean, eye: LocalPosition | null): void {
+  private place(member: Cast, diagramMode: boolean, eye: Eye | null): void {
     const state = sampleAt(member.track, this.currentSeconds);
     member.group.visible = state !== null;
     if (!state) return;
@@ -231,12 +294,7 @@ export class Replay {
     // of the rules rather than of the night.
     member.lights.sectors.visible = diagramMode;
 
-    // And from a bridge, only the lamps whose arc reaches that bridge. The argument is
-    // the observer's bearing from THIS ship's bow, which is the order that goes wrong:
-    // reversed, it is out by 180 degrees and still looks like a ship.
-    member.lights.showFrom(
-      eye === null ? null : relativeBearingDegrees(state.position, eye, heading),
-    );
+    member.lights.showFor(audienceFor(member, state.position, heading, eye));
   }
 
   /** Follow whoever is on stage, wide enough to hold them all with room to read. */
@@ -261,20 +319,11 @@ export class Replay {
       return this.overhead;
     }
 
-    const cast = this.stage.cast;
-    const member = cast.find((c) => c.actor.id === this.view.actorId) ?? cast[0];
-    if (!member) return this.overhead;
-
-    const state = sampleAt(member.track, this.currentSeconds);
-    if (!state) return this.overhead;
-
     // The eye goes wherever the hull went, or it ends up outside the ship it belongs to.
-    const { heading, offset } = placementOf(member, state);
-    placeBridgeCamera(this.bridge, state.position, heading, {
-      eyeHeightMetres: member.eyeHeightMetres,
-      offsetForwardMetres: member.bridgeOffsetForwardMetres + offset.forwardMetres,
-      offsetStarboardMetres: offset.starboardMetres,
-    });
+    const eye = this.eye();
+    if (!eye) return this.overhead;
+
+    placeBridgeCamera(this.bridge, eye.position, eye.heading, eye.member.eyeHeightMetres);
     return this.bridge;
   }
 

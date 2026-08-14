@@ -39,46 +39,30 @@ describe("the overhead camera", () => {
   });
 });
 
+/**
+ * Where on the ship the eye sits is no longer decided here - `offsetAlongHeading` works it
+ * out, once, so that the arcs of another ship's lamps are answered from the same point the
+ * camera looks from. What is left is the two things a camera does: stand somewhere at some
+ * height, and face along the bow.
+ */
 describe("the bridge camera", () => {
-  const fit = { eyeHeightMetres: 14, offsetForwardMetres: -30, offsetStarboardMetres: 0 };
-
   it("sits at the height of the wheelhouse windows", () => {
     const camera = makeBridgeCamera(1.5);
-    placeBridgeCamera(camera, { east: 0, north: 0 }, 0, fit);
+    placeBridgeCamera(camera, { east: 0, north: 0 }, 0, 14);
     expect(camera.position.y).toBeCloseTo(14, 9);
   });
 
-  // The bridge is aft of the hull's centre, and "aft" is along the ship's own fore-and-aft
-  // line, not along a world axis. Heading north, an offset of -30 m puts the eye 30 m
-  // south of the reported position; heading east it puts it 30 m west.
-  it("offsets along the ship's fore-and-aft line, not along the world's", () => {
-    const northbound = makeBridgeCamera(1.5);
-    placeBridgeCamera(northbound, { east: 0, north: 0 }, 0, fit);
-    expect(northbound.position.z).toBeCloseTo(30, 6);
-    expect(northbound.position.x).toBeCloseTo(0, 6);
-
-    const eastbound = makeBridgeCamera(1.5);
-    placeBridgeCamera(eastbound, { east: 0, north: 0 }, 90, fit);
-    expect(eastbound.position.x).toBeCloseTo(-30, 6);
-    expect(eastbound.position.z).toBeCloseTo(0, 6);
-  });
-
-  /**
-   * The athwartships half of the same offset. It is small on most ships and never zero once
-   * a hull has been moved onto its AIS offsets, and it turns with her exactly as the
-   * fore-and-aft half does - so heading east, "to starboard" is south, which is +Z.
-   */
-  it("offsets athwartships along the ship's own beam, not along the world's", () => {
+  it("stands at the eye it is given, in world axes", () => {
     const camera = makeBridgeCamera(1.5);
-    placeBridgeCamera(camera, { east: 0, north: 0 }, 90, { ...fit, offsetStarboardMetres: 4 });
+    placeBridgeCamera(camera, { east: 30, north: -40 }, 0, 14);
 
-    expect(camera.position.z).toBeCloseTo(4, 6);
-    expect(camera.position.x).toBeCloseTo(-30, 6);
+    expect(camera.position.x).toBeCloseTo(30, 6);
+    expect(camera.position.z).toBeCloseTo(40, 6);
   });
 
   it("looks where the bow points, not where the ship is going", () => {
     const camera = makeBridgeCamera(1.5);
-    placeBridgeCamera(camera, { east: 0, north: 0 }, 90, fit);
+    placeBridgeCamera(camera, { east: 0, north: 0 }, 90, 14);
     // -90 degrees about Y: a compass turn to starboard is a negative rotation here.
     expect(camera.rotation.y).toBeCloseTo(-Math.PI / 2, 9);
   });

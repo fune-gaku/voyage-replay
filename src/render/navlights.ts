@@ -46,15 +46,25 @@ const COLOURS: Record<string, ColorRepresentation> = {
   yellow: 0xf5d020,
 };
 
+/**
+ * Who the lamps are being drawn for. Three answers, and they are genuinely different -
+ * folding "nobody is watching" and "everybody is" into one absent value is how a ship ends
+ * up showing both her sidelights to her own wheelhouse.
+ */
+export type LampAudience =
+  /** The plan view, where the sectors annotate the lamps and blanking one strands the other. */
+  | { kind: "diagram" }
+  /** Her own bridge. A watchkeeper does not see the lights her ship is showing to others. */
+  | { kind: "self" }
+  /** Another ship's bridge, on this bearing from THIS ship's bow. */
+  | { kind: "observer"; relativeBearingDegrees: number };
+
 export interface NavigationLightGroup {
   group: Group;
   /** The translucent arcs. Hidden from a bridge camera. */
   sectors: Group;
-  /**
-   * Leave lit only the lamps whose arc covers an observer on this relative bearing.
-   * `null` lights every lamp, for the views where the question does not arise.
-   */
-  showFrom(observerRelativeBearingDegrees: number | null): void;
+  /** Light the lamps this audience can actually see. */
+  showFor(audience: LampAudience): void;
 }
 
 /** Where on the hull each lamp sits, as fractions of length and beam. */
@@ -133,8 +143,8 @@ export function buildNavigationLights(vessel: Vessel, freeboard: number): Naviga
   return {
     group,
     sectors,
-    showFrom: (bearing) => {
-      showFrom(lamps, bearing);
+    showFor: (audience) => {
+      showFor(lamps, audience);
     },
   };
 }
@@ -150,16 +160,18 @@ export function buildNavigationLights(vessel: Vessel, freeboard: number): Naviga
  * kind of error this project exists to not make, and the panels already avoid it: they ask
  * `visibleLights` (`ui/panels.ts`) while the renderer used to ask nothing.
  *
- * The arcs tile the horizon, so something is always lit and this can never blank a ship.
+ * For an observer the arcs tile the horizon, so something is always lit and this can never
+ * blank a ship by accident. Her own bridge is the one case that draws nothing, on purpose.
  */
-function showFrom(
+function showFor(
   lamps: { light: NavigationLight; points: Points }[],
-  observerRelativeBearingDegrees: number | null,
+  audience: LampAudience,
 ): void {
   for (const lamp of lamps) {
     lamp.points.visible =
-      observerRelativeBearingDegrees === null ||
-      isWithinArc(observerRelativeBearingDegrees, lamp.light.arc);
+      audience.kind === "diagram" ||
+      (audience.kind === "observer" &&
+        isWithinArc(audience.relativeBearingDegrees, lamp.light.arc));
   }
 }
 
