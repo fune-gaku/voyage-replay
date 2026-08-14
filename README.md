@@ -2,6 +2,14 @@
 
 **Replay and reconstruct marine incidents in 3D — from overhead, from your own bridge, or from the other ship's.**
 
+![From the tanker's bridge in the seven minutes before a collision: two masthead lights and a green
+sidelight approach on a bearing that barely moves, growing into a hull that fills the
+window.](docs/images/bridge-approach.gif)
+
+*The reference case, from the bridge of the tanker, 18:06 to the moment of contact. The other
+ship's masthead lights and green sidelight sit on a bearing that barely moves while the range
+falls — steady bearing, closing range. The swing at the end is the tanker's own helm.*
+
 Give it a timestamped track for each vessel and it rebuilds the encounter: hulls at true scale,
 navigation lights showing over their real arcs, and a camera you can put anywhere, including on
 somebody's bridge.
