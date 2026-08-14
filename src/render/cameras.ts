@@ -10,23 +10,12 @@
  * ground. In a tideway those differ, and it is the heading the windows face.
  */
 
-import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
+import { OrthographicCamera, PerspectiveCamera } from "three";
 
 import { headingToRotationY, toWorld } from "./coords.js";
 import type { LocalPosition } from "../core/geodesy.js";
 
 export type ViewKind = "overhead" | "bridge";
-
-/**
- * Where the wheelhouse windows sit, measured from the position the track REPORTS - not from
- * the hull's centre. The two differ by the antenna offset (see actors/vessel/reference-point),
- * and measuring from the reported position is what keeps the eye inside the hull as drawn.
- */
-export interface BridgeFit {
-  eyeHeightMetres: number;
-  offsetForwardMetres: number;
-  offsetStarboardMetres: number;
-}
 
 export function makeOverheadCamera(): OrthographicCamera {
   const camera = new OrthographicCamera(-1, 1, 1, -1, 1, 60000);
@@ -72,26 +61,22 @@ export function makeBridgeCamera(aspect: number): PerspectiveCamera {
   return camera;
 }
 
+/**
+ * Put the eye at a point that has already been worked out, and turn it along the bow.
+ *
+ * Where on the ship that point is - aft to the wheelhouse, and off the centreline if she
+ * carries her antenna there - is the caller's arithmetic, in `offsetAlongHeading`, and it
+ * has to be, because the same point decides which of another ship's lamps can be seen from
+ * here. Two derivations of one eye is two answers to that question, and on a large ship
+ * they are tens of metres apart.
+ */
 export function placeBridgeCamera(
   camera: PerspectiveCamera,
-  position: LocalPosition,
+  eye: LocalPosition,
   headingDegreesTrue: number,
-  fit: BridgeFit,
+  eyeHeightMetres: number,
 ): void {
   const rotationY = headingToRotationY(headingDegreesTrue);
-
-  // Both offsets run along the ship's own axes, not along the world's, so they turn with
-  // her: the bridge stays aft however she is heading, and a wheelhouse offset to one side
-  // stays on that side.
-  const up = new Vector3(0, 1, 0);
-  const forward = new Vector3(0, 0, -1).applyAxisAngle(up, rotationY);
-  const starboard = new Vector3(1, 0, 0).applyAxisAngle(up, rotationY);
-  const base = toWorld(position, fit.eyeHeightMetres);
-  camera.position.copy(
-    base
-      .addScaledVector(forward, fit.offsetForwardMetres)
-      .addScaledVector(starboard, fit.offsetStarboardMetres),
-  );
-
+  camera.position.copy(toWorld(eye, eyeHeightMetres));
   camera.rotation.set(0, rotationY, 0);
 }

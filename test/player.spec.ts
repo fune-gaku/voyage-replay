@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
 import { prepareActor, sampleAt } from "../src/core/track.js";
-import type { Scenario, TrackPoint } from "../src/core/types.js";
+import type { Actor, Scenario, TrackPoint } from "../src/core/types.js";
 import {
   actor,
   BIG_SHIP,
@@ -423,19 +423,26 @@ describe("which of another ship's lamps a bridge can see", () => {
     }));
   }
 
-  function lampsLitOnTheWatched(watcherLon: number): number[] {
-    // She heads due north; the watcher lies a kilometre off, east or west, so the bearing
-    // of him from her bow is a right angle one way or the other. No boundary to argue with.
-    const watched = actor("B", moored(0, 0, 0), BIG_SHIP);
-    const watcher = actor("A", moored(0, watcherLon, 0), COASTER);
-    const replay = replayOf(scenario([watcher, watched]));
-
-    replay.setView({ kind: "bridge", actorId: "A" });
-
-    const ship = ships(lastFrame().scene)[1]!;
+  function litOn(ship: Object3D): number[] {
     return partsOf(ship)[1]!
       .children.filter((child) => child.visible && child.type === "Points")
       .map((lamp) => ((lamp as Points).material as PointsMaterial).color.getHex());
+  }
+
+  /** The watched ship is second in the cast, so second on stage. */
+  function watch(watcher: Actor, watched: Actor): number[] {
+    const replay = replayOf(scenario([watcher, watched]));
+    replay.setView({ kind: "bridge", actorId: "A" });
+    return litOn(ships(lastFrame().scene)[1]!);
+  }
+
+  function lampsLitOnTheWatched(watcherLon: number): number[] {
+    // She heads due north; the watcher lies a kilometre off, east or west, so the bearing
+    // of him from her bow is a right angle one way or the other. No boundary to argue with.
+    return watch(
+      actor("A", moored(0, watcherLon, 0), COASTER),
+      actor("B", moored(0, 0, 0), BIG_SHIP),
+    );
   }
 
   it("shows her starboard side to a bridge on her starboard beam", () => {
@@ -452,6 +459,35 @@ describe("which of another ship's lamps a bridge can see", () => {
 
     expect(lit).toContain(RED);
     expect(lit).not.toContain(GREEN);
+  });
+
+  /**
+   * Both ships on the same heading is a case that passes whichever bow the bearing is taken
+   * from, so here they differ. The watched ship heads east with the watcher a kilometre due
+   * north of her: that is 270 from HER bow, which is her port side, and 0 from HIS, which
+   * would be her starboard. Only one of those is the aspect she was actually presenting.
+   */
+  it("measures the bearing from the bow of the ship carrying the lamps", () => {
+    const lit = watch(
+      actor("A", moored(0.009, 0, 0), COASTER),
+      actor("B", moored(0, 0, 90), BIG_SHIP),
+    );
+
+    expect(lit).toContain(RED);
+    expect(lit).not.toContain(GREEN);
+  });
+
+  /**
+   * The lights a ship shows are for everybody except her. They are screened from her own
+   * wheelhouse precisely so they do not spoil the night vision of the person keeping the
+   * look-out, and a lamp drawn in the middle of his window is the same error as showing
+   * both sidelights at once - a light where no light was.
+   */
+  it("shows a bridge none of the lights her own ship is carrying", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "A" });
+
+    expect(litOn(ships(lastFrame().scene)[0]!)).toEqual([]);
   });
 
   /**
