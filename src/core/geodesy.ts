@@ -103,6 +103,27 @@ export function relativeBearingDegrees(
   return normaliseDegrees(bearingDegrees(observer, target) - headingDegreesTrue);
 }
 
+/**
+ * A point offset from `origin` along a ship's own axes rather than the world's:
+ * `forwardMetres` along the heading, `starboardMetres` to the right of it.
+ *
+ * Both turn with her, which is the whole reason this is not two additions at the call site:
+ * a wheelhouse stays abaft the bow and to whichever side it is on, whatever heading she
+ * happens to be steering.
+ */
+export function offsetAlongHeading(
+  origin: LocalPosition,
+  headingDegreesTrue: number,
+  forwardMetres: number,
+  starboardMetres: number,
+): LocalPosition {
+  const heading = toRadians(headingDegreesTrue);
+  return {
+    east: origin.east + forwardMetres * Math.sin(heading) + starboardMetres * Math.cos(heading),
+    north: origin.north + forwardMetres * Math.cos(heading) - starboardMetres * Math.sin(heading),
+  };
+}
+
 export function normaliseDegrees(degrees: number): number {
   return ((degrees % 360) + 360) % 360;
 }

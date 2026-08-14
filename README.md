@@ -2,13 +2,26 @@
 
 **Replay and reconstruct marine incidents in 3D — from overhead, from your own bridge, or from the other ship's.**
 
+![From the tanker's bridge in the seven minutes before a collision: masthead lights and a green
+sidelight approach on a bearing that barely moves, growing into a hull that fills the window, and
+the green goes out as she passes abaft the beam.](docs/images/bridge-approach.gif)
+
+*The reference case, from the bridge of the tanker, 18:06 to contact at 18:13:30. She reports her
+heading, so the camera looks where her bow pointed. The pushing unit reports none — her simplified
+AIS does not transmit it — so she is drawn along her course over ground, and the arcs her lights
+show over follow from that rather than from a stated heading. On those terms she shows a white
+light and a green one, which is what the report's own analysis records the officer of the watch
+seeing, on a bearing that barely moves while the range falls. The swing at the end is the tanker's
+own heading coming round, 272° to 300° in the last two minutes; the green going out in the last
+seconds is the tanker crossing abaft the unit's beam, into the arc of her stern light.*
+
 Give it a timestamped track for each vessel and it rebuilds the encounter: hulls at true scale,
 navigation lights showing over their real arcs, and a camera you can put anywhere, including on
 somebody's bridge.
 
 > **Status: early.** A scenario renders and plays back, from overhead or from either bridge, and
 > records to video. What is not in yet is a ship motion model — between samples a hull still
-> travels in a straight line. See [Roadmap](#roadmap).
+> travels in a straight line.
 
 ## Why
 
@@ -28,6 +41,10 @@ decreasing range, the classic signature of a collision course, and the report's 
 confirms the officer of the watch "saw a white light and a green light".
 
 The numbers were always in the report. This is what they look like.
+
+Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
+reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)
+has the measured numbers.
 
 ### Why not AI video
 
@@ -174,18 +191,6 @@ The pieces those would be built on exist and are tested — `src/index.ts` re-ex
 `parseScenario`, `prepareActor`, `closestPointOfApproach`, `visibleLights`, `describeAspect`
 and `checkPlausibility` — but nothing is wired up for consumption outside this repository yet.
 
-## Roadmap
-
-| | |
-|---|---|
-| **Done** | Format and schema, local-plane geodesy, track sampling, closest approach, COLREG Rule 21/22/23 light arcs, physical screening, one real reference case, 3D renderer with the three cameras, timeline with variable time compression, plan view at a stated scale or following the ships, drag and wheel-zoom, an opening shot that says where in the world this is, date and time drawn into the frame, webm capture, single-file build, map tiles under the plan view |
-| **Next** | Sun and moon computed from the time and place, and stated in the panels — done; next the hull catalogue and the ship motion model (first-order response, so a hull carries its turn instead of sliding sideways), both of which have to come before the light is made physical |
-| **After** | Coastline as vectors inside the scenario, so a file sent to somebody shows land offline; JTSB appendix-table extractor; digitiser for tracks that exist only as a plotted chart; radar/ARPA view |
-
-Roughly a third of recent JTSB collision reports carry enough data to reconstruct — and among
-reports of nine pages or more it is over 90%. [`docs/jtsb-extraction.md`](docs/jtsb-extraction.md)
-has the measured numbers.
-
 ## Data and attribution
 
 The example that ships with this repository is derived from a public Japan Transport Safety Board
@@ -235,7 +240,9 @@ stay hidden, and the credit never appears, because there is nothing to credit.
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) first — open an issue with a plan before writing code.
+An issue is the only way in. Bug reports, feature proposals and corrections to the domain
+reasoning are all welcome; pull requests from outside the development team are not accepted, and
+the reasoning is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
