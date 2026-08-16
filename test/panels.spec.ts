@@ -35,6 +35,34 @@ function panelsFor(subject: Scenario): string {
   return renderPanels(subject, prepared);
 }
 
+describe("what the drawn hull rests on", () => {
+  /**
+   * The shape is generated from length and beam: the right size, a generic form, and
+   * everything vertical still a fraction of the beam. The one part that can be measured is
+   * where the bridge sits, and a reader has to be able to tell a ship that stated her
+   * offsets from one whose bridge was put at a fraction of her length - on screen they look
+   * exactly alike.
+   */
+  it("says whether the bridge was measured or assumed", () => {
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), BIG_SHIP), actor("B", westboundPoints(), COASTER)]),
+    );
+    expect(html, "BIG_SHIP states her four AIS dimensions").toContain("bridge measured");
+    expect(html, "COASTER does not").toContain("bridge assumed");
+  });
+
+  // A pushing unit is a pusher against the stern of a barge, and a barge is a box.
+  it("names the box bow a pushing unit is drawn with", () => {
+    const pusher = actor("A", northboundPoints(), {
+      ...COASTER,
+      type: "pushing-ahead" as const,
+    });
+    expect(panelsFor(scenario([pusher, actor("B", westboundPoints(), BIG_SHIP)]))).toContain(
+      "box bow",
+    );
+  });
+});
+
 describe("the sky panel", () => {
   /**
    * The scenario says "night" by hand. The sky says how far down the sun was, that the
