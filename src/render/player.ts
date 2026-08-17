@@ -12,7 +12,13 @@ import {
   offsetMetres,
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
-import { offsetAlongHeading, relativeBearingDegrees, type LocalPosition } from "../core/geodesy.js";
+import {
+  distanceMetres,
+  offsetAlongHeading,
+  relativeBearingDegrees,
+  type LocalPosition,
+} from "../core/geodesy.js";
+import { dropMetres } from "../core/horizon.js";
 import { formatClock, formatDate } from "../core/time.js";
 import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
@@ -31,7 +37,14 @@ import {
   type LampAudience,
   type NavigationLightGroup,
 } from "./navlights.js";
-import { buildScene, buildTrackLine, type SceneParts, type TrackLine } from "./scene.js";
+import {
+  buildScene,
+  buildTrackLine,
+  type Ground,
+  type SceneParts,
+  type TrackLine,
+} from "./scene.js";
+import { TERRAIN_CREDIT } from "./terrain.js";
 
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
 const ACTOR_COLOURS = [0xd8443c, 0x3f7bd8, 0xd8b23c, 0x46b07a];
@@ -109,6 +122,20 @@ interface Eye {
 }
 
 /**
+ * How far below the tangent plane the earth's bulge has carried this ship, seen from that
+ * eye. Zero for the plan view, which is a chart and is drawn flat.
+ *
+ * The whole ship moves by one number. Over a 180 m hull at twenty kilometres, bow and stern
+ * differ by 0.49 m - a tilt of 0.16 degrees, in a renderer that models neither heel nor
+ * pitch - so bending her along her length would be precision about the wrong thing. The
+ * water and the land, which are tens of thousands of vertices spanning tens of kilometres,
+ * are bent properly, in the shader. See `render/curvature.ts`.
+ */
+function sinkage(position: LocalPosition, eye: Eye | null): number {
+  return eye ? -dropMetres(distanceMetres(position, eye.position)) : 0;
+}
+
+/**
  * Who this ship's lamps are being lit for.
  *
  * The bearing handed on is the observer's, measured from the bow of the ship carrying the
@@ -173,8 +200,10 @@ export class Replay {
    * asked it to; somebody who picks two hundred metres has asked.
    */
   private fixedExtentMetres: number | null = null;
-  /** Whether a map tile has arrived, which is what the credit answers for. */
+  /** Whether a map tile has arrived, which is what the plan view's credit answers for. */
   private mapCredited = false;
+  /** The same question for the land, which only the bridge view draws. */
+  private landCredited = false;
   /**
    * Where the plan view is looking, or null while it follows the ships.
    *
@@ -206,9 +235,15 @@ export class Replay {
     this.clock = this.overlay.caption("top-right", "figures");
     this.credit = this.overlay.caption("bottom-right", "text");
     this.timeZone = scenario.meta.timeZone;
-    this.stage = buildStage(scenario, () => {
-      this.mapCredited = true;
-      this.update();
+    this.stage = buildStage(scenario, {
+      onFirstTile: () => {
+        this.mapCredited = true;
+        this.update();
+      },
+      onFirstLandTile: () => {
+        this.landCredited = true;
+        this.update();
+      },
     });
     this.startSeconds = this.stage.startSeconds;
     this.endSeconds = this.stage.endSeconds;
@@ -367,6 +402,9 @@ export class Replay {
 
     this.stage.diagram.visible = diagramMode;
     this.stage.sceneParts.setDiagramView(diagramMode);
+    // After the ships, because it is the same eye they were just sunk against, and before
+    // the render, because it is what decides whether the world is curved at all.
+    this.stage.sceneParts.setEye(eye?.position ?? null, eye?.heading ?? 0);
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
     this.drawOverlay(diagramMode);
   }
@@ -376,21 +414,28 @@ export class Replay {
    *
    * The clock goes on every frame: it is the one thing a recording cannot recover for
    * itself, and the plan view no longer says night by being dark. The credit is narrower -
-   * only once a map tile has arrived, and only in the view the map is drawn in. A caption
+   * only once a tile has arrived, and only in the view that tile is drawn in. A caption
    * crediting a basemap over a bridge view, or over a scene whose tiles never loaded, is a
-   * false statement about the picture rather than an attribution of it.
+   * false statement about the picture rather than an attribution of it. Two layers now, in
+   * two views, so the caption names whichever one is actually on screen.
    */
   private drawOverlay(diagramMode: boolean): void {
     this.clock.set(
       `${formatDate(this.currentSeconds, this.timeZone)} ` +
         `${formatClock(this.currentSeconds, this.timeZone)} local`,
     );
-    this.credit.set(this.mapCredited && diagramMode ? BASEMAP_CREDIT : "");
+    this.credit.set(this.creditFor(diagramMode));
     if (!this.overlay.showing) return;
 
     this.renderer.autoClear = false;
     this.renderer.render(this.overlay.scene, this.overlay.camera);
     this.renderer.autoClear = true;
+  }
+
+  /** Whichever layer of ground this view is actually showing, or nothing. */
+  private creditFor(diagramMode: boolean): string {
+    if (diagramMode) return this.mapCredited ? BASEMAP_CREDIT : "";
+    return this.landCredited ? TERRAIN_CREDIT : "";
   }
 
   /** The ship the camera is standing on, if it is standing on one. */
@@ -436,8 +481,9 @@ export class Replay {
     if (!state) return;
 
     // The reported position, which is the antenna. The hull hangs off this group at the
-    // offset below, so what moves here is the point the source states.
-    member.group.position.copy(toWorld(state.position));
+    // offset below, so what moves here is the point the source states. The height is the
+    // earth getting in the way, and only from a bridge - see `sinkage`.
+    member.group.position.copy(toWorld(state.position, sinkage(state.position, eye)));
 
     // Heading is what the hull points along. Where the source has none - a Class B
     // transponder transmits no heading - the course over ground stands in, because
@@ -551,7 +597,7 @@ export class Replay {
   }
 }
 
-function buildStage(scenario: Scenario, onFirstTile: () => void): Stage {
+function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage {
   const prepared = scenario.actors.map((actor) => ({
     actor,
     track: prepareActor(actor, scenario.origin),
@@ -559,7 +605,7 @@ function buildStage(scenario: Scenario, onFirstTile: () => void): Stage {
   const tracks = prepared.map((p) => p.track);
   const sceneParts = buildScene(scenario.environment, extentOf(boundsOfTracks(tracks)), {
     origin: scenario.origin,
-    onFirstTile,
+    ...arrivals,
   });
 
   // Track lines belong to the diagram, not to the night: nobody on a bridge sees where

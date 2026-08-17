@@ -1,16 +1,19 @@
 /**
- * The sea, as a disc centred on the eye with rings that grow geometrically.
+ * The sea, as a disc centred on whoever is looking at it, with rings that grow
+ * geometrically.
  *
- * The renderer's water is one flat ten-thousand-kilometre square, and with curvature
- * applied that would be wrong in the one place it matters: a uniform grid fine enough to
- * bend smoothly at the horizon has to be fine everywhere, and a coarse one turns the
- * horizon into a visible polygon edge. Rings spaced geometrically put the vertices where
- * the curve is - a hundred and sixty of them from five metres to four hundred kilometres,
- * with about a third of them inside the horizon.
+ * It used to be one flat ten-thousand-kilometre square, which is correct for a chart and
+ * wrong the moment the world is allowed to curve: a uniform grid fine enough to bend
+ * smoothly near the horizon has to be that fine everywhere, and a coarse one turns the
+ * horizon into a visible run of polygon edges.
  *
- * Centred on the eye, and moved with it, so the same grid serves any position. The horizon
- * is then not drawn at all: it is where the sunk surface turns away and hides what is
- * behind it, which is what a horizon is.
+ * Rings spaced geometrically put the vertices where the curve is. A hundred and sixty of
+ * them from five metres to three thousand kilometres spends about a third of its resolution
+ * inside a twenty-metre eye's horizon and still reaches past the widest the plan view opens
+ * to. Centred on the eye and moved with it, so the same geometry serves any position.
+ *
+ * **The horizon is not drawn.** It is where the sunk surface turns away and hides what is
+ * behind it, which is what a horizon is. Nothing in here knows the eye height.
  */
 
 import { BufferAttribute, BufferGeometry, Mesh, type Material } from "three";
@@ -18,7 +21,12 @@ import { BufferAttribute, BufferGeometry, Mesh, type Material } from "three";
 const RINGS = 160;
 const SECTORS = 96;
 const INNER_METRES = 5;
-const OUTER_METRES = 400_000;
+
+/**
+ * Past the far end of the plan view's scale, which opens to a thousand kilometres. Cut to
+ * the case instead and both views run off the edge of the sea into the background colour.
+ */
+const OUTER_METRES = 3_000_000;
 
 export function buildWater(material: Material): Mesh {
   const geometry = new BufferGeometry();
@@ -28,8 +36,8 @@ export function buildWater(material: Material): Mesh {
 
   const mesh = new Mesh(geometry, material);
   mesh.name = "water";
-  // Never culled: the geometry is authored around the origin and then moved to the eye
-  // every frame, so its bounding sphere is in the wrong place by the whole scene.
+  // Never culled: the geometry is authored around the origin and then moved to wherever the
+  // view is, so its bounding sphere is in the wrong place by the whole scene.
   mesh.frustumCulled = false;
   return mesh;
 }
@@ -56,6 +64,7 @@ function ringIndices(): Uint32Array {
   const indices = new Uint32Array((SECTORS + (RINGS - 1) * SECTORS * 2) * 3);
   let at = 0;
 
+  // The cap, as a fan from the centre vertex out to the innermost ring.
   for (let sector = 0; sector < SECTORS; sector += 1) {
     const next = (sector + 1) % SECTORS;
     indices[at++] = 0;

@@ -18,6 +18,7 @@ import {
   westboundPoints,
 } from "./fixtures.js";
 import { fakeDocument } from "./dom.js";
+import { settleTiles, stubElevationServer, type ElevationServer } from "./elevation.js";
 
 const gl = vi.hoisted(() => ({
   frames: [] as { scene: Scene; camera: unknown; cleared: boolean }[],
@@ -82,6 +83,7 @@ vi.mock("three", async (importOriginal) => {
 const { Replay } = await import("../src/render/player.js");
 
 let frameCallbacks: (() => void)[] = [];
+let elevation: ElevationServer;
 
 function fakeCanvas(width = 800, height = 400): HTMLCanvasElement {
   return { clientWidth: width, clientHeight: height } as unknown as HTMLCanvasElement;
@@ -169,6 +171,10 @@ beforeEach(() => {
     frameCallbacks.push(cb);
   });
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  // Answering with the sea by default. Entering a bridge view starts the terrain layer
+  // fetching, and an unstubbed `fetch` here would put a hundred real requests on a public
+  // server every time this suite runs - quietly, because nothing waits for the promises.
+  elevation = stubElevationServer(true);
 });
 
 afterEach(() => {
@@ -859,6 +865,27 @@ describe("what the frame says about itself", () => {
     deliverATile();
 
     replay.setView({ kind: "bridge", actorId: "A" });
+    expect(captionsOf()[1]!.visible).toBe(false);
+  });
+
+  // The land is the other way round: the bridge view draws it and the plan view does not,
+  // so the caption has to name whichever layer is actually on screen rather than a source.
+  it("credits the elevation tiles from a bridge, once some land has arrived", async () => {
+    elevation.sea = false;
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    await settleTiles();
+
+    expect(captionsOf()[1]!.visible).toBe(true);
+    replay.setView({ kind: "overhead" });
+    expect(captionsOf()[1]!.visible).toBe(false);
+  });
+
+  it("credits no land over a bridge whose tiles never came back", async () => {
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    await settleTiles();
+
     expect(captionsOf()[1]!.visible).toBe(false);
   });
 });

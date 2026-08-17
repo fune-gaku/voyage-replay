@@ -358,6 +358,7 @@ describe("through the scene", () => {
     const parts = buildScene({ lightCondition: "night" }, 20000, {
       origin: ORIGIN,
       onFirstTile: () => undefined,
+      onFirstLandTile: () => undefined,
     });
     parts.setView(frame(20000));
 
@@ -371,7 +372,11 @@ describe("through the scene", () => {
    * horizon or nothing at all. It goes the same way as the light arcs and the track lines.
    */
   it("shows the map from above and not from a bridge", () => {
-    const parts = buildScene(undefined, 20000, { origin: ORIGIN, onFirstTile: () => undefined });
+    const parts = buildScene(undefined, 20000, {
+      origin: ORIGIN,
+      onFirstTile: () => undefined,
+      onFirstLandTile: () => undefined,
+    });
     const map = parts.scene.children.find((child) => child.name === "basemap")!;
 
     parts.setDiagramView(true);
