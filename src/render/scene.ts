@@ -7,6 +7,7 @@
  * and a reconstruction whose scale you cannot read is a cartoon.
  */
 
+import type { Mesh } from "three";
 import {
   AmbientLight,
   BufferAttribute,
@@ -19,9 +20,7 @@ import {
   Line,
   LineBasicMaterial,
   LineDashedMaterial,
-  Mesh,
   MeshStandardMaterial,
-  PlaneGeometry,
   Scene,
 } from "three";
 
@@ -30,18 +29,25 @@ import type { Environment } from "../core/types.js";
 import { sampleAt, type PreparedPoint, type PreparedTrack } from "../core/track.js";
 import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
+import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
+import { buildTerrain, type Terrain } from "./terrain.js";
+import { buildWater } from "./water.js";
 import type { LatLon } from "../core/types.js";
 
 /**
- * Where in the world this scenario is, and what to do when a map tile arrives.
+ * Where in the world this scenario is, and what to do when a piece of ground arrives.
  *
- * Optional as a pair rather than as two arguments, because they are useless apart: a scene
- * asked to draw a map has to be able to say where the map came from, and one that draws no
- * map must not say it anyway.
+ * Optional as a group rather than as separate arguments, because they are useless apart: a
+ * scene asked to draw the ground has to be able to say where the ground came from, and one
+ * that draws none must not say it anyway. The two callbacks are separate because the two
+ * layers appear in different views, and each credit answers only for its own.
  */
-export interface MapRequest {
+export interface Ground {
   origin: LatLon;
+  /** A basemap tile has landed. The plan view now has a map to credit. */
   onFirstTile: () => void;
+  /** An elevation tile has landed. The bridge view now has land to credit. */
+  onFirstLandTile: () => void;
 }
 
 export interface SceneParts {
@@ -70,8 +76,22 @@ export interface SceneParts {
    * The map goes the same way. Drawn flat on the water it is a chart seen from above and a
    * pale sheet lying on the sea from a wheelhouse window, where the land it describes would
    * be a dark shape on the horizon or nothing at all.
+   *
+   * So does the grid, and that one is a correction. It was drawn in both views, and a
+   * glowing lattice on the sea outside a wheelhouse window is the same kind of fiction as a
+   * track line - which this renderer already knew, and hid. The grid is the concession that
+   * makes a CHART's scale readable; it has no business in the night.
    */
   setDiagramView(on: boolean): void;
+  /**
+   * Where the watchkeeper is standing and which way her bow points, or null for the plan
+   * view and for a bridge whose own track has run out.
+   *
+   * One call, because these all answer to the same fact and disagreeing about it shows: the
+   * earth bends away from THIS eye, the sea's dense middle sits under THIS eye, and the
+   * land is fetched ahead of THIS bow. See `render/curvature.ts`.
+   */
+  setEye(eye: LocalPosition | null, headingDegreesTrue: number): void;
 }
 
 /**
@@ -84,8 +104,13 @@ export interface SceneParts {
  */
 const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 
-const NIGHT = { sky: 0x05080e, water: 0x0a121d, ambient: 0.28 };
-const DAY = { sky: 0x9fb8cf, water: 0x2b4a63, ambient: 0.95 };
+/**
+ * `land` is the terrain's own colour, and at night it is nearly black on purpose: from a
+ * wheelhouse a coast at ten miles IS a shape slightly darker than the sky, and painting it
+ * any lighter would be inventing a moon. Only the skyline is meant to be readable.
+ */
+const NIGHT = { sky: 0x05080e, water: 0x0a121d, land: 0x03050a, ambient: 0.28 };
+const DAY = { sky: 0x9fb8cf, water: 0x2b4a63, land: 0x6b7a5e, ambient: 0.95 };
 
 /**
  * What the tiles are multiplied by - and it does NOT follow the light condition.
@@ -112,7 +137,7 @@ type Palette = typeof NIGHT;
 export function buildScene(
   environment: Environment | undefined,
   extentMetres: number,
-  map?: MapRequest,
+  ground?: Ground,
 ): SceneParts {
   const night = isNight(environment);
   const palette = night ? NIGHT : DAY;
@@ -121,9 +146,11 @@ export function buildScene(
   scene.background = new Color(palette.sky);
   const fog = buildFog(palette, environment?.visibilityMetres, extentMetres);
   scene.fog = fog;
-  scene.add(waterMesh(palette));
 
-  const basemap = map ? buildBasemap(map.origin, MAP_TINT, map.onFirstTile) : null;
+  const curvature = makeCurvatureUniforms();
+  const water = addWater(scene, palette, curvature);
+  const terrain = addTerrain(scene, palette, curvature, ground);
+  const basemap = ground ? buildBasemap(ground.origin, MAP_TINT, ground.onFirstTile) : null;
   if (basemap) scene.add(basemap.group);
 
   const setLighting = addLighting(scene, palette, night);
@@ -134,43 +161,105 @@ export function buildScene(
   actors.name = "actors";
   scene.add(actors);
 
-  return { scene, actors, ...viewControls(scene, { basemap, fog }, setLighting, extentMetres) };
+  const parts = { basemap, terrain, water, fog, curvature, grid: addGrid(scene) };
+  return { scene, actors, ...viewControls(scene, parts, setLighting, extentMetres) };
+}
+
+/** The sea, which both views stand on and only one of them lets bend. */
+function addWater(scene: Scene, palette: Palette, curvature: CurvatureUniforms): Mesh {
+  const material = new MeshStandardMaterial({
+    color: palette.water,
+    roughness: 0.95,
+    metalness: 0.1,
+  });
+  applyCurvature(material, curvature);
+  const water = buildWater(material);
+  scene.add(water);
+  return water;
+}
+
+/** The land, if this scene knows where in the world it is. Hidden until a bridge asks. */
+function addTerrain(
+  scene: Scene,
+  palette: Palette,
+  curvature: CurvatureUniforms,
+  ground: Ground | undefined,
+): Terrain | null {
+  if (!ground) return null;
+  const material = new MeshStandardMaterial({ color: palette.land, roughness: 1, metalness: 0 });
+  applyCurvature(material, curvature);
+  const terrain = buildTerrain(ground.origin, material, ground.onFirstLandTile);
+  terrain.group.visible = false;
+  scene.add(terrain.group);
+  return terrain;
 }
 
 /** What the view switches between, as opposed to what it leaves alone. */
 interface Switchable {
   basemap: Basemap | null;
+  terrain: Terrain | null;
+  water: Mesh;
   fog: Fog;
+  curvature: CurvatureUniforms;
+  grid: GridControl;
 }
 
-/** The two switches the view owns, wired to everything that answers to them. */
+/** The switches the view owns, wired to everything that answers to them. */
 function viewControls(
   scene: Scene,
-  { basemap, fog }: Switchable,
+  parts: Switchable,
   setLighting: (on: boolean) => void,
   extentMetres: number,
-): Pick<SceneParts, "setView" | "setDiagramView"> {
-  const setGridSpacing = addGrid(scene);
+): Pick<SceneParts, "setView" | "setDiagramView" | "setEye"> {
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
-  setGridSpacing(extentMetres);
+  parts.grid.setSpacing(extentMetres);
 
   return {
     setView: (frame: Frame): void => {
-      setGridSpacing(frame.extentMetres);
-      basemap?.setView(frame);
+      parts.grid.setSpacing(frame.extentMetres);
+      parts.basemap?.setView(frame);
+      // The sea follows whatever is reading it, so the dense middle of the disc sits under
+      // the part of the picture somebody is looking at rather than at the origin.
+      parts.water.position.set(frame.centre.east, 0, -frame.centre.north);
     },
     setDiagramView: (on: boolean): void => {
-      setLighting(on);
-      if (basemap) basemap.group.visible = on;
-      // Fog is weather seen from a bridge; a chart is not drawn through it. Leaving it on
-      // fades the plan view by the distance from an eye twelve kilometres up - so a
-      // scenario a few hundred metres across renders as a sheet of empty sky, and any view
-      // taken far enough out does the same whatever the scenario.
-      scene.fog = on ? null : fog;
+      setDiagram(scene, parts, setLighting, on);
+    },
+    setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
+      standAt(parts, eye, headingDegreesTrue);
     },
   };
+}
+
+function setDiagram(
+  scene: Scene,
+  parts: Switchable,
+  setLighting: (on: boolean) => void,
+  on: boolean,
+): void {
+  setLighting(on);
+  if (parts.basemap) parts.basemap.group.visible = on;
+  parts.grid.setVisible(on);
+  // Fog is weather seen from a bridge; a chart is not drawn through it. Leaving it on
+  // fades the plan view by the distance from an eye twelve kilometres up - so a scenario a
+  // few hundred metres across renders as a sheet of empty sky, and any view taken far
+  // enough out does the same whatever the scenario.
+  scene.fog = on ? null : parts.fog;
+}
+
+/** Everything that answers to where the watchkeeper is standing. */
+function standAt(parts: Switchable, eye: LocalPosition | null, heading: number): void {
+  // A chart has never been drawn on a curved earth, and a bridge with no track to stand on
+  // is being drawn from the plan camera, which wants the same flat world.
+  parts.curvature.uCurve.value = eye ? 1 : 0;
+  if (parts.terrain) parts.terrain.group.visible = eye !== null;
+  if (!eye) return;
+
+  parts.curvature.uEye.value.set(eye.east, 0, -eye.north);
+  parts.water.position.set(eye.east, 0, -eye.north);
+  parts.terrain?.follow(eye, heading);
 }
 
 /** Twilight is drawn as night, and so is an unstated condition. */
@@ -199,25 +288,6 @@ function buildFog(
   );
 }
 
-/**
- * Sea to the edge of anything anyone will look at.
- *
- * Sized once rather than from the scenario, because neither view's need for it has much to
- * do with how far the ships travelled: a bridge camera wants water out to the horizon, and
- * the plan view can be taken out to hundreds of kilometres to ask where in the world this
- * is. Cut to the tracks, both run off the end of it and into the background colour.
- */
-const WATER_METRES = 10_000_000;
-
-function waterMesh(palette: Palette): Mesh {
-  const water = new Mesh(
-    new PlaneGeometry(WATER_METRES, WATER_METRES),
-    new MeshStandardMaterial({ color: palette.water, roughness: 0.95, metalness: 0.1 }),
-  );
-  water.rotation.x = -Math.PI / 2;
-  return water;
-}
-
 /** Adds the two lights and hands back the switch described on `setDiagramLighting`. */
 function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boolean) => void {
   const ambient = new AmbientLight(0xffffff, palette.ambient);
@@ -232,27 +302,40 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boole
   };
 }
 
+interface GridControl {
+  setSpacing(viewExtentMetres: number): void;
+  setVisible(on: boolean): void;
+}
+
 /** Owns the one grid, replacing it when the view has moved far enough to want another. */
-function addGrid(scene: Scene): (viewExtentMetres: number) => void {
+function addGrid(scene: Scene): GridControl {
   let grid: GridHelper | null = null;
   let spacing = 0;
+  let visible = true;
 
-  return (viewExtentMetres: number): void => {
-    // Aim for roughly a dozen squares across the frame.
-    const wanted = viewExtentMetres / 12;
-    const chosen = GRID_LADDER.find((step) => step >= wanted) ?? GRID_LADDER.at(-1) ?? 1000;
-    if (chosen === spacing) return;
-    spacing = chosen;
+  return {
+    setSpacing: (viewExtentMetres: number): void => {
+      // Aim for roughly a dozen squares across the frame.
+      const wanted = viewExtentMetres / 12;
+      const chosen = GRID_LADDER.find((step) => step >= wanted) ?? GRID_LADDER.at(-1) ?? 1000;
+      if (chosen === spacing) return;
+      spacing = chosen;
 
-    if (grid) {
-      scene.remove(grid);
-      grid.geometry.dispose();
-    }
-    // Cover many frames' worth so following the ships never runs off the grid's edge.
-    const divisions = 400;
-    grid = new GridHelper(chosen * divisions, divisions, 0x2c4055, 0x18283a);
-    grid.position.y = 0.05;
-    scene.add(grid);
+      if (grid) {
+        scene.remove(grid);
+        grid.geometry.dispose();
+      }
+      // Cover many frames' worth so following the ships never runs off the grid's edge.
+      const divisions = 400;
+      grid = new GridHelper(chosen * divisions, divisions, 0x2c4055, 0x18283a);
+      grid.position.y = 0.05;
+      grid.visible = visible;
+      scene.add(grid);
+    },
+    setVisible: (on: boolean): void => {
+      visible = on;
+      if (grid) grid.visible = on;
+    },
   };
 }
 
