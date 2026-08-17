@@ -33,5 +33,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "*.config.ts", "eslint.config.js"]
+  "include": ["src", "test", "prototypes", "*.config.ts", "eslint.config.js"]
 }
