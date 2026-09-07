@@ -114,9 +114,30 @@ function drawnSky(conditions: Conditions): string {
       "twilight; from a wheelhouse the dark is the evidence. "
     );
   }
+  if (conditions.statedLight === "restricted-visibility") return restrictedSky(conditions);
   return (
     "The view draws a fine day, because a sky has to be drawn and cloud is the one thing " +
     "that would decide it - which nothing states. "
+  );
+}
+
+/**
+ * Restricted visibility is a statement about the air, not about the sun.
+ *
+ * `lightCondition` mixes two axes and this is the value that shows it: a fog at noon and a
+ * fog at midnight are both "restricted-visibility", and the enum cannot tell them apart. The
+ * view has to pick, and it picks a day - so a scenario that was foggy in the dark is drawn
+ * wrongly, and this is the sentence that says so rather than letting the picture pass.
+ */
+function restrictedSky({ visibilityMetres }: Conditions): string {
+  const fog =
+    visibilityMetres === null
+      ? "no distance is given, so no fog is drawn - only the word"
+      : `fog is drawn out to the stated ${visibilityMetres} m`;
+  return (
+    `The file says restricted visibility, which is a statement about the air and not about ` +
+    `the sun. The view therefore draws this as a day, and ${fog}. A fog in the dark carries ` +
+    "the same word and would be drawn wrongly here; the field cannot tell the two apart. "
   );
 }
 

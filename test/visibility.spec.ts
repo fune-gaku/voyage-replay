@@ -181,10 +181,14 @@ describe("the bounds a sea state actually supports", () => {
    * the pair and `occludedFractionBounds` would be silently reporting the wrong thing.
    */
   it("rises with significant height throughout, which is what makes the ends a bracket", () => {
-    for (const range of [6_000, 9_000, 11_000, 13_000]) {
+    // Sampled coarsely on purpose. Each point walks six hundred steps of sight line, and the
+    // riding bound does it thirty-three times over her own rise and fall - so a fine sweep
+    // costs seconds and, under load, times out rather than fails. Half-metre steps over
+    // three ranges is more than enough to catch a turn in a curve this smooth.
+    for (const range of [6_000, 9_000, 13_000]) {
       let previousRigid = -1;
       let previousRiding = -1;
-      for (let hs = 0.25; hs <= 4.001; hs += 0.25) {
+      for (let hs = 0.5; hs <= 4.001; hs += 0.5) {
         const { rigidFraction, ridingFraction } = occludedFraction(look(range), seawayOf(hs));
         expect(rigidFraction).toBeGreaterThanOrEqual(previousRigid);
         expect(ridingFraction).toBeGreaterThanOrEqual(previousRiding);

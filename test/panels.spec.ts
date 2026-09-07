@@ -739,3 +739,32 @@ describe("the sea has a section of its own", () => {
     expect(html).toContain("assumed - nothing states it");
   });
 });
+
+describe("restricted visibility, which is the enum's fourth value and a different axis", () => {
+  /**
+   * `lightCondition` mixes a statement about the sun with a statement about the air, and
+   * this is the value that shows it. The view draws it as a day with fog, so declaring a
+   * fine day over it contradicts both the picture and the visibility printed two rows
+   * above. A fog in the dark carries the same word and would be drawn wrongly.
+   */
+  it("does not call a fog a fine day, and says what is drawn instead", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "restricted-visibility", visibilityMetres: 600 };
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("fine day");
+    expect(html).not.toContain("draws this as night");
+    expect(html).toContain("a statement about the air and not about the sun");
+    expect(html).toContain("fog is drawn out to the stated 600 m");
+    expect(html).toContain("would be drawn wrongly here");
+  });
+
+  it("says no fog is drawn where the file gives no distance", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "restricted-visibility", visibilityMetres: null };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no distance is given, so no fog is drawn");
+    expect(html).not.toContain("fine day");
+  });
+});
