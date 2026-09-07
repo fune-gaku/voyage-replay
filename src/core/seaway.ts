@@ -178,15 +178,16 @@ export interface SeaEstimate {
   /** Likewise for the direction: the file, the stated wind, or a bearing this tool chose. */
   directionFrom: "stated" | "wind" | "assumed";
   /**
-   * Why the wind did not supply the period, where it did not - so a page can say which of
-   * the two happened rather than leaving a reader who stated a wind to wonder.
+   * Why the wind did not supply the period, where it did not.
    *
-   * A speed was given and was too light to have raised this sea; or a force was given and a
-   * force is a class, which cannot yield a period without picking a speed out of the middle
-   * of one. Both false where the wind did supply it, or where there was no wind at all.
+   * One value rather than a pair of flags, because there turned out to be four answers and
+   * a pair collapsed two of them: a stated 150 knots against sea state 9 was reported as
+   * "too light", when it raises 16.6 m and the real reason is that the class runs past any
+   * height a finite wind can reach. A page that names the wrong refusal is worse than one
+   * that names none - it makes a false statement about the reader's own figure.
    */
-  windSpeedWasStated: boolean;
-  forceWasStatedWithoutSpeed: boolean;
+  periodDeclined:
+    "none" | "force-is-a-class" | "wind-too-light" | "sea-has-no-ceiling" | "nothing-stated";
   /**
    * Where the sea comes from, or null where the source does not say - which is every sea
    * state, since the class carries no direction at all. Null rather than a default, so that
@@ -254,10 +255,6 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
   // one period is applied to both.
   const roughest = roughestHeightMetres(waves, environment?.seaState);
   const period = periodFor(waves, wind, roughest);
-  const declined = {
-    windSpeedWasStated: period.from !== "wind" && wind?.source === "speed",
-    forceWasStatedWithoutSpeed: period.from !== "wind" && wind?.source === "force",
-  };
 
   if (waves?.significantHeightMetres !== undefined) {
     const seaway = seawayOf(waves.significantHeightMetres, period.seconds);
@@ -268,11 +265,11 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
       derivation: waves.derivation,
       roughEndIsOpen: false,
       periodFrom: period.from,
-      ...declined,
+      periodDeclined: period.declined,
       ...direction,
     };
   }
-  return fromSeaState(environment?.seaState, { ...period, ...declined }, direction);
+  return fromSeaState(environment?.seaState, period, direction);
 }
 
 /**
@@ -358,20 +355,42 @@ function periodFor(
   waves: Environment["waves"],
   wind: WindEstimate | null,
   heightMetres: number,
-): { seconds: number | undefined; from: SeaEstimate["periodFrom"] } {
+): {
+  seconds: number | undefined;
+  from: SeaEstimate["periodFrom"];
+  declined: SeaEstimate["periodDeclined"];
+} {
   // A sea of no height has no period, and every route into one is a fiction. A flat calm
   // beside a calm wind cleared the "could this wind raise it" test on nought against nought,
   // took the relation's own zero, and had it clamped straight back to the spectrum's floor -
   // so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
   // the relation alone moved the lie one step down; this is where it has to stop.
-  if (heightMetres <= 0) return { seconds: undefined, from: "none" };
+  if (heightMetres <= 0) return { seconds: undefined, from: "none", declined: "none" };
   if (waves?.peakPeriodSeconds !== undefined) {
-    return { seconds: waves.peakPeriodSeconds, from: "stated" };
+    return { seconds: waves.peakPeriodSeconds, from: "stated", declined: "none" };
   }
-  if (wind?.source === "speed" && windCouldRaise(wind, heightMetres)) {
-    return { seconds: periodFromWindSeconds(wind.fastestKnots), from: "wind" };
+  const declined = whyNotTheWind(wind, heightMetres);
+  if (declined === "none" && wind) {
+    return { seconds: periodFromWindSeconds(wind.fastestKnots), from: "wind", declined };
   }
-  return { seconds: undefined, from: "height" };
+  return { seconds: undefined, from: "height", declined };
+}
+
+/**
+ * Which of the four refusals applies, in the order of how specific each one is.
+ *
+ * An open-ended sea state comes first even where a force was stated: both are true then, and
+ * "no finite wind can cover this class" is the fact that would still hold if the file gave a
+ * speed. Reporting the weaker of two true reasons sends a reader to fix the wrong figure.
+ */
+function whyNotTheWind(
+  wind: WindEstimate | null,
+  heightMetres: number,
+): SeaEstimate["periodDeclined"] {
+  if (!Number.isFinite(heightMetres)) return "sea-has-no-ceiling";
+  if (!wind || wind.source === "direction-only") return "nothing-stated";
+  if (wind.source === "force") return "force-is-a-class";
+  return windCouldRaise(wind, heightMetres) ? "none" : "wind-too-light";
 }
 
 /**
@@ -392,8 +411,7 @@ function fromSeaState(
   period: {
     seconds: number | undefined;
     from: SeaEstimate["periodFrom"];
-    windSpeedWasStated: boolean;
-    forceWasStatedWithoutSpeed: boolean;
+    declined: SeaEstimate["periodDeclined"];
   },
   direction: { fromDegreesTrue: number | null; directionFrom: SeaEstimate["directionFrom"] },
 ): SeaEstimate | null {
@@ -409,8 +427,7 @@ function fromSeaState(
     derivation: "inferred",
     roughEndIsOpen: band.topIsOpen,
     periodFrom: period.from,
-    windSpeedWasStated: period.windSpeedWasStated,
-    forceWasStatedWithoutSpeed: period.forceWasStatedWithoutSpeed,
+    periodDeclined: period.declined,
     ...direction,
   };
 }

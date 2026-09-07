@@ -816,18 +816,28 @@ function periodSentence(sea: SeaEstimate): string {
  * is a class, and taking a period from one means taking a speed out of the middle of it.
  */
 function fromHeight(sea: SeaEstimate): string {
-  const base = "assumed from the height";
-  if (sea.windSpeedWasStated) {
-    return `${base}, the stated wind being too light to have raised this sea`;
-  }
-  if (sea.forceWasStatedWithoutSpeed) {
-    return (
-      `${base}: the file gives a Beaufort force and no speed, and a force is a class - ` +
-      "taking a period from one would mean taking a speed out of the middle of it"
-    );
-  }
-  return `${base}, the file giving neither a period nor a wind speed`;
+  return `assumed from the height, ${DECLINED[sea.periodDeclined]}`;
 }
+
+/**
+ * Why the wind was not used, in the reader's own terms.
+ *
+ * Four of them, and they were two until a stated 150 knots against sea state 9 came back as
+ * "too light" - it raises 16.6 m. The class simply has no ceiling, and no finite wind can
+ * cover one. Naming the wrong refusal is worse than naming none: it makes a false statement
+ * about the reader's own figure and sends them to correct it.
+ */
+const DECLINED: Record<SeaEstimate["periodDeclined"], string> = {
+  none: "which is not the refusal it looks like - report this",
+  "nothing-stated": "the file giving neither a period nor a wind speed",
+  "force-is-a-class":
+    "the file giving a Beaufort force and no speed - and a force is a class, so taking a " +
+    "period from one would mean taking a speed out of the middle of it",
+  "wind-too-light": "the stated wind being too light to have raised this sea",
+  "sea-has-no-ceiling":
+    "the stated sea state having no upper bound - one period is applied across a class, and " +
+    "no finite wind can answer for a class that runs past every height",
+};
 
 /**
  * Which way the sea runs, and whether anybody said so.

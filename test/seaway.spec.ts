@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import schema from "../spec/voyage.schema.json";
 import type { Environment } from "../src/core/types.js";
+import type { SeaEstimate } from "../src/core/seaway.js";
 
 import {
   assumedPeakPeriodSeconds,
@@ -975,5 +976,35 @@ describe("a sea with no height in it", () => {
     expect(
       seawayFrom({ waves: { significantHeightMetres: 0.05, derivation: "measured" } })?.periodFrom,
     ).toBe("height");
+  });
+});
+
+describe("which refusal the core recorded", () => {
+  /**
+   * One value rather than a pair of flags: a pair collapsed "the wind is too light" and
+   * "the class has no ceiling" into one, and the collapsed message was false for the second.
+   */
+  it("distinguishes all four, and reports none where the wind was used", () => {
+    const cases: [Environment, SeaEstimate["periodDeclined"]][] = [
+      [{ seaState: 5, wind: { speedKnots: 35, derivation: "measured" } }, "none"],
+      [{ seaState: 5, wind: { speedKnots: 6, derivation: "measured" } }, "wind-too-light"],
+      [{ seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } }, "force-is-a-class"],
+      [{ seaState: 5 }, "nothing-stated"],
+      [{ seaState: 9, wind: { speedKnots: 150, derivation: "measured" } }, "sea-has-no-ceiling"],
+      [{ seaState: 5, wind: { fromDegreesTrue: 90, derivation: "measured" } }, "nothing-stated"],
+    ];
+    for (const [environment, expected] of cases) {
+      expect(seawayFrom(environment)?.periodDeclined, JSON.stringify(environment)).toBe(expected);
+    }
+  });
+
+  it("prefers the open class over any other true reason", () => {
+    for (const wind of [
+      { speedKnots: 150, derivation: "measured" as const },
+      { speedKnots: 1, derivation: "measured" as const },
+      { beaufortForce: 11, derivation: "measured" as const },
+    ]) {
+      expect(seawayFrom({ seaState: 9, wind })?.periodDeclined).toBe("sea-has-no-ceiling");
+    }
   });
 });

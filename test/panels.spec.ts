@@ -1050,3 +1050,46 @@ describe("why the height had to supply the period", () => {
     expect(html).not.toContain("a force is a class");
   });
 });
+
+describe("naming the right refusal, of which there are four", () => {
+  /**
+   * A stated 150 knots against sea state 9 was reported as "too light". It raises 16.6 m
+   * with the margin, which is more than the 14 m the view draws. The class simply has no
+   * ceiling, and no finite wind can answer for one - so the page was making a false
+   * statement about the reader's own figure and sending them to correct the wrong one.
+   */
+  it("does not call a hundred and fifty knots too light for anything", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9, wind: { speedKnots: 150, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("too light to have raised");
+    expect(html).toContain("having no upper bound");
+    expect(html).toContain("no finite wind can answer for a class that runs past every height");
+  });
+
+  it("gives the open class as the reason even where a force was stated too", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9, wind: { beaufortForce: 11, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("having no upper bound");
+    expect(html).not.toContain("a force is a class");
+  });
+
+  it("keeps the other three where they belong", () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } }, "a force is a class"],
+      [
+        { seaState: 5, wind: { speedKnots: 6, derivation: "measured" } },
+        "too light to have raised",
+      ],
+      [{ seaState: 5 }, "giving neither a period nor a wind speed"],
+    ];
+    for (const [environment, expected] of cases) {
+      const subject = scenario();
+      subject.environment = environment;
+      expect(panelsFor(subject), expected).toContain(expected);
+    }
+  });
+});
