@@ -1025,6 +1025,10 @@ function watchCircleCell(mark: Mark): string {
   return `${radius.toFixed(0)} m about the stated position`;
 }
 
+/** The fields a mark may leave unstated, which this tool then has to choose to draw one. */
+const CHOOSABLE = ["shape", "colour", "height"] as const;
+type Choosable = (typeof CHOOSABLE)[number];
+
 /**
  * Which of this mark's drawn properties came from here rather than from the source.
  *
@@ -1032,8 +1036,8 @@ function watchCircleCell(mark: Mark): string {
  * assumed in its place, and counting the empty field as an assumption would have the page
  * confessing to a choice the renderer never made.
  */
-function assumedOf(mark: Mark): string[] {
-  const chosen: string[] = [];
+function assumedOf(mark: Mark): Choosable[] {
+  const chosen: Choosable[] = [];
   if (mark.kind === "buoy" && mark.shape === undefined) chosen.push("shape");
   if (mark.colour === undefined) chosen.push("colour");
   if (mark.heightMetres === undefined) chosen.push("height");
@@ -1072,25 +1076,50 @@ function marksCaveat(marks: Mark[]): string {
   return parts.filter((p) => p !== "").join(" ");
 }
 
-/** The count and the named fields, or nothing at all when the source gave everything. */
+const SHAPE_CLAUSE =
+  " - and a can is port hand where a cone is starboard, so a shape drawn here is a " +
+  "statement made here (issue #34)";
+
+/**
+ * What was chosen here rather than read from the file, **counted field by field**.
+ *
+ * A count of marks over a union of fields reads as a claim about each of them: one buoy
+ * missing only her shape beside one beacon missing only its colour becomes "2 of 2 carry a
+ * shape or colour this tool chose", which says the beacon was given a shape - a field it
+ * cannot have at all. The cells above are right and the sentence under them is not, which is
+ * the page making the stronger claim, one layer down.
+ */
 function assumedNote(marks: Mark[]): string {
-  const chosen = marks.filter((m) => assumedOf(m).length > 0);
-  if (chosen.length === 0) return "";
-  const fields = orList([...new Set(chosen.flatMap(assumedOf))]);
-  // The shape clause only where a shape was actually one of them. A beacon has none to
-  // choose, so a page whose only marks are beacons must not carry the buoyage warning.
-  const shapes = chosen.some((m) => assumedOf(m).includes("shape"))
-    ? " - and a can is port hand where a cone is starboard, so a shape drawn here is a " +
-      "statement made here (issue #34)"
-    : "";
-  const carry = chosen.length === 1 ? "carries" : "carry";
-  return `${chosen.length} of ${marks.length} ${carry} a ${fields} this tool chose rather than the source${shapes}.`;
+  const counted = CHOOSABLE.map((field) => ({ field, ...tally(marks, field) })).filter(
+    (entry) => entry.count > 0,
+  );
+  if (counted.length === 0) return "";
+
+  const list = andList(
+    counted.map((entry) => `a ${entry.field} for ${entry.count} of ${entry.of}`),
+  );
+  const shapes = counted.some((entry) => entry.field === "shape") ? SHAPE_CLAUSE : "";
+  return `Chosen here rather than taken from the source: ${list}${shapes}.`;
 }
 
-/** "shape", "shape or colour", "shape, colour or height". */
-function orList(items: string[]): string {
+/**
+ * How many marks needed this field chosen for them, and how many could have carried it.
+ *
+ * **The denominator is not always every mark.** Only a buoy has an IALA shape, so counting
+ * beacons into it would report a gap in marks that have no such field to fill.
+ */
+function tally(marks: Mark[], field: Choosable): { count: number; of: number } {
+  const eligible = field === "shape" ? marks.filter((m) => m.kind === "buoy") : marks;
+  return {
+    count: eligible.filter((m) => assumedOf(m).includes(field)).length,
+    of: eligible.length,
+  };
+}
+
+/** "a", "a and b", "a, b and c". */
+function andList(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1] ?? ""}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`;
 }
 
 function findingList(findings: Finding[], scenario: Scenario): string {

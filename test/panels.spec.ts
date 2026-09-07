@@ -518,7 +518,10 @@ describe("the sea marks a scenario carries", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("Sea marks (1)");
-    expect(html).toContain("1 of 1 carries a shape, colour or height this tool chose");
+    expect(html).toContain(
+      "Chosen here rather than taken from the source: a shape for 1 of 1, a colour for 1 of 1 " +
+        "and a height for 1 of 1",
+    );
     expect(html).toContain("assumed pillar");
     expect(html).toContain("assumed yellow");
     expect(html).toContain("assumed 2.4 m");
@@ -645,7 +648,7 @@ describe("a beacon in the same table as a buoy", () => {
     subject.marks = [beacon({ colour: "black" })];
     const html = panelsFor(subject);
 
-    expect(html).toContain("1 of 1 carries a height this tool chose");
+    expect(html).toContain("Chosen here rather than taken from the source: a height for 1 of 1");
     expect(html).not.toContain("assumed pillar");
     expect(html).not.toContain("a statement made here");
   });
@@ -677,6 +680,25 @@ describe("a beacon in the same table as a buoy", () => {
 
     expect(html).toContain("form chosen here");
     expect(html).toContain("issue #42");
+  });
+
+  /**
+   * A count of marks over a union of fields reads as a claim about each of them. A buoy
+   * missing only her shape beside a beacon missing only its colour becomes "2 of 2 carry a
+   * shape or colour this tool chose" - which says the beacon was given a shape, a field it
+   * cannot have. Counted field by field, each figure is about the marks that could carry it.
+   */
+  it("counts each chosen field over the marks that could have carried it", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ colour: "green", heightMetres: 2 }), beacon({ heightMetres: 8 })];
+    const html = panelsFor(subject);
+
+    // The shape is missing from one buoy, and one buoy is all there is to count.
+    expect(html).toContain("a shape for 1 of 1");
+    // The colour is missing from the beacon only, and both kinds can carry one.
+    expect(html).toContain("a colour for 1 of 2");
+    // Both heights are stated, so the height is not in the sentence at all.
+    expect(html).not.toContain("a height for");
   });
 
   /** Nothing about riding a sea belongs on a page whose only mark is built on the ground. */
