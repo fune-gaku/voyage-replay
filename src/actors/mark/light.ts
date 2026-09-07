@@ -26,7 +26,7 @@ import type { LightPhase, Mark } from "../../core/types.js";
 /** Why nothing can be shown flashing. */
 export type Unlit =
   | "the file does not say whether it carried a light"
-  | "the stated timings have no length in them"
+  | "the stated timings include a phase of no length"
   | Unreadable;
 
 export type LightReading =
@@ -58,8 +58,8 @@ export function lightOf(mark: Mark): LightReading {
   if (!reading.read) return { known: false, because: reading.because };
 
   const stated = statedPhases(light.phases);
-  if (stated !== null && stated.length === 0) {
-    return { known: false, because: "the stated timings have no length in them" };
+  if (stated === "unusable") {
+    return { known: false, because: "the stated timings include a phase of no length" };
   }
 
   return {
@@ -74,13 +74,16 @@ export function lightOf(mark: Mark): LightReading {
  * The durations a scenario stated, if it stated any.
  *
  * The schema requires each one to be longer than nothing, and so does this: a zero-length
- * phase would be a step in the sequence that no clock can land on, and a negative one would
- * run the light backwards through its own period. Null means the file stated none at all,
- * which is different from stating an unusable set - the caller reports them differently.
+ * phase is a step no clock can land on, and a negative one runs the light backwards through
+ * its own period. A scenario reaches this function by roads other than `validateScenario`.
+ *
+ * **One bad phase spoils the set.** Dropping the bad ones and keeping the rest would report
+ * a sequence nobody wrote as "timings stated" - a red flash of no length filtered out of
+ * `[0 s red, 4 s dark]` leaves four seconds of darkness described as what the file said.
+ * Null means the file stated none at all, which is a different answer again.
  */
-function statedPhases(phases: LightPhase[] | undefined): Phase[] | null {
+function statedPhases(phases: LightPhase[] | undefined): Phase[] | "unusable" | null {
   if (phases === undefined) return null;
-  return phases
-    .filter((phase) => phase.seconds > 0)
-    .map((phase) => ({ seconds: phase.seconds, colour: phase.colour ?? null }));
+  if (phases.length === 0 || phases.some((phase) => !(phase.seconds > 0))) return "unusable";
+  return phases.map((phase) => ({ seconds: phase.seconds, colour: phase.colour ?? null }));
 }

@@ -96,7 +96,9 @@ export type Unreadable =
   | "the period is not a number"
   | "a colour this system does not use"
   | "a letter that is not in the Morse code"
-  | "an alternating light with fewer than two colours";
+  | "an alternating light with fewer than two colours"
+  | "a period of no length"
+  | "a period too short for the flashes in it";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -192,7 +194,30 @@ function assemble(head: Head, rest: string): CharacterReading {
   }
 
   const morse = head.klass === "Mo" ? lettersOf(head.groups) : "";
-  return { read: true, character: characterOf(head, colours, period?.[1], morse) };
+  return fitsItsPeriod(characterOf(head, colours, period?.[1], morse));
+}
+
+/**
+ * A last question of the whole character: can it be shown in the period it states?
+ *
+ * `Q(9) W 2s` cannot. Nine quick flashes and the eclipses between them take 8.5 s, so the
+ * sequence built for it runs for nine seconds while the page goes on printing "2s" - the
+ * picture and the page reporting different lights, which is the failure this repository keeps
+ * returning to. Refused rather than stretched, because a period is a stated figure and this
+ * tool does not get to quietly disagree with one.
+ *
+ * Asked by building the sequence and comparing, rather than by working out a minimum period
+ * for each class: one rule builds the phases, so one rule should answer for them.
+ */
+function fitsItsPeriod(character: LightCharacter): CharacterReading {
+  const stated = character.periodSeconds;
+  if (stated === null) return { read: true, character };
+  if (stated <= 0) return { read: false, because: "a period of no length" };
+
+  const drawn = cycleSeconds(phasesOf(character));
+  if (drawn - stated > 1e-9)
+    return { read: false, because: "a period too short for the flashes in it" };
+  return { read: true, character };
 }
 
 function characterOf(

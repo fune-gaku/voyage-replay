@@ -81,7 +81,30 @@ describe("lightOf", () => {
       buoy({ light: { character: "Fl R 4s", phases: [{ seconds: 0 }, { seconds: -1 }] } }),
     );
     expect(reading.known).toBe(false);
-    if (!reading.known) expect(reading.because).toBe("the stated timings have no length in them");
+    if (!reading.known) {
+      expect(reading.because).toBe("the stated timings include a phase of no length");
+    }
+  });
+
+  /**
+   * **One bad phase spoils the set.** Dropping the bad ones and keeping the rest reports a
+   * sequence nobody wrote as "timings stated": filter the red flash out of
+   * `[0 s red, 4 s dark]` and four seconds of unbroken darkness is what the file is said to
+   * have stated - a light that never shows, described as somebody's observation.
+   */
+  it("refuses the whole set rather than keeping the phases that were usable", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 4s",
+          phases: [{ seconds: 0, colour: "red" }, { seconds: 4 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe("the stated timings include a phase of no length");
+    }
   });
 
   it("takes a light on a beacon as readily as on a buoy", () => {

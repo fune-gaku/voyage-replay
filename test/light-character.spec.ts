@@ -155,6 +155,31 @@ describe("reading a Light List abbreviation", () => {
     });
   });
 
+  /**
+   * **A period the character cannot be shown in is not readable.** Nine quick flashes and the
+   * eclipses between them take 8.5 s, so `Q(9) W 2s` would run for nine seconds while the
+   * page went on printing "2s" - the picture and the page reporting different lights, which
+   * is the failure this whole tool is built to avoid. Refused rather than stretched: a period
+   * is a stated figure, and this tool does not get to quietly disagree with one.
+   */
+  it("refuses a period too short for the flashes in it", () => {
+    expect(parseCharacter("Q(9) W 2s")).toEqual({
+      read: false,
+      because: "a period too short for the flashes in it",
+    });
+    expect(parseCharacter("Q(6)+LFl W 3s")).toEqual({
+      read: false,
+      because: "a period too short for the flashes in it",
+    });
+    expect(parseCharacter("Fl W 0s")).toEqual({ read: false, because: "a period of no length" });
+  });
+
+  /** And a period with room to spare is fine: the eclipse that closes it simply grows. */
+  it("takes a period longer than the character needs", () => {
+    expect(cycleSeconds(sequence("Q(3) W 20s"))).toBeCloseTo(20, 9);
+    expect(cycleSeconds(sequence("Fl W 15s"))).toBeCloseTo(15, 9);
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
