@@ -100,6 +100,7 @@ export type Unreadable =
   | "a period of no length"
   | "a period too short for the flashes in it"
   | "a period too short for that class of light"
+  | "a period outside the rate that makes it that class"
   | "a Morse light with no letters in it"
   | "a group on a class that has none"
   | "a long flash on a class that does not take one"
@@ -244,6 +245,32 @@ function wrongColours(character: LightCharacter): Unreadable | null {
 }
 
 /**
+ * The bands that define the quick classes: 50 to 79 flashes a minute, 80 to 159, 160 to 300
+ * (E-110 Table 2, classes 5, 6 and 7).
+ */
+const RATE_BAND: Partial<Record<LightClass, [number, number]>> = {
+  Q: [50, 79],
+  VQ: [80, 159],
+  UQ: [160, 300],
+};
+
+/**
+ * A continuous quick light's period is its own flash cycle, so a stated one has to be a rate
+ * inside the band that makes it quick.
+ *
+ * `Q W 10s` would otherwise be drawn as one flash in ten seconds - six a minute, which is a
+ * single-flashing light - under a page printing "Q". A GROUP quick light is different: there
+ * the period covers the whole group and the rate lives inside it, which the generated
+ * sequence already handles.
+ */
+function outsideItsRate(character: LightCharacter, period: number): boolean {
+  const band = RATE_BAND[character.klass];
+  if (band === undefined || character.groups.length > 0) return false;
+  const rate = 60 / period;
+  return rate < band[0] || rate > band[1];
+}
+
+/**
  * The shortest period each class can be shown in and still BE that class.
  *
  * From E-110 Table 2: an isophase, single-occulting or single-flashing light has "the period
@@ -282,6 +309,9 @@ function fitsItsPeriod(character: LightCharacter): CharacterReading {
   const least = LEAST_PERIOD_SECONDS[character.klass];
   if (least !== undefined && stated < least) {
     return { read: false, because: "a period too short for that class of light" };
+  }
+  if (outsideItsRate(character, stated)) {
+    return { read: false, because: "a period outside the rate that makes it that class" };
   }
 
   const drawn = cycleSeconds(phasesOf(character));

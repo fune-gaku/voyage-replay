@@ -236,6 +236,28 @@ describe("reading a Light List abbreviation", () => {
     expect(parseCharacter("Iso W 20s").read).toBe(true);
   });
 
+  /**
+   * A continuous quick light's period IS its flash cycle, so a stated one has to be a rate
+   * inside the band that makes it quick. `Q W 10s` would otherwise draw one flash in ten
+   * seconds - six a minute, a single-flashing light - under a page printing "Q".
+   */
+  it("refuses a period a continuous quick light could not be flashing at", () => {
+    expect(parseCharacter("Q W 10s")).toEqual({
+      read: false,
+      because: "a period outside the rate that makes it that class",
+    });
+    expect(parseCharacter("VQ W 4s")).toEqual({
+      read: false,
+      because: "a period outside the rate that makes it that class",
+    });
+
+    // Inside the band, and the group form is not held to it: there the period covers the
+    // whole group and the rate lives inside it.
+    expect(parseCharacter("Q W 1s").read).toBe(true);
+    expect(parseCharacter("VQ W 0.5s").read).toBe(true);
+    expect(parseCharacter("Q(3) W 10s").read).toBe(true);
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
