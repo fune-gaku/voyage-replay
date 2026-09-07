@@ -293,6 +293,12 @@ the lie one step down; fixing the guard moved it into the clamp. It stops where 
 figure. The `Seaway` still carries numbers for period and direction, because its fields are
 numbers — which is precisely why nothing may print them without asking first.
 
+**A flat sea with a stated period is not a contradiction.** A decayed swell arriving from a
+storm long gone has a period and a direction and a significant height that rounds to nothing,
+and the format takes all three. The rule that a sea of no height has no period is about what
+can be *derived*; it must not swallow what the file *states*. Nor may the absence of one figure
+hide another — a stated bearing survives a missing period.
+
 **Two Beaufort classes have an end that is not a number.** Force 12 is 64 knots and up, so its
 top is a floor. Force 0 is "less than 1 knot" and not "nought to one" — a knot is already
 force 1 — so its top is a limit the class stops short of. Both have been read as plain numbers

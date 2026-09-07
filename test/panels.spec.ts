@@ -960,9 +960,44 @@ describe("a flat sea, which has no period and no direction", () => {
 
     expect(html).toContain("no waves to have one");
     expect(html).toContain("no waves to come from anywhere");
-    expect(html).toContain("there is no period and no direction to give");
+    expect(html).toContain("no period, so there is none to give");
     expect(html).not.toContain("0.5 s");
     expect(html).not.toContain("from the stated wind");
+  });
+
+  /**
+   * A decayed swell has a period and a bearing and a significant height that rounds to
+   * nothing, and the schema takes all three. The page said "no waves to have one" and "no
+   * waves to come from anywhere" over a file that stated both - denying figures it contained.
+   */
+  it("shows a period and a bearing the file states on a flat sea", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: {
+        significantHeightMetres: 0,
+        peakPeriodSeconds: 8,
+        fromDegreesTrue: 270,
+        derivation: "measured",
+      },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("8.0 s (stated)");
+    expect(html).toContain("270 deg true (stated)");
+    expect(html).not.toContain("no waves to have one");
+    expect(html).not.toContain("no waves to come from anywhere");
+  });
+
+  it("shows a stated bearing even where the period is the one thing missing", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: { significantHeightMetres: 0, fromDegreesTrue: 270, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves to have one");
+    expect(html).toContain("270 deg true (stated)");
+    expect(html).toContain("the direction it states is shown as given");
   });
 
   it("still gives a period for the faintest sea that has one", () => {

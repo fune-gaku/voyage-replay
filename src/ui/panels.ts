@@ -468,7 +468,10 @@ function seaSection(scenario: Scenario): string {
     ],
     [
       "Coming from",
-      sea.periodFrom === "none"
+      // Keyed on the DIRECTION's own provenance, not the period's. A file may state a
+      // bearing on a sea of no height - a decayed swell has one - and hiding it because the
+      // period is absent denies a figure the file contains.
+      sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0
         ? "no waves to come from anywhere"
         : sea.fromDegreesTrue === null
           ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
@@ -791,10 +794,14 @@ function heightSentence(sea: SeaEstimate): string {
 /** Only where the file left the period out, since then it is this project's guess and not hers. */
 function periodSentence(sea: SeaEstimate): string {
   if (sea.periodFrom === "none") {
+    const direction =
+      sea.directionFrom === "stated"
+        ? "the direction it states is shown as given"
+        : "and no direction either";
     return (
-      " The file states a flat sea, so there is no period and no direction to give: a " +
-      "`Seaway` still carries figures for both because its fields are numbers, and those " +
-      "figures are not reported here because they mean nothing."
+      ` The file states a flat sea and no period, so there is none to give - ${direction}. ` +
+      "A `Seaway` still carries a figure because its fields are numbers, and that figure is " +
+      "not reported because it means nothing."
     );
   }
   if (sea.periodFrom === "stated") return "";

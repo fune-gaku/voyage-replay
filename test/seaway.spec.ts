@@ -945,22 +945,35 @@ describe("a sea with no height in it", () => {
    * so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
    * the relation moved the lie one step down rather than removing it.
    */
-  it("has no period from any source, however the file states it", () => {
+  it("has no period from any source the tool could derive one from", () => {
     for (const environment of [
       { seaState: 0, wind: { speedKnots: 0, derivation: "measured" as const } },
       { seaState: 0, wind: { speedKnots: 30, derivation: "measured" as const } },
       { seaState: 0 },
       { waves: { significantHeightMetres: 0, derivation: "measured" as const } },
-      {
-        waves: {
-          significantHeightMetres: 0,
-          peakPeriodSeconds: 8,
-          derivation: "measured" as const,
-        },
-      },
     ]) {
       expect(seawayFrom(environment)?.periodFrom, JSON.stringify(environment)).toBe("none");
     }
+  });
+
+  /**
+   * Unless the file states one. A flat sea with a period and a bearing is not a contradiction
+   * to be swallowed - a decayed swell has both, and a significant height that rounds to
+   * nothing. The page denied two figures the file contained until this was separated out.
+   */
+  it("keeps a period and a direction the file states on a sea of no height", () => {
+    const swell = seawayFrom({
+      waves: {
+        significantHeightMetres: 0,
+        peakPeriodSeconds: 8,
+        fromDegreesTrue: 270,
+        derivation: "measured",
+      },
+    });
+    expect(swell?.periodFrom).toBe("stated");
+    expect(swell?.rough.peakPeriodSeconds).toBe(8);
+    expect(swell?.directionFrom).toBe("stated");
+    expect(swell?.fromDegreesTrue).toBe(270);
   });
 
   it("still has a period on its Seaway, which is why nothing may print it unasked", () => {

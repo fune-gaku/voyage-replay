@@ -360,15 +360,18 @@ function periodFor(
   from: SeaEstimate["periodFrom"];
   declined: SeaEstimate["periodDeclined"];
 } {
-  // A sea of no height has no period, and every route into one is a fiction. A flat calm
-  // beside a calm wind cleared the "could this wind raise it" test on nought against nought,
-  // took the relation's own zero, and had it clamped straight back to the spectrum's floor -
-  // so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
-  // the relation alone moved the lie one step down; this is where it has to stop.
-  if (heightMetres <= 0) return { seconds: undefined, from: "none", declined: "none" };
+  // A file may state a period on a sea of no height, and that is not a contradiction to be
+  // swallowed: a decayed swell has a period and a direction and a significant height that
+  // rounds to nothing. What the file says comes first, whatever the height.
   if (waves?.peakPeriodSeconds !== undefined) {
     return { seconds: waves.peakPeriodSeconds, from: "stated", declined: "none" };
   }
+  // With nothing stated, a sea of no height has no period, and every route into one is a
+  // fiction. A flat calm beside a calm wind cleared the "could this wind raise it" test on
+  // nought against nought, took the relation's own zero, and had it clamped straight back to
+  // the spectrum's floor - so the page read "0.5 s (from the stated wind)" over water with
+  // no waves in it. Fixing the relation alone moved the lie one step down; it stops here.
+  if (heightMetres <= 0) return { seconds: undefined, from: "none", declined: "none" };
   const declined = whyNotTheWind(wind, heightMetres);
   if (declined === "none" && wind) {
     return { seconds: periodFromWindSeconds(wind.fastestKnots), from: "wind", declined };
