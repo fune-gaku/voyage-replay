@@ -895,6 +895,12 @@ export function periodFromWindSeconds(speedKnots: number): number {
  * `conditions.ts` makes about comparing a light condition to the sun on one axis only.
  *
  * Null where the two are not comparable: no wind, no speed in it, or no sea.
+ *
+ * **Both ends are taken the way that makes the flag hard to raise.** The sea's CALM end
+ * against the wind's FASTEST: a sea state spans a class, a Beaufort force spans a class, and
+ * reporting a disagreement that only exists at one corner of two ranges would be reporting
+ * the ranges rather than the sea. Only a sea whose gentlest reading still exceeds the most
+ * the wind could raise is worth a reader's attention.
  */
 export function seaExceedsWind(sea: SeaEstimate | null, wind: WindEstimate | null): boolean | null {
   if (!sea || !wind || wind.source === "direction-only") return null;

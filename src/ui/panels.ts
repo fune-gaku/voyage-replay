@@ -520,14 +520,22 @@ function disagreementNote(conditions: Conditions): string {
   if (conditions.seaExceedsWind !== true) return "";
   const { wind, sea } = conditions;
   if (!wind || !sea) return "";
+  // The speed is named the way the file gave it. A force is a class, and quoting its top as
+  // though the file had stated 21 knots would put a figure in the reader's hands that
+  // nobody wrote down - which is the fault this whole page is built to avoid.
+  const at =
+    wind.source === "force"
+      ? `the ${wind.fastestKnots} kn at the top of the stated force`
+      : `the stated ${wind.fastestKnots} kn`;
   return note(
     `The stated sea is bigger than the stated wind can raise: ` +
       `${sea.calm.significantHeightMetres} m against the ` +
       `${fullyDevelopedHeightMetres(wind.fastestKnots).toFixed(2)} m a fully developed sea ` +
-      `reaches at ${wind.fastestKnots} kn. Either a swell is running from another weather ` +
-      "system - which no wind stated here can account for - or one of the two figures is " +
-      "wrong. The reverse is not reported: a sea smaller than the wind supports is ordinary, " +
-      "since a sea needs both fetch and time to reach what the wind can give it.",
+      `reaches at ${at}. Either a swell is running from another weather system - which no ` +
+      "wind stated here can account for - or one of the two figures is wrong. Both sides are " +
+      "taken the way that makes this hard to say: the calmest sea the file allows against the " +
+      "most wind it allows. The reverse is never reported - a sea smaller than its wind is " +
+      "ordinary, since a sea needs both fetch and time to reach what the wind can give it.",
   );
 }
 

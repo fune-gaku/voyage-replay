@@ -874,3 +874,39 @@ describe("the wind, printed whether or not there is a sea to go with it", () => 
     expect(panelsFor(scenario())).not.toContain("Wind from");
   });
 });
+
+describe("how the disagreement quotes the wind it is comparing against", () => {
+  /**
+   * A force is a class. Quoting its top as though the file had stated 21 knots hands the
+   * reader a figure nobody wrote down - inside the very note that exists to point at a
+   * figure being wrong.
+   */
+  it("names a force as a force, and a stated speed as stated", () => {
+    const fromForce = scenario();
+    fromForce.environment = {
+      wind: { beaufortForce: 3, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    expect(panelsFor(fromForce)).toContain("at the top of the stated force");
+
+    const fromSpeed = scenario();
+    fromSpeed.environment = {
+      wind: { speedKnots: 10, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    const html = panelsFor(fromSpeed);
+    expect(html).toContain("the stated 10 kn");
+    expect(html).not.toContain("at the top of the stated force");
+  });
+
+  it("says which end of each range it took, since both are ranges", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 2, derivation: "measured" },
+      seaState: 5,
+    };
+    expect(panelsFor(subject)).toContain(
+      "the calmest sea the file allows against the most wind it allows",
+    );
+  });
+});
