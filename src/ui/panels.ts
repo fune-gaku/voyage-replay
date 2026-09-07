@@ -15,6 +15,7 @@ import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
 import {
+  CHOSEN,
   drawnAppearance,
   type DrawnMark,
   type From,
@@ -22,6 +23,7 @@ import {
 } from "../actors/mark/appearance.js";
 import type { BuoyageRegion } from "../actors/mark/buoyage.js";
 import { lightOf } from "../actors/mark/light.js";
+import { CHOSEN_DAMPING, ridingOf, type Riding } from "../actors/mark/riding.js";
 import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
@@ -1137,6 +1139,57 @@ function assumedOf(mark: Mark, region: BuoyageRegion | null): Choosable[] {
   return chosen;
 }
 
+/**
+ * How the buoys answer the sea, and the one number in it with no source.
+ *
+ * A float does not trace the water: below her own natural period she follows it, near it she
+ * moves further than it, above it she cannot keep up - and her heave and her lean have
+ * different periods, so they peak at different moments. All of that comes out of her draught,
+ * which is her geometry. **The damping does not.** It depends on her hull and on whether she
+ * carries a heave plate, and the figure used here is chosen - which matters most at
+ * resonance, where the response goes as one over twice it.
+ */
+function ridingNote(marks: Mark[], region: BuoyageRegion | null): string {
+  const floats = marks.filter((mark) => mark.kind === "buoy");
+  if (floats.length === 0) return "";
+
+  const periods = floats.map((mark) => ridingFor(mark, region));
+  const shortest = Math.min(...periods.map((riding) => riding.heavePeriodSeconds));
+  const longest = Math.max(...periods.map((riding) => riding.heavePeriodSeconds));
+  const range =
+    shortest === longest
+      ? `${shortest.toFixed(1)} s`
+      : `${shortest.toFixed(1)} to ${longest.toFixed(1)} s`;
+
+  const draughts = new Set(periods.map((riding) => riding.draughtFrom));
+  const where =
+    draughts.size === 1 && draughts.has("stated")
+      ? "from the draught the file gives"
+      : `from ${[...draughts].join(" and ")}`;
+
+  return (
+    `A buoy answers the sea rather than tracing it: her heave has a natural period of ` +
+    `${range} here, which rests on her draught alone - the waterplane cancels - taken ` +
+    `${where}. So she follows a long swell, moves further than a chop near that period, and ` +
+    "falls behind a shorter one. Her lean is given twice that period, which is why the two " +
+    "do not peak together. **The damping is the one figure here with no source**: it " +
+    "depends on the hull " +
+    `and on whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per ` +
+    "cent of critical is this tool's own figure. It weighs most at resonance, where the " +
+    "response goes " +
+    "as one over twice it - which is to say where this model is least trustworthy. How far " +
+    "each shape leans is a class rather than a calculation: a spar buoy exists to stay " +
+    "upright, and the ballast that makes her do it is not in any report."
+  );
+}
+
+/** The same riding the renderer uses, from the same resolved shape. */
+function ridingFor(mark: Mark, region: BuoyageRegion | null): Riding {
+  const drawn = drawnAppearance(mark, region);
+  const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres[mark.kind];
+  return ridingOf(drawn.shape?.value ?? CHOSEN.shape, height, mark.draughtMetres);
+}
+
 /** Whether this beacon's construction was left to this tool rather than stated. */
 function chosenForm(mark: Mark, region: BuoyageRegion | null): boolean {
   return drawnAppearance(mark, region).construction?.from === "chosen here";
@@ -1166,11 +1219,12 @@ function marksCaveat(marks: Mark[], region: BuoyageRegion | null): string[] {
     parts.push(
       "A buoy is drawn riding the sea as the water is drawn beneath her, which past a few " +
         "hundred metres has faded flat - so a distant buoy stops heaving because the water " +
-        "under her has, not because the sea has. She follows the surface exactly, which is " +
-        "right for something small against the wave and wrong in a short steep sea: issue " +
-        "#32. Her stated position is her sinker's, not hers.",
+        "under her has, not because the sea has. Her stated position is her sinker's, not " +
+        "hers.",
     );
   }
+  const rides = ridingNote(marks, region);
+  if (rides !== "") parts.push(rides);
   if (marks.some((m) => m.kind === "beacon")) {
     parts.push(
       "A beacon neither heaves nor tilts: it is built on the ground it marks, the sea runs " +

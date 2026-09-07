@@ -30,6 +30,7 @@ import {
   seawayFrom,
   surfaceAt,
   waveComponents,
+  type Riding,
   type SurfacePoint,
   type WaveComponent,
 } from "../core/seaway.js";
@@ -128,7 +129,7 @@ export interface SceneParts {
    * out of waves - and a buoy riding the true field over visibly still water would be a
    * buoy hovering. One function, so the two cannot come apart.
    */
-  drawnSurfaceAt(position: LocalPosition, secondsFromStart: number): SurfacePoint;
+  drawnSurfaceAt(position: LocalPosition, secondsFromStart: number, riding?: Riding): SurfacePoint;
 }
 
 /**
@@ -350,8 +351,11 @@ function viewControls(
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
     },
-    drawnSurfaceAt: (position: LocalPosition, secondsFromStart: number): SurfacePoint =>
-      drawnSurface(parts, position, secondsFromStart),
+    drawnSurfaceAt: (
+      position: LocalPosition,
+      secondsFromStart: number,
+      riding?: Riding,
+    ): SurfacePoint => drawnSurface(parts, position, secondsFromStart, riding),
   };
 }
 
@@ -382,14 +386,19 @@ function drawnSurface(
   parts: Switchable,
   position: LocalPosition,
   secondsFromStart: number,
+  riding?: Riding,
 ): SurfacePoint {
   const eye = parts.curvature.uEye.value;
   const away = Math.hypot(position.east - eye.x, -position.north - eye.z);
   const fade = parts.waves.uWaveScale.value * displacedFraction(away);
+  // The body's answer goes inside the sum, where each component still has its own frequency;
+  // the fade goes outside it, because that is about the water being drawn flat at range and
+  // not about anything floating on it.
   const point = surfaceAt(
     parts.sea,
     { eastMetres: position.east, northMetres: position.north },
     secondsFromStart,
+    riding,
   );
   return {
     heightMetres: point.heightMetres * fade,

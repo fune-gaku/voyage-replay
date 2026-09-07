@@ -315,6 +315,15 @@ export interface Mark {
    * standing above the surface.
    */
   heightMetres?: number;
+  /**
+   * How deep she floats, where a source gives it.
+   *
+   * **It sets her natural period and nothing else does** - the waterplane area cancels out of
+   * `T = 2 pi sqrt(d/g)` - so a stated draught is the difference between a computed motion
+   * and a modelled one. Absent, it comes from a proportion of her height chosen for her
+   * shape, which is this tool's model of a buoy and not a fact about this buoy.
+   */
+  draughtMetres?: number;
   mooring?: Mooring;
   /**
    * **Absent means the file did not say, not that the mark was unlit.** 浮標 and 灯浮標 are

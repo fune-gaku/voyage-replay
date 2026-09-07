@@ -38,6 +38,7 @@ import {
 } from "three";
 
 import { CHOSEN, drawnAppearance, type DrawnMark } from "../actors/mark/appearance.js";
+import { PROPORTIONS } from "../actors/mark/riding.js";
 import type { BuoyageRegion, Topmark } from "../actors/mark/buoyage.js";
 import type { LightColour } from "../core/light-character.js";
 import type {
@@ -99,15 +100,6 @@ interface Outline {
   radius: number;
   length: number;
 }
-
-/** How wide the body is against its height, and how much of it floats under. */
-const PROPORTIONS: Record<MarkShape, { width: number; draught: number }> = {
-  pillar: { width: 0.55, draught: 0.5 },
-  spar: { width: 0.22, draught: 1.1 },
-  can: { width: 0.95, draught: 0.45 },
-  conical: { width: 0.9, draught: 0.45 },
-  spherical: { width: 1.1, draught: 0.5 },
-};
 
 /** What a light shows, painted the way a lamp is rather than the way a hull is. */
 export const LAMP_COLOURS: Record<LightColour, ColorRepresentation> = {

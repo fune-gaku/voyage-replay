@@ -247,6 +247,11 @@
             "source": { "$ref": "#/$defs/source" }
           }
         },
+        "draughtMetres": {
+          "description": "How deep she floats, where a source gives it. IT SETS HER NATURAL PERIOD AND NOTHING ELSE DOES - the waterplane area cancels out of T = 2*pi*sqrt(d/g) - so a stated draught is the difference between a computed motion and a modelled one. Absent, it is taken as a proportion of her height chosen for her shape, which is this tool's model of a buoy rather than a fact about this buoy, and the page says so.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "mooring": {
           "description": "What a buoy swings on. Only meaningful for one that floats, and stated so that the watch circle can be given as a figure rather than left to a reader who does not know it is there - at 20 m depth on three times scope it is 57 m, a ship's length of slack.",
           "type": "object",
