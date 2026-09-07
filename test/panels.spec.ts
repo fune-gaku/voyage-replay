@@ -768,3 +768,20 @@ describe("restricted visibility, which is the enum's fourth value and a differen
     expect(html).not.toContain("fine day");
   });
 });
+
+describe("a caveat only qualifies figures that are there", () => {
+  /**
+   * The occlusion column is empty where no sea is stated, and a note explaining that the
+   * figures run high and low for such-and-such reasons reads as though something had been
+   * computed. The reasons belong with the numbers.
+   */
+  it("keeps the modelling biases for the rows that carry figures", () => {
+    const withSea = scenario();
+    withSea.environment = { lightCondition: "night", seaState: 4 };
+    expect(panelsFor(withSea)).toContain("count crossings independently");
+
+    const without = scenario();
+    expect(panelsFor(without)).not.toContain("count crossings independently");
+    expect(panelsFor(without)).toContain("The last column is empty rather than zero");
+  });
+});

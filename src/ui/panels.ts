@@ -597,9 +597,13 @@ function occlusionCaveat(sighting: Sighting, sea: SeaEstimate | null): string {
     `${sighting.observer.actor.id}'s eye and ${top.toFixed(1)} m for the top of ` +
     `${sighting.target.actor.id}'s superstructure - issue #8. Her lights stand higher than ` +
     `that and are correspondingly harder to hide, which this table does not answer for. ` +
-    (sea ? "The sea these figures were run against is described in its own section above. " : "") +
-    "The figures count crossings independently, which runs high, and treat the sea as long " +
-    "crested along one line, which runs low."
+    // The biases belong to figures, and where no sea is stated there are none: a caveat
+    // qualifying an empty column reads as though something had been computed.
+    (sea
+      ? "The sea these figures were run against is described in its own section above. " +
+        "They count crossings independently, which runs high, and treat the sea as long " +
+        "crested along one line, which runs low."
+      : "The last column is empty rather than zero, for the reason given under The sea.")
   );
 }
 
