@@ -1129,6 +1129,11 @@ function assumedOf(mark: Mark, region: BuoyageRegion | null): Choosable[] {
   return chosen;
 }
 
+/** Whether this beacon's construction was left to this tool rather than stated. */
+function chosenForm(mark: Mark, region: BuoyageRegion | null): boolean {
+  return drawnAppearance(mark, region).construction?.from === "chosen here";
+}
+
 /**
  * Both kinds of decision this tool makes, and neither kind of thing it was told.
  *
@@ -1164,9 +1169,17 @@ function marksCaveat(marks: Mark[], region: BuoyageRegion | null): string[] {
         "past it, and the position given for it is the structure's own. Its height is the " +
         "part above the water; it is drawn carrying on below the surface onto a footing, " +
         "and how far down that goes is this tool standing it on something rather than a " +
-        "depth anybody stated. What kind of structure - a tower, a lattice, a column, a " +
-        "pile - is a vocabulary this format does not have either, so the one on screen is " +
-        "this tool's: issue #42.",
+        "depth anybody stated.",
+    );
+  }
+  // And only where a beacon's form was not stated. The format has the vocabulary now - a
+  // tower, a lattice, a column, a pile - so a page that called a stated lattice this tool's
+  // choice would contradict the cell above it, which says the file gave it.
+  if (marks.some((mark) => mark.kind === "beacon" && chosenForm(mark, region))) {
+    parts.push(
+      "How a beacon is built means nothing - a lattice tower and a concrete column can both " +
+        "be a north cardinal - but something has to be on the screen, and where the file does " +
+        "not say, the form drawn is this tool's.",
     );
   }
   return parts.filter((part) => part !== "");

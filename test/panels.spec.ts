@@ -922,6 +922,21 @@ describe("a beacon in the same table as a buoy", () => {
   });
 
   /**
+   * The note under the table used to say the format had no vocabulary for a beacon's form, so
+   * the one on screen was this tool's. It has one now - and a page that said that over a
+   * stated lattice would contradict the cell directly above it.
+   */
+  it("claims the form only where the file did not give one", () => {
+    const told = scenario();
+    told.marks = [beacon({ construction: "lattice" })];
+    expect(panelsFor(told)).not.toContain("the form drawn is this tool");
+
+    const silent = scenario();
+    silent.marks = [beacon()];
+    expect(panelsFor(silent)).toContain("the form drawn is this tool");
+  });
+
+  /**
    * A count of marks over a union of fields reads as a claim about each of them. A buoy
    * missing only her shape beside a beacon missing only its colour becomes "2 of 2 carry a
    * shape or colour this tool chose" - which says the beacon was given a shape, a field it
