@@ -50,6 +50,58 @@ describe("validateScenario", () => {
   });
 });
 
+/**
+ * The two kinds of mark are not variants of one another, and the schema is where that is
+ * enforced. A field the format accepts and the renderer then ignores is worse than one it
+ * refuses: whoever wrote it has been told it was understood.
+ */
+describe("the schema keeps a beacon from being a kind of buoy", () => {
+  const withMark = (mark: Record<string, unknown>): Record<string, unknown> => ({
+    ...scenario(),
+    marks: [{ id: "shoal", at: { lat: 33.9, lon: 131.7 }, ...mark }],
+  });
+
+  it("takes both kinds", () => {
+    expect(validateScenario(withMark({ kind: "buoy" })).valid).toBe(true);
+    expect(validateScenario(withMark({ kind: "beacon" })).valid).toBe(true);
+  });
+
+  it("insists a mark say which it is", () => {
+    const result = validateScenario(withMark({}));
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(" ")).toContain("kind");
+  });
+
+  /**
+   * An IALA shape is a statement - a can is port hand, a cone starboard - and a beacon makes
+   * none. Accepting one and drawing a structure anyway would put the file and the picture at
+   * odds about the same mark.
+   */
+  it("refuses an IALA body shape on a beacon, and allows one on a buoy", () => {
+    expect(validateScenario(withMark({ kind: "beacon", shape: "can" })).valid).toBe(false);
+    expect(validateScenario(withMark({ kind: "buoy", shape: "can" })).valid).toBe(true);
+  });
+
+  /** A beacon stands on a foundation. A mooring on one would describe a chain that is not there. */
+  it("refuses a mooring on a beacon, and allows one on a buoy", () => {
+    const mooring = { depthMetres: 20, chainScope: 3 };
+    expect(validateScenario(withMark({ kind: "beacon", mooring })).valid).toBe(false);
+    expect(validateScenario(withMark({ kind: "buoy", mooring })).valid).toBe(true);
+  });
+
+  /** Scope is a multiple of the depth, so under one is chain shorter than the water is deep. */
+  it("refuses a mooring that could not exist", () => {
+    expect(
+      validateScenario(withMark({ kind: "buoy", mooring: { depthMetres: 0, chainScope: 3 } }))
+        .valid,
+    ).toBe(false);
+    expect(
+      validateScenario(withMark({ kind: "buoy", mooring: { depthMetres: 20, chainScope: 0.5 } }))
+        .valid,
+    ).toBe(false);
+  });
+});
+
 describe("parseScenario", () => {
   it("hands back the scenario when it validates", () => {
     const subject = scenario();

@@ -98,6 +98,31 @@ report's own clock refers to.
 Only `vessel` exists. The discriminator is there so another kind of actor can be added later
 without breaking files that already exist — not because anything else is planned for now.
 
+## `marks[].kind` decides what the other fields mean
+
+`buoy` or `beacon`, and it is required — because four of the fields beside it answer a
+different question depending on which it is.
+
+- **`at`**. A buoy's is her **sinker's** position; she lies somewhere on a circle about it.
+  A beacon's is its own, because it is built where it stands.
+- **`mooring`** (`depthMetres`, `chainScope`) is what gives that circle a radius:
+  `sqrt(scope² − depth²)`, 57 m at 20 m depth on three times scope. Optional, and its absence
+  means the circle's size is unknown rather than that there is none. **The schema refuses it on
+  a beacon.**
+- **`shape`** is the IALA body shape and carries meaning — a can is port hand, a cone
+  starboard, a sphere safe water. A beacon has no equivalent: its form is engineering, and the
+  vocabulary for it does not exist yet. **The schema refuses it on a beacon** rather than
+  accepting one and drawing something else.
+- **`heightMetres`** is body height excluding any topmark, **above the water for both kinds**.
+  Not above a beacon's foundation, which is the natural reading and the one a light list
+  gives: placing a top from that needs the depth of the ground under the structure, and
+  nothing here states it. A beacon is therefore drawn taller than its stated height — the
+  footing below the surface is the renderer standing it on something, and the page says so.
+
+Everything optional here is regularly missing from a report, and a renderer then has to choose
+something to draw. What it chose is named beside the mark on the page rather than written into
+the file, so that the shape drawn and the shape stated cannot drift apart.
+
 ## Validating
 
 ```ts

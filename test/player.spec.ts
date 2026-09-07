@@ -1003,3 +1003,83 @@ describe("the canvas", () => {
     expect(gl.disposals).toBe(1);
   });
 });
+
+/**
+ * The two kinds of mark in the water. A buoy is small against an ocean wave and follows the
+ * surface almost exactly, which is what makes one worth drawing at all - a viewer reads the
+ * swell off her rise and tilt more directly than off the water. A beacon is built on the
+ * ground it marks and does neither, and a structure seen riding a swell would be the picture
+ * asserting something no sea does.
+ */
+describe("marks riding, or not riding, the sea", () => {
+  function withMarks(seaState?: number): Scenario {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      ...(seaState === undefined ? {} : { seaState }),
+    };
+    subject.marks = [
+      { id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3 },
+      { id: "shoal", kind: "beacon", at: ORIGIN, heightMetres: 8 },
+    ];
+    return subject;
+  }
+
+  /**
+   * Where each mark's group was put, across a minute of the drawn sea going past.
+   *
+   * From a bridge, because that is the only view with a sea in it at all: a chart has never
+   * had waves drawn on it, so the plan view holds the water flat and every mark on it still.
+   */
+  function heights(id: string, subject: Scenario = withMarks(5)): number[] {
+    const replay = replayOf(subject);
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const start = replay.startSeconds;
+    return [0, 3, 7, 11, 17, 23, 31, 43, 60].map((offset) => {
+      replay.seek(start + offset);
+      const group = lastFrame().scene.getObjectByName(`mark:${id}`);
+      if (!group) throw new Error(`no ${id} in the scene`);
+      return group.position.y;
+    });
+  }
+
+  it("heaves the buoy as the drawn surface goes past her", () => {
+    const buoy = heights("no-1");
+    expect(Math.max(...buoy) - Math.min(...buoy)).toBeGreaterThan(0.5);
+  });
+
+  /**
+   * Not "does not move" - it does, by a millimetre or two, because the earth bends away from
+   * an eye that is steaming and the whole scene sinks with it. What it must not do is take
+   * anything from the sea, and the way to say that exactly is to run the same minute over
+   * water with no state at all: the beacon's placement has to come out identical.
+   */
+  it("holds the beacon clear of the sea, though the earth still bends under it", () => {
+    const inASea = heights("shoal");
+    const onFlatWater = heights("shoal", withMarks());
+    expect(inASea).toEqual(onFlatWater);
+
+    // And the buoy is the control: over the same water she is somewhere else entirely.
+    expect(heights("no-1")).not.toEqual(heights("no-1", withMarks()));
+  });
+
+  /**
+   * A buoy tilts to the slope she is sitting on; a beacon is vertical whatever the water is
+   * doing. Leaning one would read as a tower falling over.
+   */
+  it("leaves the beacon upright while the buoy leans", () => {
+    const replay = replayOf(withMarks(5));
+    replay.setView({ kind: "bridge", actorId: "A" });
+    let leaned = false;
+    for (const offset of [0, 5, 13, 29, 47]) {
+      replay.seek(replay.startSeconds + offset);
+      const scene = lastFrame().scene;
+      const beacon = scene.getObjectByName("mark:shoal")!;
+      const buoy = scene.getObjectByName("mark:no-1")!;
+      // A quaternion of no rotation has w = 1; anything tilted has less.
+      expect(beacon.quaternion.w).toBe(1);
+      if (buoy.quaternion.w < 1) leaned = true;
+    }
+    expect(leaned).toBe(true);
+  });
+});

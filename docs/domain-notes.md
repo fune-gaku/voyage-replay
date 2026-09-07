@@ -309,3 +309,59 @@ special cases is how the second one gets missed.
 used, being the narrower statement, but eighteen knots beside force 9 means one of them is
 wrong and the page says so rather than choosing in silence. Which is right is not something
 this tool can settle — but the sea drawn from one is not the sea drawn from the other.
+
+## Sea marks
+
+### A beacon is not a kind of buoy
+
+They are drawn side by side and read as variants of one another, and almost nothing they
+carry means the same thing.
+
+| | buoy | beacon |
+|---|---|---|
+| what it is | a float on a chain | a structure on a foundation |
+| the stated position | her **sinker's** | its own |
+| how far it may be from it | the watch circle | nowhere |
+| body shape | IALA, and it means something | engineering, and it means nothing |
+| `heightMetres` measured from | the water | the water |
+| in a sea | heaves and tilts with it | the sea runs past it |
+
+**A shape is a statement in the buoyage** — a can is port hand, a cone starboard, a sphere
+safe water — so a beacon has none to give, and a format that accepted one and then drew a
+structure would have told whoever wrote it that it was understood. The schema refuses it.
+
+### The height is above the water, for both, and that is not the obvious choice
+
+A light list gives a beacon two heights: the light above mean sea level, and the structure
+above its own base. The second is the natural reading of "how tall is it" and **cannot be
+used here at all** — placing a top from it needs the depth of the ground under the
+foundation, and nothing in this format states that. A renderer given 8 m from a foundation
+and no sounding either invents the depth or ignores the datum.
+
+So `heightMetres` is **above the water for both kinds**, which is the figure the picture needs
+and the figure a sightline asks about. The consequence is that a beacon is drawn **taller than
+its stated height**: the footing below the surface is proportional to the structure, is not a
+sounding, and is not counted into what the mark reports back. The panel says so, because a
+part of the picture that nobody stated has to be owned somewhere.
+
+This was got wrong first time round. The schema and the panel said "above its foundation"
+while `render/mark.ts` put the top at `heightMetres` above the **water** — a 6 m beacon
+standing 8.1 m from its plinth with the page calling it 6 m. The page and the picture
+disagreeing about the same mark, which is the failure this repository keeps returning to.
+
+### A buoy is not at her charted position
+
+The position a report gives is her sinker's. She lies somewhere on a circle about it of radius
+`sqrt(scope^2 - depth^2)`, where scope is the chain as a multiple of the depth, and in a
+stream on its downstream edge. At 20 m on three times scope that is **57 m** — against ships
+of 49 m and 121 m in this project's reference case, a ship's length of slack, and "which side
+of the mark did she pass" is regularly the question a report is answering.
+
+**The renderer still draws her at the stated position**, because where in the circle she was is
+not known and moving her would invent a placement — the same judgement
+`plans/done/antenna-offset-6.md` reached about a hull and its antenna. The panel gives the
+radius instead.
+
+Three answers, not two: a beacon has **no** circle, a buoy with no stated mooring has one
+whose size **nobody wrote down**, and a buoy with a mooring has a figure. A blank shared by
+the first two would put a fact about the world and a gap in the file on the same footing.

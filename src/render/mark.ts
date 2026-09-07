@@ -10,6 +10,16 @@
  * **It rides the sea as DRAWN, not the sea as computed.** Past the range where the water's
  * geometry fades to flat, the buoy stops heaving with it. A buoy bobbing over visibly still
  * water would be the same kind of untruth as a panel claiming more than the picture shows.
+ *
+ * **A beacon does none of that.** It is built on a foundation on the shoal it marks, so it
+ * neither heaves nor tilts, and it has no IALA body shape - a can is port hand and a cone
+ * starboard, and a structure means nothing at all. The schema refuses a shape on one.
+ *
+ * **Its stated height is above the WATER, like a buoy's**, and the footing drawn below the
+ * surface is not part of it. Nothing states how deep the ground under a beacon is, so a
+ * height measured from the foundation could not be placed against the water at all - and a
+ * structure hanging in mid-air is not a picture either, which is why there is a footing at
+ * all. `ui/panels.ts` says that the part below the water is drawn rather than reported.
  */
 
 import {
@@ -22,23 +32,36 @@ import {
   type ColorRepresentation,
 } from "three";
 
-import type { Mark, MarkColour, MarkShape } from "../core/types.js";
+import type { Mark, MarkColour, MarkKind, MarkShape } from "../core/types.js";
 
 /**
- * Where a report says nothing. A pillar is the commonest shape in open water, and 2.4 m of
- * body about the usual for one. All three are assumptions, and `ui/panels.ts` names them as
- * such beside the mark they were used for - on screen a chosen pillar and a stated one look
- * exactly alike, and a can is port hand where a cone is starboard.
+ * Where a report says nothing. A pillar is the commonest shape in open water, 2.4 m of body
+ * about the usual for one, and 8 m above the water about the usual for a small light
+ * beacon. All of them are assumptions, and `ui/panels.ts` names them as such beside the
+ * mark they were used for - on screen a chosen pillar and a stated one look exactly alike,
+ * and a can is port hand where a cone is starboard.
  *
  * **Exported so the page reads them rather than repeating them.** Written out twice they
  * drift: change the shape drawn here and the panel goes on naming the old one, which is the
  * page and the picture disagreeing about the same buoy - the fault this whole object exists
  * to declare away.
  */
-export const ASSUMED_MARK: { shape: MarkShape; colour: MarkColour; heightMetres: number } = {
+export interface AssumedMark {
+  shape: MarkShape;
+  colour: MarkColour;
+  /**
+   * **A height by kind, though the datum is the same for both.** Both figures are metres
+   * above the water; what differs is what is usual. 2.4 m is about right for a buoy's body
+   * and would be a stump for a structure on a shoal, so one number covering both would not be
+   * one assumption used twice but a second, worse one made silently.
+   */
+  heightMetres: Record<MarkKind, number>;
+}
+
+export const ASSUMED_MARK: AssumedMark = {
   shape: "pillar",
   colour: "yellow",
-  heightMetres: 2.4,
+  heightMetres: { buoy: 2.4, beacon: 8 },
 };
 
 const COLOURS: Record<MarkColour, ColorRepresentation> = {
@@ -60,14 +83,16 @@ const PROPORTIONS: Record<MarkShape, { width: number; draught: number }> = {
 
 export interface MarkParts {
   group: Group;
-  /** Body height above the waterline, which is what a panel reports and a sightline wants. */
+  /**
+   * Body height **above the water**, which is what a panel reports and a sightline wants.
+   * A beacon's drawn footing goes below that and is not counted here: it is this renderer
+   * standing the structure on something, not a sounding.
+   */
   heightMetres: number;
 }
 
 export function buildMark(mark: Mark): MarkParts {
-  const shape = mark.shape ?? ASSUMED_MARK.shape;
-  const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres;
-  const proportions = PROPORTIONS[shape];
+  const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres[mark.kind];
   const material = new MeshStandardMaterial({
     color: COLOURS[mark.colour ?? ASSUMED_MARK.colour],
     roughness: 0.65,
@@ -76,9 +101,50 @@ export function buildMark(mark: Mark): MarkParts {
 
   const group = new Group();
   group.name = `mark:${mark.id}`;
-  group.add(body(shape, height, proportions, material));
+  if (mark.kind === "beacon") {
+    for (const part of beacon(height, material)) group.add(part);
+    return { group, heightMetres: height };
+  }
+
+  const shape = mark.shape ?? ASSUMED_MARK.shape;
+  group.add(body(shape, height, PROPORTIONS[shape], material));
   if (shape === "pillar" || shape === "spar") group.add(mast(height, material));
   return { group, heightMetres: height };
+}
+
+/**
+ * A beacon: a structure standing on a foundation, not a body floating on a surface.
+ *
+ * Drawn from the water DOWN as well as up, because that is what it does - it is built on
+ * the shoal it marks and the sea runs past it. A buoy's body straddles a waterline it
+ * follows; this one passes through a waterline that moves around it.
+ *
+ * **`heightMetres` is the part above the water, and only that part.** The footing goes below
+ * the surface as well, but its depth is invented here - nothing in the format says how deep
+ * the ground is - so it must not be counted into a height a report stated. Sinking the
+ * structure until it stood `heightMetres` tall from the plinth would move the top down by an
+ * amount nobody measured, and the top is what a sightline asks about.
+ *
+ * One form for now. What kind of structure - a tower, a lattice, a column, a pile - is a
+ * vocabulary the format does not have yet, and inventing one here would put a shape on the
+ * screen that the file never chose. Issue #42.
+ */
+function beacon(heightMetres: number, material: MeshStandardMaterial): Mesh[] {
+  const width = heightMetres * 0.28;
+  // Enough of a base to read as standing on something rather than hovering. It is not a
+  // stated depth: nothing here knows how deep the shoal is, which is why it is proportional
+  // to the structure rather than to any figure claiming to be a sounding.
+  const footing = heightMetres * 0.35;
+
+  const column = new Mesh(
+    new CylinderGeometry(width * 0.35, width * 0.5, heightMetres + footing, 12),
+    material,
+  );
+  column.position.y = (heightMetres - footing) / 2;
+
+  const plinth = new Mesh(new CylinderGeometry(width, width, footing * 0.5, 12), material);
+  plinth.position.y = -footing * 0.75;
+  return [column, plinth];
 }
 
 /**
