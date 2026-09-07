@@ -124,7 +124,7 @@
         "kind": { "enum": ["buoy"] },
         "at": { "$ref": "#/$defs/latLon" },
         "shape": {
-          "description": "IALA buoy shapes. Where a report does not say, 'pillar' is the commonest and is the default - which is an assumption, and anything that draws it should say so.",
+          "description": "IALA buoy shapes, which carry meaning: a can is port hand, a cone starboard, a sphere safe water. Optional, because reports often omit it - a renderer then has to choose one, and what it chose is named beside the mark rather than declared here, so that the shape drawn and the shape stated cannot drift apart.",
           "enum": ["pillar", "spar", "can", "conical", "spherical"]
         },
         "colour": {

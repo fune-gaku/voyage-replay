@@ -1,7 +1,12 @@
 import { MeshStandardMaterial, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 
-import { seawayOf, waveComponents, type WaveComponent } from "../src/core/seaway.js";
+import {
+  DRAWN_COMPONENTS,
+  seawayOf,
+  waveComponents,
+  type WaveComponent,
+} from "../src/core/seaway.js";
 import {
   applyWaves,
   displacedFraction,
@@ -200,5 +205,30 @@ describe("how far the drawn sea keeps its shape", () => {
     const slopeNearEnd =
       (displacedFraction(middle * 1.9) - displacedFraction(middle * 1.9 + 10)) / 10;
     expect(slopeAtMiddle).toBeGreaterThan(slopeNearEnd * 5);
+  });
+});
+
+describe("the shader carries the whole sea it was given", () => {
+  /**
+   * `normalised` shares the variance across every component it makes, so a shader with room
+   * for fewer would drop the remainder in silence and draw a flatter sea than the panels
+   * reason about - with every figure on the page still correct. Two constants is all that
+   * would take, so there is only one.
+   */
+  it("has room for exactly as many components as a sea is built from", () => {
+    expect(SHADER_COMPONENTS).toBe(DRAWN_COMPONENTS);
+    for (const hs of [0.5, 3, 12]) {
+      expect(waveComponents(seawayOf(hs))).toHaveLength(SHADER_COMPONENTS);
+    }
+  });
+
+  /** And the variance survives the trip into the uniforms, which is the point of the count. */
+  it("keeps the significant height across the packing", () => {
+    const uniforms = makeWaveUniforms();
+    const seaway = seawayOf(3);
+    setWaves(uniforms, waveComponents(seaway));
+
+    const packed = uniforms.uWave.value.reduce((total, wave) => total + wave.z ** 2 / 2, 0);
+    expect(Math.sqrt(packed)).toBeCloseTo(seaway.surfaceStdDevMetres, 6);
   });
 });

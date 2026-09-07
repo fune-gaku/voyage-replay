@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import schema from "../spec/voyage.schema.json";
+
 import {
   assumedPeakPeriodSeconds,
+  HEIGHT_LIMIT_METRES,
+  PERIOD_LIMITS_SECONDS,
   exceedanceProbability,
   highestExpectedMetres,
   meanOfHighest,
@@ -492,5 +496,36 @@ describe("which way the sea runs", () => {
       waves: { significantHeightMetres: 2, derivation: "inferred" },
     });
     expect(estimate?.fromDegreesTrue).toBeNull();
+  });
+});
+
+describe("the bounds the schema states and the ones the arithmetic enforces", () => {
+  /**
+   * Two copies of the same numbers, in JSON and in TypeScript, and neither can import the
+   * other. Left to drift they disagree in the direction that matters: raise the schema's
+   * ceiling alone and a stated 35 m sea validates and is then drawn at 30, the picture
+   * quietly understating a figure the file gives - which is this project's whole subject,
+   * arriving through a bound nobody thought of as a claim.
+   */
+  it("bounds the wave height the same in both", () => {
+    const waves = schema.properties.environment.properties.waves.properties;
+    expect(waves.significantHeightMetres.maximum).toBe(HEIGHT_LIMIT_METRES);
+    expect(waves.significantHeightMetres.minimum).toBe(0);
+  });
+
+  it("bounds the period the same in both", () => {
+    const waves = schema.properties.environment.properties.waves.properties;
+    expect(waves.peakPeriodSeconds.minimum).toBe(PERIOD_LIMITS_SECONDS.least);
+    expect(waves.peakPeriodSeconds.maximum).toBe(PERIOD_LIMITS_SECONDS.most);
+  });
+
+  it("clamps to exactly the bound the schema names, not to something near it", () => {
+    expect(seawayOf(HEIGHT_LIMIT_METRES * 10).significantHeightMetres).toBe(HEIGHT_LIMIT_METRES);
+    expect(seawayOf(2, PERIOD_LIMITS_SECONDS.most * 10).peakPeriodSeconds).toBe(
+      PERIOD_LIMITS_SECONDS.most,
+    );
+    expect(seawayOf(2, PERIOD_LIMITS_SECONDS.least / 10).peakPeriodSeconds).toBe(
+      PERIOD_LIMITS_SECONDS.least,
+    );
   });
 });

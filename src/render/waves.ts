@@ -27,10 +27,19 @@
 
 import { Color, Vector2, Vector4, type Material } from "three";
 
-import type { WaveComponent } from "../core/seaway.js";
+import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
 
-/** How many components the shader carries. Fixed, because a shader's array size is. */
-export const SHADER_COMPONENTS = 24;
+/**
+ * How many components the shader carries. Fixed, because a shader's array size is - and
+ * taken from `core/seaway.ts` rather than restated, because it has to be the number of
+ * components a sea is BUILT from.
+ *
+ * Carry fewer and `setWaves` drops the remainder in silence, while the amplitudes have
+ * already been shared across all of them: the drawn sea comes out flatter than the sea the
+ * panels are reasoning about, with every figure on the page still correct. That is the
+ * invariant this whole change rests on, and two constants is all it would take.
+ */
+export const SHADER_COMPONENTS = DRAWN_COMPONENTS;
 
 /**
  * Where displaced geometry gives out, in metres from the eye.

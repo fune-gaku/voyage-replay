@@ -99,9 +99,14 @@ const CORRELATION_STEPS = 20;
  * ever measured is 19 m, in the North Atlantic in 2013; swell periods reach the low
  * twenties. A sea beyond these clamps to them and gets an absurd but finite answer, which
  * is a better failure than a blank one.
+ *
+ * **The schema states the same bounds, and they have to stay the same numbers.** Raise the
+ * schema's and leave these and a stated 35 m sea validates, then draws silently at 30 - a
+ * picture quietly understating a figure the file gives. `test/seaway.spec.ts` holds the
+ * two together, since one of them is JSON and cannot import the other.
  */
-const HEIGHT_LIMIT_METRES = 30;
-const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
+export const HEIGHT_LIMIT_METRES = 30;
+export const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
 
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
@@ -425,6 +430,13 @@ function erfc(x: number): number {
  *
  * Few enough to evaluate per fragment, many enough not to read as a handful of sine waves.
  *
+ * **`render/waves.ts` takes its shader array length from this and must go on doing so.** The
+ * amplitudes here are shared out so that ALL of them together have the variance the
+ * significant height demands; a shader that carried fewer would drop the remainder silently,
+ * and the drawn sea would be flatter than the sea the panels reason about while every number
+ * on the page stayed right. That is the one invariant this whole change rests on, undone by
+ * a constant.
+ *
  * **The band is the same one the moments are taken over, and that is not tidiness.** The
  * root-mean-square wavenumber - what decides how often the surface crosses a sight line in
  * `visibility.ts` - is a property of which waves are in the sea. Draw a narrower band and
@@ -433,7 +445,7 @@ function erfc(x: number): number {
  * about the same water. Short waves carry little height and most of the slope, which is
  * exactly what makes them cheap to leave out and wrong to.
  */
-const DRAWN_COMPONENTS = 24;
+export const DRAWN_COMPONENTS = 24;
 
 /**
  * Directional spreading: the `s` of the Longuet-Higgins form, `D(theta) ~ cos^2s(theta/2)`,
