@@ -305,6 +305,24 @@ describe("reading a Light List abbreviation", () => {
   });
 
   /**
+   * The same rule reaches an occulting group, which runs the other way round -
+   * `eclipse, appearance, eclipse, ...` rather than `flash, eclipse, ...`. Pairing each
+   * appearance with the phase that follows it picks up the within-group cycle of both, which
+   * is the same two quantities class 2.2 names in the other order.
+   */
+  it("holds an occulting group to the same cycle, whichever way round its phases run", () => {
+    for (const text of ["Oc(2) W 2s", "Oc(3) W 4s", "Oc(2+1) W 4s"]) {
+      expect(parseCharacter(text), text).toEqual({
+        read: false,
+        because: "flashes too close together in a group to be counted",
+      });
+    }
+    expect(parseCharacter("Oc(2) Y 10s").read).toBe(true);
+    expect(parseCharacter("Oc(3) Y 15s").read).toBe(true);
+    expect(parseCharacter("Oc(2+1) W 12s").read).toBe(true);
+  });
+
+  /**
    * A continuous quick light's period IS its flash cycle, so a period inside the class's band
    * has to be BUILT from that period rather than from the specification's standard rate.
    * Built at 60 a minute instead, `Q W 0.8s` - which is 75 a minute, squarely quick - would

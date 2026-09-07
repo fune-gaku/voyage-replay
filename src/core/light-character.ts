@@ -954,7 +954,16 @@ function wrongElements(phases: Phase[]): Nonconformity | null {
   return uneven ? "phases of unequal length inside a group" : null;
 }
 
-/** A flash and the eclipse after it, for every pair inside a group. */
+/**
+ * A flash and the eclipse after it, for every pair inside a group.
+ *
+ * **Orientation does not matter, and that is deliberate.** A flashing light runs
+ * `flash, eclipse, flash, ...` and an occulting one `eclipse, appearance, eclipse, ...`, so
+ * pairing each appearance with the phase that FOLLOWS it picks up the within-group cycle of
+ * both: class 2.2 asks for "the duration of an eclipse together with the duration of the
+ * appearance of light within a group", which is the same two quantities in the other order.
+ * `test/light-character.spec.ts` holds that for Oc(2), Oc(3) and Oc(2+1).
+ */
 function withinCycles(phases: Phase[]): number[] {
   const cycles: number[] = [];
   for (let i = 0; i + 1 < phases.length; i += 1) {

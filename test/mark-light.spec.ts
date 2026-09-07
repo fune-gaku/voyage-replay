@@ -506,6 +506,31 @@ describe("lightOf", () => {
     }
   });
 
+  /**
+   * And stated timings for an occulting group are held to it too, which is what one validator
+   * over a sequence buys: the rule is written once and neither side has its own copy to run
+   * the phases the other way round.
+   */
+  it("refuses stated occultations too short to be counted inside their group", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Oc(2) W 6s",
+          phases: [
+            { seconds: 0.1 },
+            { seconds: 0.1, colour: "white" },
+            { seconds: 0.1 },
+            { seconds: 5.7, colour: "white" },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe("flashes too close together in a group to be counted");
+    }
+  });
+
   it("takes a light on a beacon as readily as on a buoy", () => {
     const reading = lightOf({ ...buoy(), kind: "beacon", light: { character: "Q(9) W 15s" } });
     expect(reading.known).toBe(true);
