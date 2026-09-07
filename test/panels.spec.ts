@@ -742,6 +742,28 @@ describe("what the page says a mark means", () => {
   });
 
   /**
+   * The mirror of the last one. A file may say a mark carried a topmark without saying what
+   * the mark was FOR - or say it of a lateral mark whose region nobody stated - and then
+   * there is nothing to draw but something to report. Four states, not two.
+   */
+  it("keeps a stated topmark whose shape cannot be worked out", () => {
+    const noPurpose = scenario();
+    noPurpose.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 }, topmark: true }];
+    expect(panelsFor(noPurpose)).toContain("<td>carried one, shape not worked out</td>");
+
+    // A lateral mark's colours - and so its topmark's - wait on the region.
+    const noRegion = scenario();
+    noRegion.marks = [cardinal({ purpose: "port-hand", topmark: true })];
+    expect(panelsFor(noRegion)).toContain("<td>carried one, shape not worked out</td>");
+
+    // And with the region, the shape follows from the purpose after all.
+    const known = scenario();
+    known.meta.buoyageRegion = "B";
+    known.marks = [cardinal({ purpose: "port-hand", topmark: true })];
+    expect(panelsFor(known)).toContain("green can, from its purpose");
+  });
+
+  /**
    * A colour the file states beats one the buoyage would have given - real marks deviate, and
    * the source is the thing being reconstructed. The page says which it had.
    */

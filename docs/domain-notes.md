@@ -516,6 +516,11 @@ cardinal, isolated danger, safe water and special marks are the same the world o
   striped, isolated danger is banded — a single-colour field leaves out most of the system.
   The pattern is carried as a kind and an ordered list, and the order is the message: black
   over yellow is north, yellow over black is south.
+- **Four states, one field, three of them drawing nothing.** A topmark can be one that is
+  drawn, one the file says was not there, one the file says WAS there whose shape cannot be
+  worked out (no purpose stated, or a lateral mark with no region), and nothing known. The
+  last three all draw the same picture. **"The picture is the same" does not mean "the report
+  is the same."**
 - **A stated absence is not a silence.** `topmark: false` and a file that says nothing draw
   the same picture — no topmark — and must not print the same words: the first is a fact the
   source gave, the second is the limit of the source. Collapsing them loses the only thing

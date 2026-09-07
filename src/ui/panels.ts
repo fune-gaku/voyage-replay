@@ -1051,9 +1051,10 @@ function patternCell(pattern: From<MarkPattern>): string {
 function topmarkCell(drawn: DrawnMark): string {
   const topmark = drawn.topmark;
   if (!topmark) return "nothing says";
-  // A file that says the mark carried none has said something, and it is not the same thing
-  // as a file that says nothing - which is what the cell above this one would print.
+  // Two statements with nothing to draw for either, and neither is the silence above: the
+  // file said there was none, or said there was one without saying what the mark was for.
   if (topmark.value === null) return "none, stated";
+  if (topmark.value === "carried one") return "carried one, shape not worked out";
   return saying(topmark, `${topmark.value.colour} ${topmark.value.shape}`);
 }
 

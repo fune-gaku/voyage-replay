@@ -37,6 +37,9 @@ import type {
 export type Origin =
   "stated" | "from its purpose" | "chosen from what its purpose allows" | "chosen here";
 
+/** A topmark that is drawn, one the file says was not there, or one whose shape is unknown. */
+export type Topmarked = { shape: Topmark; colour: MarkColour } | "carried one" | null;
+
 export interface From<T> {
   value: T;
   from: Origin;
@@ -47,14 +50,17 @@ export interface DrawnMark {
   /** The IALA body shape, for a buoy. Null for a beacon, which has none (#40). */
   shape: From<MarkShape> | null;
   /**
-   * The shape on top - and **absence has an origin too**.
+   * The shape on top - and **what is known about it has four states, not two**.
    *
-   * Three answers, not two. A `From` carrying a shape is one that is drawn; a `From` carrying
-   * null is a file saying the mark had none, which R1001 allows for in so many words; a bare
-   * null is nothing known either way. The middle one is a fact about the mark, and printing it
-   * the same as the last would lose the only thing the source said.
+   * A shape, which is drawn. A stated absence, which R1001 allows for in so many words. A
+   * stated PRESENCE whose shape cannot be worked out - a file may say a mark carried a
+   * topmark without saying what the mark was for, and then there is nothing to draw but
+   * something to report. And nothing known either way.
+   *
+   * The middle two draw the same picture as the last - no topmark - and must not print the
+   * same words, because each of them is a different thing the source did or did not say.
    */
-  topmark: From<{ shape: Topmark; colour: MarkColour } | null> | null;
+  topmark: From<Topmarked> | null;
   /** How a beacon is built, which means nothing. Null for a buoy, which has a shape instead. */
   construction: From<MarkConstruction> | null;
 }
@@ -92,13 +98,13 @@ export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): Drawn
  * off, and reported as this tool's decision to draw it: what it looks like comes from the
  * buoyage, that it is there at all does not.
  */
-function topmarkOf(
-  mark: Mark,
-  meant: Appearance | null,
-): From<{ shape: Topmark; colour: MarkColour } | null> | null {
-  // A stated absence is a statement, and it survives having nothing to draw.
+function topmarkOf(mark: Mark, meant: Appearance | null): From<Topmarked> | null {
+  // Both statements survive having nothing to draw: that there was none, and that there was
+  // one whose shape nothing here can work out - a mark with no purpose stated, or a lateral
+  // mark whose region is not known.
   if (mark.topmark === false) return { value: null, from: "stated" };
-  if (!meant?.topmark) return null;
+  if (!meant?.topmark)
+    return mark.topmark === true ? { value: "carried one", from: "stated" } : null;
   return {
     value: meant.topmark,
     from: mark.topmark === true ? "from its purpose" : "chosen from what its purpose allows",

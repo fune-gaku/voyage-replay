@@ -150,13 +150,22 @@ export function buildMark(mark: Mark, region: BuoyageRegion | null = null): Mark
   for (const part of standing(drawn, shape, height, paint)) group.add(part);
   if (staff) group.add(mast(height, paint(0)));
 
-  // A stated absence carries a null value - the file said there was no topmark - and so
-  // there is nothing to draw for it, which is true of a mark nothing is known about too.
-  const above = drawn.topmark?.value;
-  if (above) {
-    for (const part of topmark(above, height, staff)) group.add(part);
-  }
+  for (const part of above(drawn, height, staff)) group.add(part);
   return withLamp(mark, group, height, staff);
+}
+
+/**
+ * The topmark, where there is one to draw.
+ *
+ * Two of the four things `drawnAppearance` can say about a topmark have nothing to draw: that
+ * the file said there was none, and that it said there was one without saying what the mark
+ * was for. Both are statements, and `ui/panels.ts` prints them - here they are simply not
+ * shapes.
+ */
+function above(drawn: DrawnMark, height: number, staff: boolean): Mesh[] {
+  const shape = drawn.topmark?.value;
+  if (!shape || shape === "carried one") return [];
+  return topmark(shape, height, staff);
 }
 
 /** The body of a buoy, or the structure of a beacon - the parts that stand in the water. */
