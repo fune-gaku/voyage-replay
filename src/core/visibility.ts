@@ -68,6 +68,15 @@ export interface Occlusion {
 export interface OcclusionBounds {
   lowestFraction: number;
   highestFraction: number;
+  /**
+   * Whether the top of that range is a floor rather than a bound.
+   *
+   * Sea state 9 is "over 14 m" with nothing above it, so the roughest sea the source allows
+   * has no height and the pair stops being an interval. Saying so is the difference between
+   * a range and a minimum, and a cell that printed the closed one would be making exactly
+   * the claim this module exists to stop making.
+   */
+  highestFractionIsFloor: boolean;
   /** The crest height at which occlusion starts. Geometry alone - no sea assumed. */
   crestThresholdMetres: number;
 }
@@ -88,6 +97,12 @@ export function occludedFraction(sightline: Sightline, seaway: Seaway): Occlusio
  * conclusion survives all of them. Where the bounds are far apart the source does not
  * settle the question; where they agree - and at 15 km in this project's reference
  * geometry every plausible sea hides a small vessel constantly - it does.
+ *
+ * Taking the ends is only a bracket because more sea hides more ship: a taller sea raises
+ * the surface's spread faster than the period it comes with lengthens the waves, so the
+ * fraction rises with significant height throughout. `test/visibility.spec.ts` holds that,
+ * because if it ever stopped being true the interior of a class could sit outside the pair
+ * and this function would be quietly reporting the wrong thing.
  */
 export function occludedFractionBounds(
   sightline: Sightline,
@@ -100,6 +115,7 @@ export function occludedFractionBounds(
   return {
     lowestFraction: Math.min(...fractions),
     highestFraction: Math.max(...fractions),
+    highestFractionIsFloor: estimate.roughEndIsOpen,
     crestThresholdMetres: crestOcclusionMetres(sightline),
   };
 }

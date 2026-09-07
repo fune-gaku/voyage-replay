@@ -133,8 +133,14 @@ occlusion arithmetic closed-form.
 
 WMO code 3700. State 4 spans 1.25–2.5 m — a factor of two in height, which becomes a factor of
 about fifty in how much of the time a low target is hidden. So `SeaEstimate` carries both ends
-and never a midpoint. State 9 is open above 14 m and is flagged as such rather than letting the
-figure pass for a bound.
+and never a midpoint. State 9 is open above 14 m, and that has to survive all the way to the
+cell: the pair is a floor there, not an interval, so it reads "or more" rather than a range.
+
+Taking the ends of a class is a bracket only because more sea means more hiding, and that is
+not obvious — a taller sea comes with a longer assumed period, whose longer waves cross a sight
+line *less* often, so the two effects pull opposite ways. The spread wins throughout the range
+that matters, and `test/visibility.spec.ts` holds it: if it stopped winning, the interior of a
+class could sit outside the pair.
 
 ### The occluding waves are not at the target, and not at one point
 

@@ -384,7 +384,7 @@ describe("whether the sea was in the way", () => {
 
     expect(html).not.toContain("no sea stated");
     expect(html).toContain("between 1.25 and 2.5 m");
-    expect(html).toContain("7.9 s at the rough end");
+    expect(html).toContain("assumed from the height (7.9 s at the rough end)");
   });
 
   /**
@@ -409,7 +409,7 @@ describe("whether the sea was in the way", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("The file states a significant height of 1.8 m");
-    expect(html).not.toContain("the period is assumed from it");
+    expect(html).not.toContain("The period is assumed from the height");
   });
 
   it("names the assumed heights as assumed, and points at the issue that fixes them", () => {
@@ -431,7 +431,9 @@ describe("whether the sea was in the way", () => {
   it("marks sea state 9 as open above rather than letting 14 m pass for a bound", () => {
     const subject = scenario();
     subject.environment = { lightCondition: "night", seaState: 9 };
-    expect(panelsFor(subject)).toContain("open above");
+    const html = panelsFor(subject);
+    expect(html).toContain("14 m or more");
+    expect(html).not.toContain("between 14 and 14");
   });
 
   it("declines rather than guessing when either ship has no particulars", () => {
@@ -445,5 +447,47 @@ describe("whether the sea was in the way", () => {
   it("needs two actors, like the rest of the encounter sections", () => {
     const subject = scenario([actor("A", northboundPoints(), COASTER)]);
     expect(panelsFor(subject)).toContain("Needs two actors.");
+  });
+});
+
+describe("what the sea section says about where its figures came from", () => {
+  /**
+   * The schema requires a derivation on a stated wave height precisely so that a
+   * reconstructed one cannot read as a recorded one. The occlusion figures are more
+   * sensitive to this number than to anything else on the row, so dropping it on the way to
+   * the panel would put the guarantee back where it started.
+   */
+  it("prints the derivation beside a stated height", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 1.8, derivation: "inferred" },
+    };
+    expect(panelsFor(subject)).toContain("significant height of 1.8 m (inferred)");
+
+    subject.environment.waves = { significantHeightMetres: 1.8, derivation: "measured" };
+    expect(panelsFor(subject)).toContain("significant height of 1.8 m (measured)");
+  });
+
+  it("calls a sea state's figures inferred, because somebody read them off the water", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    expect(panelsFor(subject)).toContain("between 1.25 and 2.5 m (inferred)");
+  });
+
+  /**
+   * The cell has to be the narrower claim of the two. A closed range over a class that runs
+   * to any height at all would invent the bound the caveat beneath it is denying.
+   */
+  it("prints a floor rather than a range where the class is open above", () => {
+    const subject = scenario([
+      actor("A", northboundPoints(), COASTER),
+      actor("B", silentPoints(), COASTER),
+    ]);
+    subject.environment = { lightCondition: "night", seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("or more</td>");
+    expect(html).toContain("the last column is a floor and not a range");
   });
 });

@@ -125,6 +125,40 @@ describe("the bounds a sea state actually supports", () => {
     expect(settled.lowestFraction).toBeGreaterThan(0.9);
   });
 
+  /**
+   * Taking the ends of a class is a bracket only while more sea means more hiding. It is not
+   * obvious that it does: a taller sea comes with a longer assumed period, whose longer waves
+   * cross a sight line LESS often, so the two effects pull opposite ways. The spread wins
+   * throughout - but if it ever stopped winning, the interior of a class could sit outside
+   * the pair and `occludedFractionBounds` would be silently reporting the wrong thing.
+   */
+  it("rises with significant height throughout, which is what makes the ends a bracket", () => {
+    for (const range of [6_000, 9_000, 11_000, 13_000]) {
+      let previousRigid = -1;
+      let previousRiding = -1;
+      for (let hs = 0.25; hs <= 4.001; hs += 0.25) {
+        const { rigidFraction, ridingFraction } = occludedFraction(look(range), seawayOf(hs));
+        expect(rigidFraction).toBeGreaterThanOrEqual(previousRigid);
+        expect(ridingFraction).toBeGreaterThanOrEqual(previousRiding);
+        previousRigid = rigidFraction;
+        previousRiding = ridingFraction;
+      }
+    }
+  });
+
+  /**
+   * Sea state 9 runs from 14 m upward with nothing over it, so the pair is a floor and not
+   * an interval. Reporting it as closed would invent the bound the class does not have.
+   */
+  it("says when the top is a floor, because state 9 has no upper end", () => {
+    const open = seawayFrom({ seaState: 9 });
+    const closed = seawayFrom({ seaState: 4 });
+    if (!open || !closed) throw new Error("both sea states should give an estimate");
+
+    expect(occludedFractionBounds(look(11_000), open).highestFractionIsFloor).toBe(true);
+    expect(occludedFractionBounds(look(11_000), closed).highestFractionIsFloor).toBe(false);
+  });
+
   it("carries the geometry through unchanged, since no sea went into it", () => {
     const estimate = seawayFrom({ seaState: 2 });
     if (!estimate) throw new Error("sea state 2 should give an estimate");

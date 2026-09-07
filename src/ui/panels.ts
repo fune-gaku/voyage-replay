@@ -463,12 +463,24 @@ function sightlineOf(sighting: Sighting, rangeMetres: number): Sightline {
   };
 }
 
+/**
+ * The cell, which has to be the narrower claim of the two on the row.
+ *
+ * A closed range is printed only where the source closes it. Sea state 9 has no upper
+ * bound, so its top figure is a floor and the cell says "or more" - a cell reading
+ * "53.1% to 91.4%" over a class that runs to any height at all would be inventing the
+ * bound the caveat below it is busy denying.
+ */
 function hiddenCell(sightline: Sightline, sea: SeaEstimate | null): string {
   if (!sea) return "no sea stated";
-  const { lowestFraction, highestFraction } = occludedFractionBounds(sightline, sea);
-  const low = (lowestFraction * 100).toFixed(1);
-  const high = (highestFraction * 100).toFixed(1);
-  return low === high ? `${low}%` : `${low}% to ${high}%`;
+  const bounds = occludedFractionBounds(sightline, sea);
+  const low = (bounds.lowestFraction * 100).toFixed(1);
+  const high = (bounds.highestFraction * 100).toFixed(1);
+  // Nothing stands above a hundred per cent, so the open end has nothing left to say.
+  const open = bounds.highestFractionIsFloor && bounds.highestFraction < 0.9995;
+
+  if (low === high) return open ? `${low}% or more` : `${low}%`;
+  return open ? `${low}% to ${high}% or more` : `${low}% to ${high}%`;
 }
 
 /**
@@ -499,23 +511,46 @@ function seaCaveat(sea: SeaEstimate | null): string {
     );
   }
   return (
-    `${statedSpread(sea)} ${tailNote(sea)} The figures count crossings independently, ` +
-    "which runs high, and treat the sea as long crested along one line, which runs low."
+    `${heightSentence(sea)}${periodSentence(sea)} ${tailNote(sea)} The figures count crossings ` +
+    "independently, which runs high, and treat the sea as long crested along one line, which " +
+    "runs low."
   );
 }
 
-function statedSpread(sea: SeaEstimate): string {
-  const { calm, rough } = sea;
-  const spread =
-    sea.source === "stated"
-      ? `The file states a significant height of ${calm.significantHeightMetres} m`
-      : `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
-        `${rough.significantHeightMetres} m${sea.roughEndIsOpen ? ", open above" : ""}`;
-  if (!sea.periodAssumed) return `${spread}.`;
+/**
+ * Where the height came from, in the same breath as the height.
+ *
+ * The derivation is required by the schema precisely so that a reconstructed height and a
+ * recorded one cannot be read as the same claim, and the occlusion figures are more
+ * sensitive to this number than to anything else on the row. Printing the height without it
+ * would put the format's own guarantee back where it started.
+ *
+ * Sea state 9 gets "or more" rather than a range, both because 14 to 14 is not one and
+ * because the class genuinely has no upper end.
+ */
+function heightSentence(sea: SeaEstimate): string {
+  const { calm, rough, derivation } = sea;
+  if (sea.source === "stated") {
+    return `The file states a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
+  }
+  if (sea.roughEndIsOpen) {
+    return (
+      `Sea state gives a significant height of ${rough.significantHeightMetres} m or more ` +
+      `(${derivation}), with nothing above it, so the last column is a floor and not a range.`
+    );
+  }
   return (
-    `${spread}, and the period is assumed from it ` +
-    `(${rough.peakPeriodSeconds.toFixed(1)} s at the rough end), which runs long in enclosed ` +
-    "water and so errs towards saying she was visible."
+    `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
+    `${rough.significantHeightMetres} m (${derivation}).`
+  );
+}
+
+/** Only where the file left the period out, since then it is this project's guess and not hers. */
+function periodSentence(sea: SeaEstimate): string {
+  if (!sea.periodAssumed) return "";
+  return (
+    ` The period is assumed from the height (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the ` +
+    "rough end), which runs long in enclosed water and so errs towards saying she was visible."
   );
 }
 
