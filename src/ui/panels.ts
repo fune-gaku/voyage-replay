@@ -799,14 +799,34 @@ function periodSentence(sea: SeaEstimate): string {
   }
   if (sea.periodFrom === "stated") return "";
   const source =
-    sea.periodFrom === "wind"
-      ? "taken forwards from the stated wind"
-      : "assumed from the height, the file giving neither a period nor a wind speed";
+    sea.periodFrom === "wind" ? "taken forwards from the stated wind" : fromHeight(sea);
   return (
     ` The period is ${source} (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the rough end). ` +
     "Either way it assumes a sea that has stopped growing, which runs long in enclosed " +
     "water and so errs towards saying she was visible."
   );
+}
+
+/**
+ * Why the height had to supply the period, which depends on what the file withheld.
+ *
+ * A reader who wrote "force 6" and is told the period was assumed "from the height, the file
+ * giving neither a period nor a wind speed" has been told something true and left wondering
+ * what happened to their wind. It was declined, and for a reason worth one clause: a force
+ * is a class, and taking a period from one means taking a speed out of the middle of it.
+ */
+function fromHeight(sea: SeaEstimate): string {
+  const base = "assumed from the height";
+  if (sea.windSpeedWasStated) {
+    return `${base}, the stated wind being too light to have raised this sea`;
+  }
+  if (sea.forceWasStatedWithoutSpeed) {
+    return (
+      `${base}: the file gives a Beaufort force and no speed, and a force is a class - ` +
+      "taking a period from one would mean taking a speed out of the middle of it"
+    );
+  }
+  return `${base}, the file giving neither a period nor a wind speed`;
 }
 
 /**

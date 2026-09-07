@@ -136,9 +136,9 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 | | 実測 | 下限 |
 |---|---:|---:|
 | Lines | 98.87% | 98% |
-| Statements | 97.42% | 95% |
+| Statements | 97.43% | 95% |
 | Functions | 99.09% | 99% |
-| Branches | 90.33% | 83% |
+| Branches | 90.42% | 83% |
 
 - **効いているのは `coverage.include: ["src/**/*.ts"]`。** これが無いと「テストが読み込んだ
   ファイル」だけが分母になり、**テストが1本も無いファイルは 0% ではなく不在**になる。

@@ -1005,3 +1005,48 @@ describe("the disagreement note over a calm, whose class has no top to quote", (
     expect(html).not.toContain("could raise at most");
   });
 });
+
+describe("why the height had to supply the period", () => {
+  /**
+   * A reader who wrote "force 6" and is told the period was assumed "from the height, the
+   * file giving neither a period nor a wind speed" has been told something true and left
+   * wondering what happened to their wind. It was declined, and the reason is worth a clause.
+   */
+  it("says a force was declined because a force is a class", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("a force is a class");
+    expect(html).toContain("taking a speed out of the middle of it");
+    expect(html).not.toContain("giving neither a period nor a wind speed");
+  });
+
+  it("says a speed was declined because it was too light for the sea", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { speedKnots: 6, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("too light to have raised this sea");
+    expect(html).not.toContain("a force is a class");
+  });
+
+  it("says the file gave nothing where it gave nothing", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("giving neither a period nor a wind speed");
+    expect(html).not.toContain("too light to have raised");
+  });
+
+  it("says none of it where the wind did supply the period", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { speedKnots: 35, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("taken forwards from the stated wind");
+    expect(html).not.toContain("too light to have raised");
+    expect(html).not.toContain("a force is a class");
+  });
+});

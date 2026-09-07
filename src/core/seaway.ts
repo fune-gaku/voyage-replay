@@ -178,6 +178,16 @@ export interface SeaEstimate {
   /** Likewise for the direction: the file, the stated wind, or a bearing this tool chose. */
   directionFrom: "stated" | "wind" | "assumed";
   /**
+   * Why the wind did not supply the period, where it did not - so a page can say which of
+   * the two happened rather than leaving a reader who stated a wind to wonder.
+   *
+   * A speed was given and was too light to have raised this sea; or a force was given and a
+   * force is a class, which cannot yield a period without picking a speed out of the middle
+   * of one. Both false where the wind did supply it, or where there was no wind at all.
+   */
+  windSpeedWasStated: boolean;
+  forceWasStatedWithoutSpeed: boolean;
+  /**
    * Where the sea comes from, or null where the source does not say - which is every sea
    * state, since the class carries no direction at all. Null rather than a default, so that
    * whatever draws it has to decide what to do about not knowing and say what it decided.
@@ -244,6 +254,10 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
   // one period is applied to both.
   const roughest = roughestHeightMetres(waves, environment?.seaState);
   const period = periodFor(waves, wind, roughest);
+  const declined = {
+    windSpeedWasStated: period.from !== "wind" && wind?.source === "speed",
+    forceWasStatedWithoutSpeed: period.from !== "wind" && wind?.source === "force",
+  };
 
   if (waves?.significantHeightMetres !== undefined) {
     const seaway = seawayOf(waves.significantHeightMetres, period.seconds);
@@ -254,10 +268,11 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
       derivation: waves.derivation,
       roughEndIsOpen: false,
       periodFrom: period.from,
+      ...declined,
       ...direction,
     };
   }
-  return fromSeaState(environment?.seaState, period, direction);
+  return fromSeaState(environment?.seaState, { ...period, ...declined }, direction);
 }
 
 /**
@@ -374,7 +389,12 @@ function windCouldRaise(wind: WindEstimate, heightMetres: number): boolean {
 
 function fromSeaState(
   seaState: number | null | undefined,
-  period: { seconds: number | undefined; from: SeaEstimate["periodFrom"] },
+  period: {
+    seconds: number | undefined;
+    from: SeaEstimate["periodFrom"];
+    windSpeedWasStated: boolean;
+    forceWasStatedWithoutSpeed: boolean;
+  },
   direction: { fromDegreesTrue: number | null; directionFrom: SeaEstimate["directionFrom"] },
 ): SeaEstimate | null {
   if (seaState === null || seaState === undefined) return null;
@@ -389,6 +409,8 @@ function fromSeaState(
     derivation: "inferred",
     roughEndIsOpen: band.topIsOpen,
     periodFrom: period.from,
+    windSpeedWasStated: period.windSpeedWasStated,
+    forceWasStatedWithoutSpeed: period.forceWasStatedWithoutSpeed,
     ...direction,
   };
 }
