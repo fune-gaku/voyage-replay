@@ -140,6 +140,30 @@ export interface ScenarioMeta {
   license?: string;
 }
 
+export const MARK_SHAPES = ["pillar", "spar", "can", "conical", "spherical"] as const;
+export type MarkShape = (typeof MARK_SHAPES)[number];
+
+export const MARK_COLOURS = ["green", "red", "yellow", "black", "white"] as const;
+export type MarkColour = (typeof MARK_COLOURS)[number];
+
+/**
+ * A sea mark, which is a place rather than a passage.
+ *
+ * Not an `Actor`: it does not move, so it has no track, no derivation of motion and nothing
+ * to say about heading. What it does have is a fixed position, which is often the thing a
+ * report turns on - which side of the buoy she passed.
+ */
+export interface Mark {
+  id: string;
+  name?: string;
+  kind: "buoy";
+  at: LatLon;
+  shape?: MarkShape;
+  colour?: MarkColour;
+  heightMetres?: number;
+  source?: Source;
+}
+
 export interface Scenario {
   $schema?: string;
   formatVersion: string;
@@ -147,4 +171,5 @@ export interface Scenario {
   origin: LatLon;
   environment?: Environment;
   actors: Actor[];
+  marks?: Mark[];
 }

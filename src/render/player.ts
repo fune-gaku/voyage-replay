@@ -4,7 +4,7 @@
  */
 
 import type { PerspectiveCamera } from "three";
-import { Group, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
+import { Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
 
 import {
   hullCentreOffset,
@@ -16,6 +16,7 @@ import {
   distanceMetres,
   offsetAlongHeading,
   relativeBearingDegrees,
+  toLocalPosition,
   type LocalPosition,
 } from "../core/geodesy.js";
 import { dropMetres } from "../core/horizon.js";
@@ -32,6 +33,7 @@ import {
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
 import { buildHull } from "./hull.js";
+import { buildMark, type MarkParts } from "./mark.js";
 import {
   buildNavigationLights,
   type LampAudience,
@@ -168,12 +170,19 @@ function audienceFor(
  * never changes, while the renderer and the cameras below it belong to whatever surface
  * happens to be showing it and are rebuilt or resized freely.
  */
+/** One buoy in the scene, with the place it is moored at worked out once. */
+interface Moored {
+  parts: MarkParts;
+  at: LocalPosition;
+}
+
 interface Stage {
   startSeconds: number;
   endSeconds: number;
   sceneParts: SceneParts;
   diagram: Group;
   cast: Cast[];
+  marks: Moored[];
   minimumOverheadExtent: number;
 }
 
@@ -402,9 +411,11 @@ export class Replay {
 
     this.stage.diagram.visible = diagramMode;
     this.stage.sceneParts.setDiagramView(diagramMode);
-    // After the ships, because it is the same eye they were just sunk against, and before
-    // the render, because it is what decides whether the world is curved at all.
+    this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
+    // After the eye is known, since what the sea does under a buoy depends on how far off
+    // it is - the water's geometry fades with distance and the buoy has to fade with it.
     this.stage.sceneParts.setEye(eye?.position ?? null, eye?.heading ?? 0);
+    for (const mark of this.stage.marks) this.float(mark, eye);
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
     this.drawOverlay(diagramMode);
   }
@@ -472,6 +483,26 @@ export class Replay {
         offset.starboardMetres,
       ),
     };
+  }
+
+  /**
+   * One buoy, riding the sea as it is drawn under her.
+   *
+   * A buoy is small against an ocean wave, so she follows the surface rather than arguing
+   * with it: her deck lies along the local slope and her waterline is the local height.
+   * That is a real approximation and it fails in short steep seas, where a buoy of a few
+   * metres spans a wave and cannot follow - the same response question issue #32 holds
+   * back for ships, and the reason nothing here pretends to a period of its own.
+   */
+  private float(mark: Moored, eye: Eye | null): void {
+    const seconds = this.currentSeconds - this.startSeconds;
+    const sea = this.stage.sceneParts.drawnSurfaceAt(mark.at, seconds);
+    mark.parts.group.position.copy(toWorld(mark.at, sinkage(mark.at, eye) + sea.heightMetres));
+    // The surface normal, in the scene's axes: north is -z, so a rise to the north tilts
+    // the buoy towards +z. Getting that sign wrong leans every buoy the wrong way, which
+    // reads as plausible until it is watched against the waves going past.
+    UP.set(-sea.slopeEast, 1, sea.slopeNorth).normalize();
+    mark.parts.group.quaternion.setFromUnitVectors(VERTICAL, UP);
   }
 
   /** One ship at the current instant, or hidden if her track does not reach it. */
@@ -597,6 +628,10 @@ export class Replay {
   }
 }
 
+/** Scratch vectors for `float`, which runs for every buoy on every frame. */
+const VERTICAL = new Vector3(0, 1, 0);
+const UP = new Vector3();
+
 function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage {
   const prepared = scenario.actors.map((actor) => ({
     actor,
@@ -615,6 +650,11 @@ function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage
   diagram.name = "diagram";
   sceneParts.scene.add(diagram);
   const cast = prepared.map((entry, index) => enterStage(entry, index, sceneParts, diagram));
+  const marks = (scenario.marks ?? []).map((mark) => {
+    const parts = buildMark(mark);
+    sceneParts.actors.add(parts.group);
+    return { parts, at: toLocalPosition(mark.at, scenario.origin) };
+  });
 
   return {
     startSeconds: Math.min(...tracks.map((t) => t.startSeconds)),
@@ -622,6 +662,7 @@ function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage
     sceneParts,
     diagram,
     cast,
+    marks,
     // Never let the plan view zoom closer than a few ship lengths, or the frame collapses
     // onto the hulls at contact and the approach geometry - the thing worth looking at -
     // leaves the screen just as it matters.

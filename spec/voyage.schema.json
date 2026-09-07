@@ -104,10 +104,42 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/actor" }
+    },
+
+    "marks": {
+      "description": "Sea marks: buoys and the like. Separate from actors because they do not move, carry no track and have no derivation of motion to argue about - a moored buoy is a place, not a passage. Which side of one a ship passed is often the question a report is answering.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/mark" }
     }
   },
 
   "$defs": {
+    "mark": {
+      "type": "object",
+      "required": ["id", "kind", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "kind": { "enum": ["buoy"] },
+        "at": { "$ref": "#/$defs/latLon" },
+        "shape": {
+          "description": "IALA buoy shapes. Where a report does not say, 'pillar' is the commonest and is the default - which is an assumption, and anything that draws it should say so.",
+          "enum": ["pillar", "spar", "can", "conical", "spherical"]
+        },
+        "colour": {
+          "description": "The body's colour. Solid colours only for now; banded and striped marks carry meaning this format cannot yet state.",
+          "enum": ["green", "red", "yellow", "black", "white"]
+        },
+        "heightMetres": {
+          "description": "Body height above the waterline, excluding any topmark. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "source": { "$ref": "#/$defs/source" }
+      }
+    },
+
     "degrees": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },
 
     "latLon": {
