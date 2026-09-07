@@ -385,6 +385,41 @@ describe("a mark drawn from what it is for", () => {
     expect(cones("east-cardinal")[0]).not.toBe(cones("west-cardinal")[0]);
   });
 
+  /**
+   * A special mark's X and a wreck buoy's upright cross are two different daylight statements
+   * (R1001 Tables 9 and 11), and the only thing separating them in the picture is how far the
+   * arms are turned.
+   */
+  it("turns a special mark's cross and leaves the wreck buoy's upright", () => {
+    const arms = (purpose: MarkPurpose): number[] =>
+      meshes(buildMark(buoy({ purpose })).group)
+        .filter((mesh) => mesh.geometry.type === "BoxGeometry")
+        .map((mesh) => Math.round(Math.abs(mesh.rotation.z) * 100) / 100)
+        .sort();
+
+    expect(arms("special")).not.toEqual(arms("emergency-wreck"));
+    expect(arms("emergency-wreck")).toContain(0);
+    expect(arms("special")).not.toContain(0);
+  });
+
+  /**
+   * A lamp goes on whatever was actually built. A safe-water mark is a sphere with no staff,
+   * and its shape comes from its purpose rather than from a stated field - read the field
+   * instead and the lamp is placed three quarters of the mark's height above nothing at all.
+   */
+  it("puts the lamp on the mark the purpose drew, not on the one the field named", () => {
+    const height = 3;
+    const lamp = (purpose: MarkPurpose): number => {
+      const parts = buildMark(buoy({ purpose, heightMetres: height, light: {} }));
+      return parts.lamp?.geometry.getAttribute("position").getY(0) ?? 0;
+    };
+
+    // Safe water is a sphere: the lamp sits on the body, at its own height.
+    expect(lamp("safe-water")).toBeCloseTo(height, 5);
+    // A cardinal mark is a pillar, which carries a staff, and the lamp goes above it.
+    expect(lamp("north-cardinal")).toBeGreaterThan(height * 1.7);
+  });
+
   /** Two spheres for an isolated danger, one for safe water - by day that is the difference. */
   it("gives an isolated danger two spheres and safe water one", () => {
     const spheres = (purpose: MarkPurpose): number =>

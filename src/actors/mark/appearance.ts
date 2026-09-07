@@ -56,8 +56,9 @@ export const CHOSEN: { shape: MarkShape; pattern: MarkPattern; construction: Mar
 
 export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): DrawnMark {
   const meant = mark.purpose === undefined ? null : appearanceOf(mark.purpose, region);
+  const pattern = pick(mark.pattern, meant?.pattern, CHOSEN.pattern);
   return {
-    pattern: pick(mark.pattern, meant?.pattern, CHOSEN.pattern),
+    pattern: { ...pattern, value: onlyWhatItSays(pattern.value) },
     shape: mark.kind === "beacon" ? null : pick(mark.shape, meant?.shapes[0], CHOSEN.shape),
     // A topmark comes only from the buoyage: it is a statement OF the meaning, so a file
     // that states no purpose states no topmark either, and one invented here would say
@@ -66,6 +67,19 @@ export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): Drawn
     construction:
       mark.kind === "beacon" ? pick(mark.construction, undefined, CHOSEN.construction) : null,
   };
+}
+
+/**
+ * A solid pattern is one colour, whatever it was handed.
+ *
+ * The schema says the same thing, and this says it again because a scenario reaches here by
+ * roads other than `validateScenario`. Left alone, `{ solid, [red, green] }` is drawn as two
+ * bands by the renderer and printed as "red" by the page - the same field read two ways,
+ * which is the fault this whole module exists to close.
+ */
+function onlyWhatItSays(pattern: MarkPattern): MarkPattern {
+  if (pattern.kind !== "solid" || pattern.colours.length <= 1) return pattern;
+  return { kind: "solid", colours: pattern.colours.slice(0, 1) };
 }
 
 /**

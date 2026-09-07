@@ -181,6 +181,23 @@ describe("the schema on what a mark means", () => {
     expect(validateScenario(withMark({ purpose: "north-westerly" })).valid).toBe(false);
   });
 
+  /**
+   * One colour is what SOLID means. Two would be drawn as bands by the renderer and printed
+   * as the first of them by the page - the same field read two ways, which is the fault the
+   * whole pattern field exists to close. `test/mark.spec.ts` holds the code's own clamp.
+   */
+  it("holds a solid pattern to one colour and a banded one to more than one", () => {
+    const solid = (colours: string[]): Record<string, unknown> =>
+      withMark({ pattern: { kind: "solid", colours } });
+    expect(validateScenario(solid(["red"])).valid).toBe(true);
+    expect(validateScenario(solid(["red", "green"])).valid).toBe(false);
+
+    const banded = (colours: string[]): Record<string, unknown> =>
+      withMark({ pattern: { kind: "horizontal bands", colours } });
+    expect(validateScenario(banded(["black", "yellow"])).valid).toBe(true);
+    expect(validateScenario(banded(["black"])).valid).toBe(false);
+  });
+
   it("takes a pattern of bands and stripes, which one colour could never state", () => {
     const banded = { kind: "horizontal bands", colours: ["black", "yellow"] };
     expect(validateScenario(withMark({ pattern: banded })).valid).toBe(true);

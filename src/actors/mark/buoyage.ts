@@ -53,7 +53,8 @@ export type Topmark =
   | "sphere"
   | "can"
   | "cone point up"
-  | "saltire";
+  | "saltire"
+  | "upright cross";
 
 export interface Appearance {
   pattern: Pattern;
@@ -202,7 +203,9 @@ const FIXED: Record<Exclude<MarkPurpose, Lateral>, Omit<Appearance, "character">
   },
   "emergency-wreck": {
     pattern: { kind: "vertical stripes", colours: ["blue", "yellow", "blue", "yellow"] },
-    topmark: { shape: "saltire", colour: "yellow" },
+    // "Vertical/perpendicular yellow cross" (Table 11), where the special mark's is an X
+    // (Table 9). Two marks, two shapes: drawn alike, one would be read as the other.
+    topmark: { shape: "upright cross", colour: "yellow" },
     shapes: ["pillar", "spar"],
     chosenFromSeveral: false,
   },

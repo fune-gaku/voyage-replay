@@ -156,7 +156,7 @@ export function buildMark(mark: Mark, region: BuoyageRegion | null = null): Mark
   if (drawn.topmark) {
     for (const part of topmark(drawn.topmark.value, height, staff)) group.add(part);
   }
-  return withLamp(mark, group, height);
+  return withLamp(mark, group, height, staff);
 }
 
 /**
@@ -199,13 +199,13 @@ function paintOf(colour: MarkColour): MeshStandardMaterial {
  * out of rhythm before the clock had said anything, and the first thing a viewer reads off a
  * mark at night is its rhythm.
  */
-function withLamp(mark: Mark, group: Group, heightMetres: number): MarkParts {
+function withLamp(mark: Mark, group: Group, heightMetres: number, onAStaff: boolean): MarkParts {
   if (!mark.light) return { group, heightMetres, lamp: null };
 
   const lamp: Lamp = new Points(
     new BufferGeometry().setAttribute(
       "position",
-      new Float32BufferAttribute([0, topOf(mark, heightMetres), 0], 3),
+      new Float32BufferAttribute([0, topOf(heightMetres, onAStaff), 0], 3),
     ),
     new PointsMaterial({
       color: LAMP_COLOURS.white,
@@ -221,11 +221,16 @@ function withLamp(mark: Mark, group: Group, heightMetres: number): MarkParts {
   return { group, heightMetres, lamp };
 }
 
-/** Above the staff on the buoys that carry one, and above the column on a beacon. */
-function topOf(mark: Mark, heightMetres: number): number {
-  if (mark.kind === "beacon") return heightMetres;
-  const shape = mark.shape ?? ASSUMED_MARK.shape;
-  return shape === "pillar" || shape === "spar" ? heightMetres * 1.75 : heightMetres;
+/**
+ * Above the staff where one was drawn, and on top of the body where none was.
+ *
+ * **Asked of the staff that was actually built**, not of the file's own `shape`. A safe-water
+ * mark is a sphere with no staff, and its shape comes from its purpose rather than from a
+ * stated field - read the field instead and its lamp is placed three quarters of its own
+ * height above nothing at all.
+ */
+function topOf(heightMetres: number, onAStaff: boolean): number {
+  return onAStaff ? heightMetres * 1.75 : heightMetres;
 }
 
 /**
@@ -456,18 +461,24 @@ interface TopmarkPlace {
  * south. **Nothing else tells the four apart by day**, so the pairing of the two cones is
  * the whole message and a mirrored pair is a different quadrant.
  */
+const CONE_PAIRS: Partial<Record<Topmark, [boolean, boolean]>> = {
+  "two cones point up": [true, true],
+  "two cones point down": [false, false],
+  "two cones base to base": [false, true],
+  "two cones point to point": [true, false],
+};
+
+/**
+ * The rest, which are one or two of a single shape - and the two crosses, which differ only
+ * in how far they are turned.
+ */
 function byShape(shape: Topmark, it: TopmarkPlace): Mesh[] {
   const lower = it.base + it.size / 2;
   const upper = it.base + it.size * 1.5 + it.gap;
+  const pair = CONE_PAIRS[shape];
+  if (pair) return [cone(it, lower, pair[0]), cone(it, upper, pair[1])];
+
   switch (shape) {
-    case "two cones point up":
-      return [cone(it, lower, true), cone(it, upper, true)];
-    case "two cones point down":
-      return [cone(it, lower, false), cone(it, upper, false)];
-    case "two cones base to base":
-      return [cone(it, lower, false), cone(it, upper, true)];
-    case "two cones point to point":
-      return [cone(it, lower, true), cone(it, upper, false)];
     case "two spheres":
       return [ball(it, lower), ball(it, upper)];
     case "sphere":
@@ -476,8 +487,16 @@ function byShape(shape: Topmark, it: TopmarkPlace): Mesh[] {
       return [drum(it, lower)];
     case "cone point up":
       return [cone(it, lower, true)];
+    // An X for a special mark (Table 9), an upright cross for an emergency wreck buoy
+    // (Table 11). Drawn alike, one would be read as the other.
     case "saltire":
-      return cross(it, lower);
+      return cross(it, lower, Math.PI / 4);
+    case "upright cross":
+      return cross(it, lower, 0);
+    default:
+      // The four cone pairs, already answered above. Reached only if one is added to the
+      // vocabulary and left out of the table, which is a thing to notice rather than to draw.
+      return [];
   }
 }
 
@@ -500,9 +519,9 @@ function drum(it: TopmarkPlace, y: number): Mesh {
   return mesh;
 }
 
-/** The special mark's X, and the emergency wreck buoy's upright cross. */
-function cross(it: TopmarkPlace, y: number): Mesh[] {
-  return [Math.PI / 4, -Math.PI / 4].map((turn) => {
+/** Two arms at right angles, turned by `lean` - nought upright, a quarter turn for an X. */
+function cross(it: TopmarkPlace, y: number, lean: number): Mesh[] {
+  return [lean, lean + Math.PI / 2].map((turn) => {
     const arm = new Mesh(new BoxGeometry(it.size * 0.22, it.size, it.size * 0.22), it.paint);
     arm.rotation.z = turn;
     arm.position.y = y;

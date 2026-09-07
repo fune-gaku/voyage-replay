@@ -174,6 +174,16 @@ describe("the marks that are neither lateral nor cardinal", () => {
     expect(appearance("safe-water").chosenFromSeveral).toBe(true);
   });
 
+  /**
+   * R1001 Table 9 gives a special mark a yellow "X"; Table 11 gives the emergency wreck buoy
+   * a "vertical/perpendicular yellow cross". Two different daylight statements, and drawn
+   * alike one would be read as the other.
+   */
+  it("tells the special mark's X from the wreck buoy's upright cross", () => {
+    expect(appearance("special").topmark?.shape).toBe("saltire");
+    expect(appearance("emergency-wreck").topmark?.shape).toBe("upright cross");
+  });
+
   /** R1001 Table 9: yellow, a yellow X, and any rhythm not reserved for something else. */
   it("gives a special mark its yellow and its cross, and no rhythm", () => {
     expect(appearance("special").pattern).toEqual({ kind: "solid", colours: ["yellow"] });

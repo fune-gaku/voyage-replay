@@ -189,7 +189,20 @@
               "minItems": 1,
               "items": { "enum": ["green", "red", "yellow", "black", "white", "blue"] }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "solid" } }, "required": ["kind"] },
+              "then": {
+                "properties": { "colours": { "maxItems": 1 } },
+                "$comment": "One colour is what SOLID means. Two would be drawn as bands and printed as the first of them - the picture and the page reading the same field differently."
+              },
+              "else": {
+                "properties": { "colours": { "minItems": 2 } },
+                "$comment": "A band or a stripe of one colour is a solid body with a longer name, and calling it banded would have the page describing a division nobody can see."
+              }
+            }
+          ]
         },
         "construction": {
           "description": "How a beacon is built, which means NOTHING - a lattice tower and a concrete column can both be a north cardinal. The buoy's counterpart is `shape`, and that one is partly meaning, which is why they are different fields on different kinds.",
