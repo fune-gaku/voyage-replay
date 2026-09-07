@@ -105,7 +105,10 @@ export type Unreadable =
   | "a group on a class that has none"
   | "a long flash on a class that does not take one"
   | "two colours on a light that does not alternate"
-  | "a group of one, which is not a group";
+  | "a group of one, which is not a group"
+  | "a composite group on a class that has none"
+  | "a composite group of more than two groups"
+  | "a composite group whose groups are the same size";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -202,6 +205,9 @@ function assemble(head: Head, rest: string): CharacterReading {
 /** The classes that count something in brackets (Table 2 classes 2.2, 2.3, 4.3, 4.4, 5.2, 6.2). */
 const GROUPED_CLASSES: LightClass[] = ["Oc", "Fl", "Q", "VQ"];
 
+/** And the two that take a COMPOSITE group - successive groups of different sizes. */
+const COMPOSITE_CLASSES: LightClass[] = ["Oc", "Fl"];
+
 /**
  * Parts of the abbreviation that its class does not take.
  *
@@ -211,16 +217,8 @@ const GROUPED_CLASSES: LightClass[] = ["Oc", "Fl", "Q", "VQ"];
  * picture disagreeing, with whoever wrote the file caught in between.
  */
 function wrongForItsClass(character: LightCharacter): Unreadable | null {
-  if (character.groups.length > 0 && !GROUPED_CLASSES.includes(character.klass)) {
-    return "a group on a class that has none";
-  }
-  // A group of one is a single-flashing light with a bracket round it, and it reads as a
-  // group everywhere that asks: `Q(1) 10s` would be drawn as one flash in ten seconds - six
-  // a minute - while calling itself quick. A trailing one in a COMPOSITE is a real thing,
-  // and E-110 reserves Fl(2+1) for a preferred-channel mark.
-  if (character.groups.length === 1 && character.groups[0] === 1) {
-    return "a group of one, which is not a group";
-  }
+  const grouping = wrongGrouping(character);
+  if (grouping !== null) return grouping;
   // A trailing long flash belongs to the south cardinal, which is a group quick or group very
   // quick light and nothing else (Table 2 classes 5.2 and 6.2).
   if (character.longFlash && character.klass !== "Q" && character.klass !== "VQ") {
@@ -232,6 +230,43 @@ function wrongForItsClass(character: LightCharacter): Unreadable | null {
     return "a Morse light with no letters in it";
   }
   return wrongColours(character);
+}
+
+/**
+ * What the bracket is allowed to hold.
+ *
+ * A group of one is a single-flashing light with a bracket round it, and it reads as a group
+ * everywhere that asks: `Q(1) 10s` would be drawn as one flash in ten seconds - six a
+ * minute - while calling itself quick. A trailing one in a COMPOSITE is a real thing, and
+ * E-110 reserves `Fl(2+1)` for a preferred-channel mark.
+ */
+function wrongGrouping(character: LightCharacter): Unreadable | null {
+  if (character.groups.length === 0) return null;
+  if (!GROUPED_CLASSES.includes(character.klass)) return "a group on a class that has none";
+  if (character.groups.length === 1 && character.groups[0] === 1) {
+    return "a group of one, which is not a group";
+  }
+  return wrongComposite(character);
+}
+
+/**
+ * What a composite group is allowed to be.
+ *
+ * Table 2 defines one for occulting and flashing lights only (classes 2.3 and 4.4), as two
+ * successive groups "of different numbers". Each of those is definitional rather than a
+ * preference: `Fl(2+2)` is `Fl(2)` twice in a period, which is `Fl(2)` with half the period,
+ * and a page printing `Fl(2+2)` over it would be naming a mark that is not there. The one
+ * composite the buoyage reserves - `Fl(2+1)` - is the preferred-channel mark.
+ */
+function wrongComposite(character: LightCharacter): Unreadable | null {
+  if (character.groups.length < 2) return null;
+  if (!COMPOSITE_CLASSES.includes(character.klass)) {
+    return "a composite group on a class that has none";
+  }
+  if (character.groups.length > 2) return "a composite group of more than two groups";
+  return character.groups[0] === character.groups[1]
+    ? "a composite group whose groups are the same size"
+    : null;
 }
 
 /**

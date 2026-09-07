@@ -245,6 +245,31 @@ describe("reading a Light List abbreviation", () => {
   });
 
   /**
+   * A composite group is two successive groups **of different numbers**, and only on an
+   * occulting or a flashing light (Table 2 classes 2.3 and 4.4). Each of those is
+   * definitional: `Fl(2+2)` is `Fl(2)` twice over, which is `Fl(2)` with half the period,
+   * and a page printing `Fl(2+2)` above it would be naming a mark that is not there.
+   */
+  it("takes a composite group only where one exists, and only of unequal groups", () => {
+    expect(parseCharacter("Fl(2+2) R 16s")).toEqual({
+      read: false,
+      because: "a composite group whose groups are the same size",
+    });
+    expect(parseCharacter("Q(2+1) W 10s")).toEqual({
+      read: false,
+      because: "a composite group on a class that has none",
+    });
+    expect(parseCharacter("Fl(2+1+1) R 20s")).toEqual({
+      read: false,
+      because: "a composite group of more than two groups",
+    });
+
+    // The one the buoyage reserves, and its occulting counterpart.
+    expect(parseCharacter("Fl(2+1) R 16s").read).toBe(true);
+    expect(parseCharacter("Oc(2+1) W 12s").read).toBe(true);
+  });
+
+  /**
    * Below its own minimum a light is a different class: "Fl 1s" is sixty flashes a minute,
    * which is a quick light. E-110 Table 2 gives 2 s for an isophase, single-occulting or
    * single-flashing light, and a long-flashing light needs darkness of three times a flash of
