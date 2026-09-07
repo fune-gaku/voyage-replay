@@ -31,6 +31,17 @@ function sequence(text: string): Phase[] {
   return phasesOf(characterOf(text));
 }
 
+/**
+ * The sequence with the roles dropped, for the assertions that compare whole phases.
+ *
+ * A phase carries what it is for as well as how long it lasts - which eclipse separates the
+ * groups, which appearance is the long flash - because `actors/mark/light.ts` checks a
+ * scenario's own timings against those. The claims below are about durations and colours.
+ */
+function timings(text: string): { seconds: number; colour: Phase["colour"] }[] {
+  return sequence(text).map((phase) => ({ seconds: phase.seconds, colour: phase.colour }));
+}
+
 /** The lit phases, in order, as durations. */
 function flashes(text: string): number[] {
   return sequence(text)
@@ -274,7 +285,7 @@ describe("reading a Light List abbreviation", () => {
 describe("the sequences E-110 prints as its own examples", () => {
   it("gives a continuous quick light 60 flashes a minute, and a very quick 120", () => {
     // Table 2 class 5.1: "l = d = 0.5 s; p = 1 s". Class 6.1: "l = d = 0.25 s; p = 0.5 s".
-    expect(sequence("Q")).toEqual([
+    expect(timings("Q")).toEqual([
       { seconds: 0.5, colour: "white" },
       { seconds: 0.5, colour: null },
     ]);
@@ -346,7 +357,7 @@ describe("the sequences E-110 prints as its own examples", () => {
 
   it("gives an isophase light equal light and darkness, and an occulting light three to one", () => {
     // Table 2 class 3: "l = d = 2 s; p = 4 s". Class 2.1: "l = 3 s; d = 1 s; p = 4 s".
-    expect(sequence("Iso W 4s")).toEqual([
+    expect(timings("Iso W 4s")).toEqual([
       { seconds: 2, colour: "white" },
       { seconds: 2, colour: null },
     ]);
@@ -362,7 +373,7 @@ describe("the sequences E-110 prints as its own examples", () => {
 
   it("gives the emergency wreck buoy a second of each colour in three", () => {
     // Table 2 class 11: "l = 1 s; d = 0.5 s; p = 3 s", blue and yellow.
-    expect(sequence("OcAl BuY 3s")).toEqual([
+    expect(timings("OcAl BuY 3s")).toEqual([
       { seconds: 1, colour: "blue" },
       { seconds: 0.5, colour: null },
       { seconds: 1, colour: "yellow" },
@@ -594,13 +605,13 @@ describe("a group with no period stated on it", () => {
 describe("the classes that are not flashing at all", () => {
   /** Class 1: "a light showing continuously and steadily" - one phase, and never dark. */
   it("leaves a fixed light on for the whole period", () => {
-    expect(phasesOf(characterOf("F W 4s"))).toEqual([{ seconds: 4, colour: "white" }]);
+    expect(timings("F W 4s")).toEqual([{ seconds: 4, colour: "white" }]);
     expect(phasesOf(characterOf("F"))).toHaveLength(1);
   });
 
   /** Class 10: "a light showing different colours alternately", with no darkness between. */
   it("alternates the two colours of an alternating light", () => {
-    expect(phasesOf(characterOf("Al WR 4s"))).toEqual([
+    expect(timings("Al WR 4s")).toEqual([
       { seconds: 2, colour: "white" },
       { seconds: 2, colour: "red" },
     ]);

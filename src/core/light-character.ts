@@ -385,10 +385,21 @@ function takeColours(part: string): LightColour[] | null {
   return codes.map((code) => COLOUR_CODES[code]).filter((c): c is LightColour => c !== undefined);
 }
 
+/**
+ * What a phase is FOR, where E-110 puts a constraint on that particular phase.
+ *
+ * Carried on the phase rather than worked out again by whoever needs it:
+ * `actors/mark/light.ts` checks a scenario's own timings against the character beside them,
+ * and the only way to ask "is this the eclipse that separates the groups" without a second
+ * copy of the generation rules is for the generation to say so as it builds.
+ */
+export type PhaseRole = "separator" | "long flash" | "flash" | "dot" | "dash";
+
 /** One appearance or one eclipse. A null colour is darkness. */
 export interface Phase {
   seconds: number;
   colour: LightColour | null;
+  role?: PhaseRole;
 }
 
 /**
@@ -469,7 +480,7 @@ function occulting(character: LightCharacter, colour: LightColour): Phase[] {
     // Between groups, and closing the period, the light is three times the one inside a
     // group (Table 2 class 2.2) - the same separation that makes a group of flashes a group,
     // and for the same reason: level it and Oc(2+1) shows as Oc(3).
-    phases.push({ seconds: 3 * unit, colour });
+    phases.push({ seconds: 3 * unit, colour, role: "separator" });
   }
   return closeThePeriod(phases, period, 3 * unit);
 }
@@ -505,15 +516,15 @@ function flashing(character: LightCharacter, colour: LightColour): Phase[] {
   const phases: Phase[] = [];
   groups.forEach((count, index) => {
     for (let i = 0; i < count; i += 1) {
-      phases.push({ seconds: flash, colour });
+      phases.push({ seconds: flash, colour, role: "flash" });
       if (i < count - 1) phases.push({ seconds: dark, colour: null });
     }
     phases.push(afterAGroup(character, index === groups.length - 1, dark, closing));
   });
 
   if (character.longFlash) {
-    phases.push({ seconds: LONG_FLASH_SECONDS, colour });
-    phases.push({ seconds: closing, colour: null });
+    phases.push({ seconds: LONG_FLASH_SECONDS, colour, role: "long flash" });
+    phases.push({ seconds: closing, colour: null, role: "separator" });
   }
   return closeThePeriod(phases, period, closing);
 }
@@ -533,8 +544,11 @@ function afterAGroup(
   dark: number,
   closing: number,
 ): Phase {
-  if (!last) return { seconds: 3 * dark, colour: null };
-  return { seconds: character.longFlash ? dark : closing, colour: null };
+  if (!last) return { seconds: 3 * dark, colour: null, role: "separator" };
+  // The eclipse before a long flash belongs to the group, so it is not a separator: a south
+  // cardinal's separating darkness comes after the long flash instead.
+  if (character.longFlash) return { seconds: dark, colour: null };
+  return { seconds: closing, colour: null, role: "separator" };
 }
 
 /**
@@ -588,7 +602,14 @@ function closeThePeriod(phases: Phase[], period: number | null, dark: number): P
   // backwards through itself. `parseCharacter` refuses such a period, having built the
   // sequence and found it did not fit.
   const closing = phases[phases.length - 1];
-  return [...kept, { seconds: Math.max(period - filled, dark), colour: closing?.colour ?? null }];
+  return [
+    ...kept,
+    {
+      seconds: Math.max(period - filled, dark),
+      colour: closing?.colour ?? null,
+      ...(closing?.role === undefined ? {} : { role: closing.role }),
+    },
+  ];
 }
 
 /**
@@ -603,7 +624,8 @@ function morse(character: LightCharacter, colour: LightColour): Phase[] {
   const phases: Phase[] = [];
   for (let i = 0; i < character.morse.length; i += 1) {
     for (const element of MORSE[character.morse.charAt(i)] ?? "") {
-      phases.push({ seconds: element === "-" ? dot * 3 : dot, colour });
+      const dash = element === "-";
+      phases.push({ seconds: dash ? dot * 3 : dot, colour, role: dash ? "dash" : "dot" });
       phases.push({ seconds: dot, colour: null });
     }
   }

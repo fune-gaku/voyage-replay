@@ -19,6 +19,7 @@ import {
   phasesOf,
   type LightCharacter,
   type Phase,
+  type PhaseRole,
   type Unreadable,
 } from "../../core/light-character.js";
 import type { LightPhase, Mark } from "../../core/types.js";
@@ -28,11 +29,14 @@ export type Unlit =
   | "the file does not say whether it carried a light"
   | "the stated timings include a phase of no length"
   | "the stated timings do not run for the period the character states"
-  | "the stated timings do not show the character's flashes"
   | "the stated timings show a colour the character does not"
-  | "the stated timings put two phases of one colour side by side"
   | "the stated timings never show one of the character's colours"
   | "the stated timings divide light and darkness unlike the class of light they are on"
+  | "the stated timings are not the shape of the character's own sequence"
+  | "the stated timings do not keep the character's groups apart"
+  | "the stated timings hold a long flash for less than two seconds"
+  | "the stated timings flash at a rate that is not the character's class"
+  | "the stated timings spell a different letter from the character's"
   | Unreadable;
 
 export type LightReading =
@@ -97,12 +101,128 @@ function disagreement(character: LightCharacter, stated: Phase[]): Unlit | null 
   const drawn = phasesOf(character);
   return (
     wrongLength(character, stated) ??
-    wrongCount(drawn, stated) ??
+    wrongShape(drawn, stated) ??
     wrongColour(drawn, stated) ??
     wrongBalance(character, stated) ??
-    runTogether(stated)
+    wrongParts(character, drawn, stated)
   );
 }
+
+/**
+ * The stated sequence has to have the same phases in the same order as the character's own.
+ *
+ * A count of appearances alone is not enough: `Fl(2) R 10s` given half a second of red, nine
+ * of darkness and half a second of red has two appearances and, repeating, joins its two red
+ * ends into one flash. And nothing about the count distinguishes one arrangement of three
+ * flashes from another. The durations are still free - that is what stating them is for.
+ */
+function wrongShape(drawn: Phase[], stated: Phase[]): Unlit | null {
+  if (drawn.length !== stated.length) {
+    return "the stated timings are not the shape of the character's own sequence";
+  }
+  const sameNullness = drawn.every(
+    (phase, i) => (phase.colour === null) === (stated[i]?.colour === null),
+  );
+  return sameNullness
+    ? null
+    : "the stated timings are not the shape of the character's own sequence";
+}
+
+/**
+ * The few durations E-110 fixes for a particular phase rather than for the sequence.
+ *
+ * These are what make a character its class. A "long flash" of half a second is not a long
+ * flash (Table 2 class 4.2 and its footnote); a group whose separating eclipse is no longer
+ * than the ones inside it is not a group (class 4.3), so `Fl(2+1)` stated with even gaps is
+ * `Fl(3)`, which in the buoyage is a different mark; and a quick light flashing at twelve a
+ * minute is a flashing light (classes 5 to 7). The rest of the split stays free.
+ */
+function wrongParts(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
+  if (lengthsOf(drawn, stated, "long flash").some((seconds) => seconds < 2)) {
+    return "the stated timings hold a long flash for less than two seconds";
+  }
+  if (dashShorterThanDot(drawn, stated)) {
+    return "the stated timings spell a different letter from the character's";
+  }
+  return separatorsTooShort(drawn, stated) ?? offItsRate(character, drawn, stated);
+}
+
+/** The stated durations of the phases the character built for one purpose. */
+function lengthsOf(drawn: Phase[], stated: Phase[], role: PhaseRole): number[] {
+  return stated.filter((_, i) => drawn[i]?.role === role).map((phase) => phase.seconds);
+}
+
+/**
+ * A dash is "not less than three times the duration of a dot" (Table 2 class 8).
+ *
+ * Which is not a nicety: dot-then-dash is A and dash-then-dot is N, and a safe-water mark
+ * shows Mo(A). Timings that reverse the two spell a different letter under the same
+ * character.
+ */
+function dashShorterThanDot(drawn: Phase[], stated: Phase[]): boolean {
+  const dots = lengthsOf(drawn, stated, "dot");
+  const dashes = lengthsOf(drawn, stated, "dash");
+  if (dots.length === 0 || dashes.length === 0) return false;
+  return Math.min(...dashes) < 3 * Math.max(...dots);
+}
+
+/**
+ * The phase that separates one group from the next is three times the ones inside a group.
+ *
+ * Measured against the phases of the same kind - darkness for a flashing light, light for an
+ * occulting one - because that is the pair the rule compares.
+ */
+function separatorsTooShort(drawn: Phase[], stated: Phase[]): Unlit | null {
+  const separators = stated.filter((_, i) => drawn[i]?.role === "separator");
+  if (separators.length === 0) return null;
+
+  for (const separator of separators) {
+    const inside = stated.filter(
+      (phase, i) =>
+        drawn[i]?.role !== "separator" && (phase.colour === null) === (separator.colour === null),
+    );
+    if (inside.some((phase) => separator.seconds < 3 * phase.seconds - 1e-9)) {
+      return "the stated timings do not keep the character's groups apart";
+    }
+  }
+  return null;
+}
+
+/** Quick is 50 to 79 flashes a minute, very quick 80 to 159, ultra quick 160 to 300. */
+function offItsRate(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
+  const band = RATE_BAND[character.klass];
+  if (band === undefined) return null;
+  return insideRates(drawn, stated).some((rate) => rate < band[0] || rate > band[1])
+    ? "the stated timings flash at a rate that is not the character's class"
+    : null;
+}
+
+/**
+ * The rate of each flash-and-eclipse pair inside a group, in flashes a minute.
+ *
+ * Inside a group only. The eclipse that separates the groups is not part of anybody's rate -
+ * a west cardinal's nine flashes are quick and the six and a half seconds after them are not
+ * a slow tenth flash. A continuous quick light has no pair here at all, and is held to its
+ * band by its period instead, in `core/light-character.ts`.
+ */
+function insideRates(drawn: Phase[], stated: Phase[]): number[] {
+  const roles = drawn.map((phase) => phase.role);
+  const seconds = stated.map((phase) => phase.seconds);
+  const rates: number[] = [];
+  for (let i = 0; i + 1 < roles.length; i += 1) {
+    const pair = (seconds[i] ?? 0) + (seconds[i + 1] ?? 0);
+    const inside = roles[i] === "flash" && roles[i + 1] !== "separator";
+    if (inside) rates.push(60 / pair);
+  }
+  return rates;
+}
+
+/** The bands that define the quick classes (E-110 Table 2, classes 5, 6 and 7). */
+const RATE_BAND: Partial<Record<LightCharacter["klass"], [number, number]>> = {
+  Q: [50, 79],
+  VQ: [80, 159],
+  UQ: [160, 300],
+};
 
 /**
  * Which classes are mostly lit, which are mostly dark, and which are neither.
@@ -150,13 +270,6 @@ function wrongLength(character: LightCharacter, stated: Phase[]): Unlit | null {
     : null;
 }
 
-/** The count is the message: an east cardinal is three flashes and a west is nine. */
-function wrongCount(drawn: Phase[], stated: Phase[]): Unlit | null {
-  return appearances(stated) === appearances(drawn)
-    ? null
-    : "the stated timings do not show the character's flashes";
-}
-
 /**
  * The colours, both ways round.
  *
@@ -174,28 +287,6 @@ function wrongColour(drawn: Phase[], stated: Phase[]): Unlit | null {
   return [...wanted].every((colour) => shown.has(colour))
     ? null
     : "the stated timings never show one of the character's colours";
-}
-
-/**
- * Two phases of one colour in a row are one phase, whatever the file calls them.
- *
- * `[1 s red, 1 s red, 8 s dark]` counts as two appearances and shows as one flash of two
- * seconds - a single-flashing light where the character says a group of two. The count only
- * means something if the phases actually alternate. An alternating light passes: its two
- * appearances are of DIFFERENT colours, which is what makes it one.
- */
-function runTogether(stated: Phase[]): Unlit | null {
-  for (let i = 1; i < stated.length; i += 1) {
-    if (stated[i]?.colour === stated[i - 1]?.colour) {
-      return "the stated timings put two phases of one colour side by side";
-    }
-  }
-  return null;
-}
-
-/** How many separate appearances of light there are, which is the count a mark is read by. */
-function appearances(phases: Phase[]): number {
-  return phases.filter((phase) => phase.colour !== null).length;
 }
 
 /**

@@ -121,7 +121,9 @@ describe("lightOf", () => {
     );
     expect(wrongCount.known).toBe(false);
     if (!wrongCount.known) {
-      expect(wrongCount.because).toBe("the stated timings do not show the character's flashes");
+      expect(wrongCount.because).toBe(
+        "the stated timings are not the shape of the character's own sequence",
+      );
     }
 
     const wrongColour = lightOf(
@@ -154,12 +156,14 @@ describe("lightOf", () => {
   });
 
   /**
-   * Two phases of one colour in a row are one phase, whatever the file calls them: a red
-   * second beside another red second is a two-second flash, and a character saying "group of
-   * two" over it is the page counting flashes the picture does not have.
+   * The sequence has to have the same phases in the same order, because a count of
+   * appearances does not say how they are arranged. Two red seconds side by side are one
+   * two-second flash; half a second of red, nine of darkness and half a second of red joins
+   * its two ends into one flash as it repeats. Both have the right number of appearances and
+   * neither is the character above them.
    */
-  it("refuses timings that run two phases of one colour together", () => {
-    const reading = lightOf(
+  it("refuses timings arranged differently from the character's own sequence", () => {
+    const together = lightOf(
       buoy({
         light: {
           character: "Fl(2) R 10s",
@@ -167,9 +171,147 @@ describe("lightOf", () => {
         },
       }),
     );
+    expect(together.known).toBe(false);
+
+    const wrapping = lightOf(
+      buoy({
+        light: {
+          character: "Fl(2) R 10s",
+          phases: [
+            { seconds: 0.5, colour: "red" },
+            { seconds: 9 },
+            { seconds: 0.5, colour: "red" },
+          ],
+        },
+      }),
+    );
+    expect(wrapping.known).toBe(false);
+    if (!wrapping.known) {
+      expect(wrapping.because).toBe(
+        "the stated timings are not the shape of the character's own sequence",
+      );
+    }
+  });
+
+  /**
+   * A group whose separating eclipse is no longer than the ones inside it is not a group.
+   * `Fl(2+1)` stated with even gaps is `Fl(3)` - a preferred-channel mark drawn as an
+   * ordinary lateral one, with the page printing the composite character.
+   */
+  it("refuses timings that do not keep the character's groups apart", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl(2+1) R 16s",
+          phases: [
+            { seconds: 1, colour: "red" },
+            { seconds: 1 },
+            { seconds: 1, colour: "red" },
+            { seconds: 1 },
+            { seconds: 1, colour: "red" },
+            { seconds: 11 },
+          ],
+        },
+      }),
+    );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe("the stated timings put two phases of one colour side by side");
+      expect(reading.because).toBe("the stated timings do not keep the character's groups apart");
+    }
+  });
+
+  /** A long flash of half a second is not a long flash (Table 2 class 4.2 and its footnote). */
+  it("refuses timings whose long flash is not long", () => {
+    const quick = Array.from({ length: 6 }, () => [
+      { seconds: 0.5, colour: "white" as const },
+      { seconds: 0.5 },
+    ]).flat();
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Q(6)+LFl W 15s",
+          phases: [...quick, { seconds: 0.5, colour: "white" }, { seconds: 8.5 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings hold a long flash for less than two seconds",
+      );
+    }
+  });
+
+  /**
+   * Dot-then-dash is A and dash-then-dot is N, and a safe-water mark shows Mo(A). Timings
+   * that reverse the two spell a different letter under the same character - the page naming
+   * one mark and the picture flashing another.
+   */
+  it("refuses timings that spell a different Morse letter", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Mo(A) W 7s",
+          phases: [
+            { seconds: 1.5, colour: "white" },
+            { seconds: 0.5 },
+            { seconds: 0.5, colour: "white" },
+            { seconds: 4.5 },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings spell a different letter from the character's",
+      );
+    }
+  });
+
+  it("takes a Morse light whose dot and dash keep their proportion", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Mo(A) W 7s",
+          phases: [
+            { seconds: 0.4, colour: "white" },
+            { seconds: 0.4 },
+            { seconds: 1.4, colour: "white" },
+            { seconds: 4.8 },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
+  /** And a quick light flashing at twelve a minute is a flashing light, not a quick one. */
+  it("refuses timings that flash outside the rate of their own class", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          // Three flashes with two and a half seconds between them: 24 a minute, where a
+          // quick light is 50 to 79. The darkness between the groups is left long enough to
+          // pass its own rule, so this fails on the rate and nothing else.
+          character: "Q(3) W 15s",
+          phases: [
+            { seconds: 0.5, colour: "white" },
+            { seconds: 2 },
+            { seconds: 0.5, colour: "white" },
+            { seconds: 2 },
+            { seconds: 0.5, colour: "white" },
+            { seconds: 9.5 },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings flash at a rate that is not the character's class",
+      );
     }
   });
 
