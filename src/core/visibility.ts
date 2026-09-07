@@ -26,13 +26,17 @@
  * Every height here is above the MEAN surface, but a vessel rides the sea: she drops into
  * troughs, which hides her, and rises on crests, which shows her. Which effect wins
  * REVERSES with range. Near the horizon her rise lifts her clear; closer in, her drop
- * matters more than the crests do. Measured, 8 m eye on 1.5 m freeboard in a 2 m sea:
+ * matters more than the crests do. An 8 m eye on 1.5 m freeboard in a 2 m sea - what this
+ * returns, beside a spectral Monte Carlo on the same geometry:
  *
- * | range | held rigid | riding |
- * |---|---|---|
- * | 8 km | 18% | 36% |
- * | 11 km | 82% | 64% |
- * | 13 km | 100% | 94% |
+ * | range | held rigid | riding | Monte Carlo |
+ * |---|---|---|---|
+ * | 8 km | 18.3% | 35.9% | 10.5 / 30.0 |
+ * | 11 km | 82.2% | 63.9% | 63.0 / 52.8 |
+ * | 13 km | 100% | 93.8% | 100 / 89.6 |
+ *
+ * Both run high - see the biases below - but the REVERSAL is in both, which is what makes
+ * it a property of the problem rather than of the approximation.
  *
  * Neither is the safe side, so neither can be chosen. Both are returned. Which is nearer
  * the truth depends on her length against the wavelength, which is her heave response -

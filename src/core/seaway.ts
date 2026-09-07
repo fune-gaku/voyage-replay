@@ -85,6 +85,24 @@ const SAME_WAVE_CORRELATION = 0.5;
 /** Bisection steps for the correlation length. Twenty halvings of a wavelength is millimetres. */
 const CORRELATION_STEPS = 20;
 
+/**
+ * The band a sea has to lie in for any of this to mean anything.
+ *
+ * Not taste: the arithmetic stops returning numbers outside it. A significant height of
+ * 1e308 m overflows the fully developed period relation to infinity, a period of 1e-300 s
+ * overflows the spectrum's own fifth power, and either way every moment comes back NaN and
+ * the panel prints "NaN%". Both are finite JSON and both pass the schema's own bounds on
+ * sign, so the guard belongs here as well as there - `seawayOf` is exported and a caller
+ * that has not been through `validateScenario` can reach it.
+ *
+ * The values are far outside anything a report will hold. The highest significant height
+ * ever measured is 19 m, in the North Atlantic in 2013; swell periods reach the low
+ * twenties. A sea beyond these clamps to them and gets an absurd but finite answer, which
+ * is a better failure than a blank one.
+ */
+const HEIGHT_LIMIT_METRES = 30;
+const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
+
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
   significantHeightMetres: number;
@@ -193,8 +211,12 @@ function fromSeaState(seaState: number | null | undefined): SeaEstimate | null {
 
 /** One sea, from a height and either a stated period or the assumed one. */
 export function seawayOf(significantHeightMetres: number, peakPeriodSeconds?: number): Seaway {
-  const height = Math.max(significantHeightMetres, 0);
-  const period = peakPeriodSeconds ?? assumedPeakPeriodSeconds(height);
+  const height = clamp(significantHeightMetres, 0, HEIGHT_LIMIT_METRES);
+  const period = clamp(
+    peakPeriodSeconds ?? assumedPeakPeriodSeconds(height),
+    PERIOD_LIMITS_SECONDS.least,
+    PERIOD_LIMITS_SECONDS.most,
+  );
   const wavelength = (GRAVITY_METRES_PER_SECOND_SQUARED * period * period) / (2 * Math.PI);
   return {
     significantHeightMetres: height,
@@ -204,6 +226,11 @@ export function seawayOf(significantHeightMetres: number, peakPeriodSeconds?: nu
     correlationLengthMetres: correlationLengthOf(period, wavelength),
     ...periodsAndWavenumber(period),
   };
+}
+
+/** NaN clamps to the low end rather than through: it is not a height or a period. */
+function clamp(value: number, least: number, most: number): number {
+  return value > least ? Math.min(value, most) : least;
 }
 
 /**
@@ -311,9 +338,11 @@ function correlationAt(peakPeriodSeconds: number, separationMetres: number): num
 /**
  * Where the surface stops being the same wave, by bisection.
  *
- * The correlation falls monotonically from one over the first fraction of a wavelength, so
- * bracketing on `[0, peak wavelength]` is safe: by a full wavelength it has long since gone
- * negative and come back.
+ * The correlation is not monotone - it goes negative and comes back - so bracketing on
+ * `[0, peak wavelength]` is only safe because it never climbs back over the threshold.
+ * Measured: past the first crossing it peaks at 0.474 against a threshold of 0.5, and that
+ * holds for every period and for peak enhancements from 1 to 7, since the shape is
+ * scale-free. Raise `SAME_WAVE_CORRELATION` much above a half and this stops being true.
  */
 function correlationLengthOf(peakPeriodSeconds: number, peakWavelengthMetres: number): number {
   let inside = 0;

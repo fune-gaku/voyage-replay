@@ -216,3 +216,27 @@ describe("the bounds a sea state actually supports", () => {
     );
   });
 });
+
+describe("seas past the end of the scale", () => {
+  /**
+   * Whatever the sea, a fraction is a fraction. NaN reaching here printed "NaN%" in the
+   * panel, which reads as a figure rather than as a failure.
+   */
+  it("gives a fraction between nought and one for any sea the schema accepts", () => {
+    const seas = [seawayOf(1e308), seawayOf(1e6), seawayOf(2, 1e-300), seawayOf(2, 1e12)];
+    for (const sea of seas) {
+      for (const range of [100, 11_000, 400_000]) {
+        const { rigidFraction, ridingFraction } = occludedFraction(look(range), sea);
+        for (const fraction of [rigidFraction, ridingFraction]) {
+          expect(Number.isFinite(fraction)).toBe(true);
+          expect(fraction).toBeGreaterThanOrEqual(0);
+          expect(fraction).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it("hides a low target completely once the sea is enormous", () => {
+    expect(occludedFraction(look(11_000), seawayOf(1e308)).rigidFraction).toBeCloseTo(1, 6);
+  });
+});

@@ -70,14 +70,16 @@
           "additionalProperties": false,
           "properties": {
             "significantHeightMetres": {
-              "description": "Significant wave height: the mean of the highest third. Individual waves run well above it - the highest tenth averages 1.27 times this, and the largest of an hour's waves about 1.9 times.",
+              "description": "Significant wave height: the mean of the highest third. Individual waves run well above it - the highest tenth averages 1.27 times this, and the largest of an hour's waves about 1.9 times. Bounded above because the arithmetic downstream stops returning numbers long before the type does; the highest ever measured is 19 m.",
               "type": "number",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 30
             },
             "peakPeriodSeconds": {
               "description": "Period of the spectral peak. Assumed from the height where absent, which runs long in fetch-limited water.",
               "type": "number",
-              "exclusiveMinimum": 0
+              "minimum": 0.5,
+              "maximum": 30
             },
             "fromDegreesTrue": {
               "description": "Direction the waves come FROM, degrees true - the convention reports use.",

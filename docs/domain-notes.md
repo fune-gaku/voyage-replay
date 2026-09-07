@@ -169,14 +169,18 @@ the threshold is the observer's own eye height.
 ### A vessel floats, and which way that cuts reverses with range
 
 Every height is above the *mean* surface, but a ship rides the sea: dropping into a trough hides
-her, rising on a crest shows her. Near the horizon the rise wins; closer in the drop does.
-Measured, 8 m eye on 1.5 m freeboard in a 2 m sea:
+her, rising on a crest shows her. Near the horizon the rise wins; closer in the drop does. An
+8 m eye on 1.5 m freeboard in a 2 m sea — what this code returns, and what a spectral Monte
+Carlo on the same geometry gives:
 
-| range | held rigid | riding |
-|---:|---:|---:|
-| 8 km | 18% | 36% |
-| 11 km | 82% | 64% |
-| 13 km | 100% | 94% |
+| range | held rigid | riding | Monte Carlo, rigid / riding |
+|---:|---:|---:|---|
+| 8 km | 18.3% | 35.9% | 10.5 / 30.0 |
+| 11 km | 82.2% | 63.9% | 63.0 / 52.8 |
+| 13 km | 100% | 93.8% | 100 / 89.6 |
+
+Both run high, for the reason in *Known biases* below. **The reversal is in both**, which is
+what matters: it is a property of the problem and not of the approximation.
 
 Neither is the conservative side, so neither can be picked. Both are returned. Which is nearer
 the truth depends on her heave response, which needs a GM no report states — issue #32.

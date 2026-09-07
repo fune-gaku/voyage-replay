@@ -135,8 +135,8 @@ npx tsc -p tsconfig.json --noEmit --<flag>    # そのフラグを入れたと�
 
 | | 実測 | 下限 |
 |---|---:|---:|
-| Lines | 99.58% | 98% |
-| Statements | 98.12% | 95% |
+| Lines | 99.59% | 98% |
+| Statements | 98.09% | 95% |
 | Functions | 100% | 99% |
 | Branches | 89.64% | 83% |
 

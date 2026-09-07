@@ -229,3 +229,42 @@ describe("how far the surface stays the same wave", () => {
     ).toBeCloseTo(4, 2);
   });
 });
+
+describe("seas the schema allows but the arithmetic cannot carry", () => {
+  /**
+   * `significantHeightMetres` had no upper bound and `peakPeriodSeconds` only had to be
+   * positive, so a finite, schema-valid 1e308 m or 1e-300 s overflowed the fully developed
+   * period relation and the spectrum's own fifth power, and every moment came back NaN. That
+   * reached the panel as "NaN%". The test asks only that the answers are finite and ordered -
+   * comparing against a second implementation would agree with the first when both are wrong.
+   */
+  it("returns finite figures for heights and periods far past anything real", () => {
+    const absurd = [
+      seawayOf(1e308),
+      seawayOf(1e6),
+      seawayOf(2, 1e-300),
+      seawayOf(2, 1e12),
+      seawayOf(Number.MAX_VALUE, Number.MIN_VALUE),
+    ];
+    for (const seaway of absurd) {
+      for (const value of Object.values(seaway)) {
+        expect(Number.isFinite(value)).toBe(true);
+      }
+      expect(seaway.peakPeriodSeconds).toBeGreaterThan(0);
+      expect(seaway.correlationLengthMetres).toBeGreaterThan(0);
+      expect(seaway.correlationLengthMetres).toBeLessThan(seaway.peakWavelengthMetres);
+    }
+  });
+
+  it("clamps rather than rejecting, so an absurd sea gets an absurd but usable answer", () => {
+    expect(seawayOf(1e308).significantHeightMetres).toBe(30);
+    expect(seawayOf(-5).significantHeightMetres).toBe(0);
+    expect(seawayOf(2, 1e-300).peakPeriodSeconds).toBe(0.5);
+    expect(seawayOf(2, 1e12).peakPeriodSeconds).toBe(30);
+  });
+
+  it("treats a NaN height or period as no sea rather than passing it on", () => {
+    expect(seawayOf(NaN).significantHeightMetres).toBe(0);
+    expect(Number.isFinite(seawayOf(2, NaN).peakPeriodSeconds)).toBe(true);
+  });
+});
