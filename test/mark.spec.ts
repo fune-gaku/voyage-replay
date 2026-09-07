@@ -82,3 +82,83 @@ describe("a buoy", () => {
     expect(buildMark(mark({ id: "fairway" })).group.name).toBe("mark:fairway");
   });
 });
+
+describe("a buoy's outline is the shape the page names", () => {
+  /**
+   * The silhouette at the top, at the bottom, and at its widest, as fractions of the widest.
+   * Read off the vertices rather than off the geometry's class, because what has to be right
+   * is that a sphere READS as a sphere - a can as a drum, a cone as a cone - not which
+   * three.js constructor happened to make it.
+   *
+   * Only the ends and the maximum, because a plain cylinder has no vertices in between: it
+   * is two rings and two caps, and a test that sampled its middle would find nothing there.
+   */
+  function silhouette(shape: NonNullable<Mark["shape"]>): {
+    top: number;
+    bottom: number;
+  } {
+    const body = bodyOf(mark({ shape, heightMetres: 3 }));
+    const position = body.geometry.getAttribute("position");
+    body.geometry.computeBoundingBox();
+    const box = body.geometry.boundingBox;
+    if (!box) throw new Error("the body should have a bounding box");
+
+    const span = box.max.y - box.min.y;
+    let top = 0;
+    let bottom = 0;
+    let widest = 0;
+    for (let i = 0; i < position.count; i += 1) {
+      const height = (position.getY(i) - box.min.y) / span;
+      const radius = Math.hypot(position.getX(i), position.getZ(i));
+      widest = Math.max(widest, radius);
+      if (height > 0.9) top = Math.max(top, radius);
+      if (height < 0.1) bottom = Math.max(bottom, radius);
+    }
+    return { top: top / widest, bottom: bottom / widest };
+  }
+
+  /** A can is a drum: as wide at the top as at the bottom, which is what makes it a can. */
+  it("draws a can as a drum", () => {
+    const { top, bottom } = silhouette("can");
+    expect(top).toBeGreaterThan(0.9);
+    expect(bottom).toBeGreaterThan(0.9);
+  });
+
+  /** A cone narrows all the way up. It is the starboard-hand mark and must not read flat. */
+  it("draws a cone narrowing towards the top", () => {
+    const { top, bottom } = silhouette("conical");
+    expect(top).toBeLessThan(0.3);
+    expect(bottom).toBeGreaterThan(0.9);
+  });
+
+  /**
+   * A sphere closes at BOTH ends, which is the whole difference from a drum. Drawn as one it
+   * read as a can - a safe-water mark shown as a port-hand one, with the panel naming it
+   * correctly underneath.
+   */
+  it("draws a sphere closing at both ends, not as a drum of another width", () => {
+    const { top, bottom } = silhouette("spherical");
+    expect(top).toBeLessThan(0.6);
+    expect(bottom).toBeLessThan(0.6);
+  });
+
+  it("keeps the three outlines distinguishable from one another", () => {
+    const can = silhouette("can");
+    const cone = silhouette("conical");
+    const sphere = silhouette("spherical");
+    expect(can.top).toBeGreaterThan(sphere.top);
+    expect(sphere.bottom).toBeLessThan(cone.bottom);
+    expect(cone.top).toBeLessThan(sphere.top);
+  });
+
+  it("still straddles the waterline whatever the shape", () => {
+    for (const shape of ["pillar", "spar", "can", "conical", "spherical"] as const) {
+      const body = bodyOf(mark({ shape, heightMetres: 3 }));
+      body.geometry.computeBoundingBox();
+      const box = body.geometry.boundingBox;
+      if (!box) throw new Error("the body should have a bounding box");
+      expect(body.position.y + box.max.y).toBeCloseTo(3, 5);
+      expect(body.position.y + box.min.y).toBeLessThan(0);
+    }
+  });
+});

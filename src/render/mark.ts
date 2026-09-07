@@ -17,6 +17,8 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  SphereGeometry,
+  type BufferGeometry,
   type ColorRepresentation,
 } from "three";
 
@@ -76,6 +78,13 @@ export function buildMark(mark: Mark): MarkParts {
  *
  * Some of it goes below: a buoy sitting exactly on the surface reads as a toy, and in a
  * trough the water would otherwise be seen through the gap underneath it.
+ *
+ * **The silhouette has to be the shape the panel names.** A shape is a statement in the
+ * buoyage - a can is port hand, a cone starboard, a sphere safe water - so a spherical mark
+ * drawn as a flat-topped drum is the page and the picture disagreeing about what was there.
+ * `test/mark.spec.ts` holds each outline by its own profile rather than by its geometry
+ * class: constant width for a drum, narrowing for a cone, widest in the middle for a
+ * sphere.
  */
 function body(
   shape: MarkShape,
@@ -85,11 +94,20 @@ function body(
 ): Mesh {
   const radius = heightMetres * proportions.width * 0.5;
   const draught = heightMetres * proportions.draught;
-  const top = shape === "conical" ? 0.15 : 1;
-  const geometry = new CylinderGeometry(radius * top, radius, heightMetres + draught, 16);
-  const mesh = new Mesh(geometry, material);
+  const mesh = new Mesh(outline(shape, radius, heightMetres + draught), material);
   mesh.position.y = (heightMetres - draught) / 2;
   return mesh;
+}
+
+function outline(shape: MarkShape, radius: number, length: number): BufferGeometry {
+  if (shape === "spherical") {
+    // Squashed a little, as a spherical mark is: the width is the part that reads.
+    const sphere = new SphereGeometry(radius, 20, 14);
+    sphere.scale(1, length / (2 * radius), 1);
+    return sphere;
+  }
+  const top = shape === "conical" ? 0.15 : 1;
+  return new CylinderGeometry(radius * top, radius, length, 16);
 }
 
 /** The staff a topmark and a light would sit on. Drawn, but nothing is hung on it yet. */

@@ -595,3 +595,30 @@ describe("which way the drawn sea runs", () => {
     expect(panelsFor(subject)).toContain("coming from 0 degrees true");
   });
 });
+
+describe("what the picture itself is claiming", () => {
+  /**
+   * The renderer draws one sea, not a range, and it draws the ROUGH end - among the seas a
+   * class permits, a calmer picture is a stronger claim about what could be seen. A reader
+   * measuring a wave height off the video would otherwise take that end for the figure.
+   */
+  it("says which end of a sea state's class the view actually draws", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the view draws the rougher end");
+    expect(html).toContain("Do not measure a wave height off the picture");
+  });
+
+  /**
+   * The day palette is a clear sky, which lights a wave's face and its back differently and
+   * so gives a sea shape. An overcast one flattens it. Cloud decides, and no report states
+   * it - so the picture is making the choice and the page has to own it.
+   */
+  it("says the view draws a fine day, since nothing in the source settles the cloud", () => {
+    const html = panelsFor(scenario());
+    expect(html).toContain("The view draws a fine day");
+    expect(html).toContain("cloud is the one thing that would decide it");
+  });
+});

@@ -111,6 +111,11 @@ function skyCaveat(conditions: Conditions): string {
       ? ` The file says "${String(conditions.statedLight)}", which the sun's altitude does not support - check the date, the time zone and the position.`
       : "";
   return (
+    // The view draws a clear sky, which is a claim of its own now that the day palette is a
+    // fine one: the light comes mostly from one direction, so a sea has shape. An overcast
+    // sky would flatten it. Nothing in any report this project has met settles which.
+    "The view draws a fine day, because a sky has to be drawn and cloud is the one thing " +
+    "that would decide it - which nothing states. " +
     "Computed from the time and the origin, to about a hundredth of a degree for the sun " +
     "and a third of a degree for the moon. How much light actually reached the sea also " +
     "depends on cloud, which the source does not state." +
@@ -543,7 +548,10 @@ function heightSentence(sea: SeaEstimate): string {
   }
   return (
     `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
-    `${rough.significantHeightMetres} m (${derivation}).`
+    `${rough.significantHeightMetres} m (${derivation}), and the view draws the rougher end ` +
+    "of that - among the seas a class permits, the calmer the picture the stronger its " +
+    "claim about what could be seen. Do not measure a wave height off the picture: it is " +
+    "one end of the range above, not a figure."
   );
 }
 
