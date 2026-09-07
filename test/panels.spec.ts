@@ -641,11 +641,19 @@ describe("what the page says about a mark's light", () => {
     expect(toldHtml).not.toContain("are this tool's");
   });
 
-  /** Where a light is drawn at all, since the picture only shows one in one of its views. */
-  it("says where the rhythm can be seen", () => {
+  /**
+   * Where a light is drawn at all, and how far. A real light has a nominal range and this one
+   * is drawn wherever the mark is in frame, so the picture shows a light further off than it
+   * could have been seen - which the page has to own, since nothing in the frame says it.
+   */
+  it("says where the rhythm can be seen, and that it is drawn too far", () => {
     const subject = scenario();
     subject.marks = [buoy({ character: "Fl(2) R 10s" })];
-    expect(panelsFor(subject)).toContain("drawn from a bridge at night and nowhere else");
+    const html = panelsFor(subject);
+
+    expect(html).toContain("drawn from a bridge at night and nowhere else");
+    expect(html).toContain("overstates a real one");
+    expect(html).toContain("nominal range");
   });
 
   /** No light in the file, nothing to explain: an inference nobody made needs no paragraph. */
