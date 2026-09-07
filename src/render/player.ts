@@ -33,6 +33,8 @@ import {
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
 import { lightOf, type LightReading } from "../actors/mark/light.js";
+import { ridingOf, type Riding } from "../actors/mark/riding.js";
+import { drawnAppearance } from "../actors/mark/appearance.js";
 import { floats } from "../actors/mark/mooring.js";
 import { buildHull } from "./hull.js";
 import { showingAt } from "../core/light-character.js";
@@ -180,6 +182,8 @@ interface Moored {
   at: LocalPosition;
   /** A buoy rides the sea; a beacon is built on the ground and does not. */
   floats: boolean;
+  /** How she answers it, where she floats at all. Worked out once: her shape does not change. */
+  riding: Riding | undefined;
   /** Its light, or why nothing can be shown flashing. Read once - the file does not change. */
   light: LightReading;
 }
@@ -532,7 +536,10 @@ export class Replay {
       return;
     }
     const seconds = this.currentSeconds - this.startSeconds;
-    const sea = this.stage.sceneParts.drawnSurfaceAt(mark.at, seconds);
+    // Her own answer to the sea, not the sea. A float on a long swell follows the surface
+    // and one in a short chop moves further than it and later, and a spar buoy - which
+    // exists to stay upright - hardly leans at all.
+    const sea = this.stage.sceneParts.drawnSurfaceAt(mark.at, seconds, mark.riding);
     mark.parts.group.position.copy(toWorld(mark.at, sinkage(mark.at, eye) + sea.heightMetres));
     // The surface normal, in the scene's axes: north is -z, so a rise to the north tilts
     // the buoy towards +z. Getting that sign wrong leans every buoy the wrong way, which
@@ -707,10 +714,17 @@ function moorMarks(scenario: Scenario, sceneParts: SceneParts): Moored[] {
   return (scenario.marks ?? []).map((mark) => {
     const parts = buildMark(mark, region);
     sceneParts.actors.add(parts.group);
+    // The same resolution the renderer drew from, so how she answers the sea and how she
+    // looks cannot come from two different shapes.
+    const shape = drawnAppearance(mark, region).shape?.value;
     return {
       parts,
       at: toLocalPosition(mark.at, scenario.origin),
       floats: floats(mark),
+      // From the shape that was DRAWN, which for a mark with a purpose comes from the
+      // buoyage rather than from a stated field - a safe-water sphere and a spar answer the
+      // same sea very differently.
+      riding: shape ? ridingOf(shape, parts.heightMetres) : undefined,
       light: lightOf(mark, region),
     };
   });

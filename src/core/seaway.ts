@@ -942,10 +942,24 @@ export interface SurfacePoint {
  * direction the wave travels. `render/waves.ts` writes the same thing in the scene's axes,
  * where north is -z; the two must stay in step by eye, since no test can compile GLSL.
  */
+/**
+ * What something floating on this sea does with it, component by component.
+ *
+ * Given so that a body can answer each wave at its own frequency rather than tracing the
+ * surface: a buoy follows a long swell and lags a short chop, and her heave and her tilt do
+ * it differently. Absent, the surface answers for itself - which is the water, and what the
+ * renderer draws.
+ */
+export interface Riding {
+  heave(angularFrequencyPerSecond: number): { gain: number; lagRadians: number };
+  tilt(angularFrequencyPerSecond: number): { gain: number; lagRadians: number };
+}
+
 export function surfaceAt(
   components: WaveComponent[],
   at: { eastMetres: number; northMetres: number },
   secondsFromStart: number,
+  riding?: Riding,
 ): SurfacePoint {
   const point = { heightMetres: 0, slopeEast: 0, slopeNorth: 0 };
   for (const wave of components) {
@@ -953,13 +967,23 @@ export function surfaceAt(
     const north = Math.cos(wave.directionRadians);
     const along = wave.wavenumberPerMetre * (at.eastMetres * east + at.northMetres * north);
     const phase = along - wave.angularFrequencyPerSecond * secondsFromStart + wave.phaseRadians;
-    point.heightMetres += wave.amplitudeMetres * Math.sin(phase);
-    const slope = wave.amplitudeMetres * wave.wavenumberPerMetre * Math.cos(phase);
-    point.slopeEast += slope * east;
-    point.slopeNorth += slope * north;
+
+    // **The lag is the point, not just the gain.** Applied to the phase, it lets the heave
+    // and the tilt peak at different moments - which is most of what makes a floating body's
+    // motion look irregular rather than metronomic, and cannot come out of scaling alone.
+    const rise = riding?.heave(wave.angularFrequencyPerSecond) ?? FOLLOWS;
+    const lean = riding?.tilt(wave.angularFrequencyPerSecond) ?? FOLLOWS;
+    point.heightMetres += wave.amplitudeMetres * rise.gain * Math.sin(phase - rise.lagRadians);
+
+    const slope = wave.amplitudeMetres * wave.wavenumberPerMetre * lean.gain;
+    point.slopeEast += slope * Math.cos(phase - lean.lagRadians) * east;
+    point.slopeNorth += slope * Math.cos(phase - lean.lagRadians) * north;
   }
   return point;
 }
+
+/** The water itself: it is exactly where it is, and it is never late. */
+const FOLLOWS = { gain: 1, lagRadians: 0 };
 
 /**
  * Beaufort, in knots. WMO's table, and the ranges are the point of it.

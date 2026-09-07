@@ -546,3 +546,61 @@ cardinal, isolated danger, safe water and special marks are the same the world o
   north cardinal, so construction is a field of its own, independent of the meaning. The
   buoy's counterpart is the IALA body shape, and *that* one is partly meaning — a can is port
   hand where a cone is starboard — which is why the two live on different kinds (#40).
+
+### A buoy answers the sea; she does not trace it
+
+The renderer used to take the water's height for a buoy's waterline and the water's slope for
+her deck. That is the small-body limit, and half of it is defensible.
+
+**Heave.** A float is a spring and a mass: the spring is the water it displaces when it dips,
+the mass is the water it displaced already. So `ω² = ρgA / ρAd = g/d` — **the waterplane area
+cancels** — and
+
+```
+T = 2π √(d / g)
+```
+
+comes out of the draught and nothing else.
+
+| | draught | T |
+|---|---:|---:|
+| pillar, 3.2 m body | 1.6 m | 2.5 s |
+| spar | 3.5 m | 3.8 s |
+| can | 1.4 m | 2.4 s |
+| large light buoy | 4.8 m | 4.4 s |
+
+Against an 8.6 s swell the period ratio is 0.3 and the response is within a tenth of one —
+**she really does follow the surface, which is why tracing it looked right**. Against a three
+second chop the same buoy is near her own period and moves half again as far as the water.
+
+**This is computable for a buoy where a ship's roll is not.** A ship's roll needs her
+metacentric height, which no report carries, and that is why `plans/ship-motion-model.md` is
+still a plan. A buoy's heave needs her draught, which is her geometry. Borrowing the ship's
+argument here would be borrowing a reason that does not apply.
+
+**Tilt.** A spar buoy exists to stay upright — ballast low, little waterplane — and drawing her
+leaning to every slope draws away the one thing the shape was chosen for. How far each shape
+leans is carried as a class rather than a calculation: the pitch period needs ballast, and
+nothing states it, but the shape implies the class.
+
+### The lag is the part that cannot be skipped
+
+A damped body's answer has two numbers, and taking only the gain leaves every motion peaking at
+the same instant as every other. Heave and tilt have different natural periods, so **falling out
+of step is most of what makes a real buoy's motion look irregular** rather than metronomic.
+Applied per component — gain on the amplitude, lag on the phase — it comes out on its own.
+
+At resonance the gain is `1/(2ζ)` and the lag is exactly a quarter cycle; above it the lag goes
+on towards half a cycle, which is why it is computed with `atan2` and not `atan`. Folded back
+by `atan`, a body above its own period would be drawn early rather than late: plausible, and
+upside down.
+
+### The damping is the one figure with no source
+
+A buoy's heave damping is not a constant of nature. It depends on her hull and on whether she
+carries a heave plate, and the literature reports it per vessel rather than in general. Thirty
+per cent of critical is a middling figure for a small float without one, it is **chosen**, and
+the page says so.
+
+It weighs most at resonance, where the response goes as one over twice it — which is to say
+**the choice matters most exactly where a one-degree-of-freedom model is least trustworthy**.

@@ -1043,6 +1043,30 @@ describe("marks riding, or not riding, the sea", () => {
     });
   }
 
+  /**
+   * **She answers the sea; she does not trace it.** A spar buoy is ballasted to stay upright
+   * and drawing her leaning to every slope draws away the one thing her shape is for - so in
+   * the same water she leans less than a can does.
+   */
+  it("leans a spar less than a can in the same sea", () => {
+    const lean = (shape: "spar" | "can"): number => {
+      const subject = withMarks(5);
+      subject.marks = [{ id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3, shape }];
+      const replay = replayOf(subject);
+      replay.setView({ kind: "bridge", actorId: "A" });
+
+      let worst = 0;
+      for (const offset of [0, 3, 7, 11, 17, 23, 31]) {
+        replay.seek(replay.startSeconds + offset);
+        const mark = lastFrame().scene.getObjectByName("mark:no-1");
+        worst = Math.max(worst, 1 - (mark?.quaternion.w ?? 1));
+      }
+      return worst;
+    };
+
+    expect(lean("spar")).toBeLessThan(lean("can"));
+  });
+
   it("heaves the buoy as the drawn surface goes past her", () => {
     const buoy = heights("no-1");
     expect(Math.max(...buoy) - Math.min(...buoy)).toBeGreaterThan(0.5);

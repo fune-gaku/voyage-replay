@@ -560,14 +560,14 @@ describe("the sea marks a scenario carries", () => {
    * A buoy stops heaving at a few hundred metres because the water beneath her has, not
    * because the sea has - which the picture cannot say for itself.
    */
-  it("says the buoy rides the sea as drawn, and follows it exactly", () => {
+  it("says the buoy rides the sea as drawn, not the sea as computed", () => {
     const subject = scenario();
     subject.marks = [
       buoy({ shape: "spar", pattern: { kind: "solid", colours: ["black"] }, heightMetres: 2 }),
     ];
     const html = panelsFor(subject);
     expect(html).toContain("riding the sea as the water is drawn beneath her");
-    expect(html).toContain("issue #32");
+    expect(html).toContain("Her stated position is her sinker");
   });
 });
 
