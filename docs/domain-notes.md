@@ -436,3 +436,33 @@ character whatever is carrying it.
 - **Flash in the plan view** and a chart starts claiming a moment. A light is drawn from a
   bridge at night and nowhere else — the judgement `setDiagramView` already makes about
   lighting and the map.
+
+### Where a scenario states the timings itself
+
+A source that gives the actual on/off durations beats anything worked out from the
+abbreviation — and then the two can disagree, which is the same failure from the other side.
+`Fl(2) R 10s` with one ten-second green phase is a red group-flashing light on the page and a
+steady green one in the picture.
+
+What has to agree, and what does not:
+
+| checked | not checked |
+|---|---|
+| how long the sequence runs | how long each ordinary phase lasts |
+| the order of the phases, and which are lit | |
+| the colours, **both ways round** | |
+| the light-to-dark ratio, which *is* the class | |
+| a long flash of two seconds or more | |
+| the separating phase, three times the ones inside a group | |
+| the rate inside a group, for the quick classes | |
+| a dash of three times a dot | |
+
+The last four are per-phase, so the generated sequence carries **what each phase is for** — a
+flash, a long flash, a dot, a dash, the phase that separates the groups. Working those out
+again in the checker would be a second copy of the generation rules, and the two would drift.
+
+Three of these are less obvious than they look. `Fl(2+1)` with evenly spaced flashes is
+`Fl(3)`: a preferred-channel mark drawn as an ordinary lateral one. Half a second of red, nine
+of darkness and half a second of red has two appearances and joins its two ends into one flash
+as it repeats. And dot-then-dash is A while dash-then-dot is N — a safe-water mark shows
+Mo(A).
