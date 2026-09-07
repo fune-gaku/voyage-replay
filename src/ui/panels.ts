@@ -563,9 +563,15 @@ function heightSentence(sea: SeaEstimate): string {
     return `The file states a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
   }
   if (sea.roughEndIsOpen) {
+    // The one class where the drawn sea is the CALMEST the source allows rather than the
+    // roughest, because the class has no roughest. That is the weaker picture and so the
+    // stronger claim, which is the opposite of every other row and has to be said outright.
     return (
       `Sea state gives a significant height of ${rough.significantHeightMetres} m or more ` +
-      `(${derivation}), with nothing above it, so the last column is a floor and not a range.`
+      `(${derivation}), with nothing above it, so the last column is a floor and not a range. ` +
+      `The view draws ${rough.significantHeightMetres} m, which here is the least the class ` +
+      "allows rather than the most - the sea shown is the calmest that fits, and a calmer " +
+      "picture is the stronger claim about what could be seen."
     );
   }
   return (

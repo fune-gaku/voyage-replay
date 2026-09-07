@@ -639,3 +639,21 @@ describe("what the picture itself is claiming", () => {
     }
   });
 });
+
+describe("the one class whose picture is the calmest sea it allows", () => {
+  /**
+   * Every other sea state has the ROUGH end drawn, because among the seas a class permits a
+   * calmer picture is a stronger claim. State 9 has no rough end - it is "over 14 m" - so
+   * the sea drawn there is the calmest that fits, which is the opposite way round and the
+   * one case where the picture understates. It has to be said outright.
+   */
+  it("says state 9 is drawn at the least the class allows, not the most", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("The view draws 14 m, which here is the least the class allows");
+    expect(html).toContain("a calmer picture is the stronger claim");
+    expect(html).not.toContain("the view draws the rougher end");
+  });
+});

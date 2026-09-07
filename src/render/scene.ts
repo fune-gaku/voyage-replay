@@ -235,6 +235,12 @@ export function buildScene(
  * the watchkeeper could see - which is the same argument that made a FLAT sea the strongest
  * claim of all and is the reason any of this exists. The panels carry the whole interval.
  *
+ * **Sea state 9 is the exception, and it goes the wrong way.** Its class is "over 14 m"
+ * with nothing above, so `rough` is the FLOOR - the calmest sea the class allows, and
+ * therefore the strongest claim available - and drawing it is the one case where this
+ * picture understates. Nothing here can fix that, since the class states no upper bound to
+ * draw; `ui/panels.ts` says outright which end was drawn and what it implies.
+ *
  * **Roughness drops a long way where there are waves, and that is what makes them visible
  * at all.** Daylight sea texture is specular: what the eye reads as waves is the sky and
  * the sun reflected at angles that change across a crest. At the flat sea's roughness the
