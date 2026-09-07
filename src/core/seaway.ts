@@ -874,8 +874,13 @@ export function surfaceAt(
  * Beaufort, in knots. WMO's table, and the ranges are the point of it.
  *
  * A force is a class, not a figure - 5 is 17 to 21 knots - so it is kept as one, for the
- * same reason `SEA_STATE_HEIGHT_METRES` is. Force 12 is open above; `fastestIsOpen` says so
- * rather than letting 64 pass for a bound.
+ * same reason `SEA_STATE_HEIGHT_METRES` is.
+ *
+ * **Two of the thirteen have an end that is not a number**, and both have been read as one
+ * here at some point. Force 12 is 64 knots and UP, so its top is a floor. Force 0 is
+ * "less than 1 knot" and not "nought to one", so its top is a limit the class never
+ * reaches - one knot is force 1. `forceClass` is the only place that knows either, because
+ * scattering the two special cases is how they get missed a fourth time.
  */
 export const BEAUFORT_KNOTS: readonly (readonly [number, number])[] = [
   [0, 1],
@@ -963,26 +968,55 @@ export function windFrom(environment: Environment | undefined): WindEstimate | n
   return { ...stated, ...speedOfForce(wind.beaufortForce), statedForceAgrees: null };
 }
 
-/** Whether a stated speed falls inside a stated force's class. Null where one is missing. */
+/**
+ * Whether a stated speed falls inside a stated force's class. Null where one is missing.
+ *
+ * Both odd ends matter here. A knot is force 1 and not force 0, so calm's top is exclusive;
+ * force 12 has no top at all. Testing every class as a closed interval called one knot calm
+ * and quietly dropped the disagreement note that is the point of this comparison.
+ */
 function forceAgrees(speedKnots: number, force: number | undefined): boolean | null {
-  const band = force === undefined ? undefined : BEAUFORT_KNOTS[force];
+  const band = force === undefined ? null : forceClass(force);
   if (!band) return null;
-  const open = force === BEAUFORT_KNOTS.length - 1;
-  return speedKnots >= band[0] && (open || speedKnots <= band[1]);
+  if (speedKnots < band.slowestKnots) return false;
+  if (band.topIsOpen) return true;
+  return band.topIsExclusive ? speedKnots < band.fastestKnots : speedKnots <= band.fastestKnots;
+}
+
+/** How one Beaufort class ends, which is not the same question at both ends of the scale. */
+interface ForceClass {
+  slowestKnots: number;
+  fastestKnots: number;
+  /** Force 12: the top is a floor and the class runs past it. */
+  topIsOpen: boolean;
+  /** Force 0: the top is a limit the class stops short of, since calm is "less than 1 knot". */
+  topIsExclusive: boolean;
+}
+
+/** The one place that knows how a force's ends behave. */
+export function forceClass(force: number): ForceClass | null {
+  const band = BEAUFORT_KNOTS[force];
+  if (!band) return null;
+  return {
+    slowestKnots: band[0],
+    fastestKnots: band[1],
+    topIsOpen: force === BEAUFORT_KNOTS.length - 1,
+    topIsExclusive: force === 0,
+  };
 }
 
 /** A force is a class, so it comes back as one. No force at all comes back as no speed. */
 function speedOfForce(
   force: number | undefined,
 ): Omit<WindEstimate, "fromDegreesTrue" | "derivation" | "statedForceAgrees" | "statedForce"> {
-  const band = force === undefined ? undefined : BEAUFORT_KNOTS[force];
+  const band = force === undefined ? null : forceClass(force);
   if (!band) {
     return { slowestKnots: 0, fastestKnots: 0, fastestIsOpen: false, source: "direction-only" };
   }
   return {
-    slowestKnots: band[0],
-    fastestKnots: band[1],
-    fastestIsOpen: force === BEAUFORT_KNOTS.length - 1,
+    slowestKnots: band.slowestKnots,
+    fastestKnots: band.fastestKnots,
+    fastestIsOpen: band.topIsOpen,
     source: "force",
   };
 }

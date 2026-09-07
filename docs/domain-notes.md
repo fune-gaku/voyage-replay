@@ -284,6 +284,12 @@ an unbounded one. That is the third time an open end has been read as a bound in
 repository — the panel's own sea state 9, Beaufort force 12 in the wind's display, and this —
 so anything with a class in it should be asked, once, whether its top is a number or a floor.
 
+**Two Beaufort classes have an end that is not a number.** Force 12 is 64 knots and up, so its
+top is a floor. Force 0 is "less than 1 knot" and not "nought to one" — a knot is already
+force 1 — so its top is a limit the class stops short of. Both have been read as plain numbers
+here at some point, which is why `forceClass` is the only thing that knows: scattering two
+special cases is how the second one gets missed.
+
 **A file may state both a speed and a force, and they may not be the same wind.** The speed is
 used, being the narrower statement, but eighteen knots beside force 9 means one of them is
 wrong and the page says so rather than choosing in silence. Which is right is not something

@@ -18,7 +18,7 @@ import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
-  BEAUFORT_KNOTS,
+  forceClass,
   fullyDevelopedHeightMetres,
   meanOfHighest,
   type SeaEstimate,
@@ -517,11 +517,12 @@ function forceNote(wind: WindEstimate): string {
 
 /** A force written out as its class, so a reader can check a disagreement rather than take it. */
 function beaufortRange(force: number): string {
-  const band = BEAUFORT_KNOTS[force];
+  const band = forceClass(force);
   if (!band) return "not a force on the scale";
-  return force === BEAUFORT_KNOTS.length - 1
-    ? `${band[0]} kn or more`
-    : `${band[0]} to ${band[1]} kn`;
+  if (band.topIsOpen) return `${band.slowestKnots} kn or more`;
+  // Calm is "less than 1 knot", not "nought to one": a knot is already force 1.
+  if (band.topIsExclusive) return `under ${band.fastestKnots} kn`;
+  return `${band.slowestKnots} to ${band.fastestKnots} kn`;
 }
 
 /**

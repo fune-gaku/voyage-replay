@@ -6,6 +6,7 @@ import type { Environment } from "../src/core/types.js";
 import {
   assumedPeakPeriodSeconds,
   BEAUFORT_KNOTS,
+  forceClass,
   fullyDevelopedHeightMetres,
   periodFromWindSeconds,
   seaExceedsWind,
@@ -548,9 +549,9 @@ describe("the wind, which is the figure a deck log always has", () => {
     expect(BEAUFORT_KNOTS[8]).toEqual([34, 40]);
 
     // Contiguous and rising from force 1 up: each class starts one knot above the last
-    // one's top. The 0-to-1 boundary is the published table's own quirk - calm is "under
-    // one knot" and force 1 is "one to three" - so it is left as WMO writes it rather than
-    // tidied into a gap that does not exist.
+    // one's top. The 0-to-1 boundary is not a gap but an exclusive end - calm is "under one
+    // knot" and force 1 is "one to three" - and `forceClass` is what carries that, so the
+    // table is left as WMO writes it.
     for (let force = 2; force < BEAUFORT_KNOTS.length - 1; force += 1) {
       const previous = BEAUFORT_KNOTS[force - 1];
       const here = BEAUFORT_KNOTS[force];
@@ -841,5 +842,49 @@ describe("keeping the figure a speed overrode", () => {
 
   it("carries it where the force is what the speed came from", () => {
     expect(windFrom({ wind: { beaufortForce: 5, derivation: "measured" } })?.statedForce).toBe(5);
+  });
+});
+
+describe("the two Beaufort classes whose ends are not numbers", () => {
+  const wind = (speedKnots: number, beaufortForce: number): Environment => ({
+    wind: { speedKnots, beaufortForce, derivation: "measured" },
+  });
+
+  /**
+   * Calm is "less than 1 knot", not "nought to one": a knot is already force 1. Testing
+   * every class as a closed interval called one knot calm and dropped the disagreement note
+   * that is the whole point of comparing the two figures. The fourth time an end of a class
+   * has been read as a number in this repository, and the first at a bottom end.
+   */
+  it("does not call a one-knot wind calm", () => {
+    expect(windFrom(wind(0.9, 0))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(0, 0))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(1, 0))?.statedForceAgrees).toBe(false);
+    expect(windFrom(wind(1, 1))?.statedForceAgrees).toBe(true);
+  });
+
+  it("counts anything above force 12's floor as force 12, having no top", () => {
+    expect(windFrom(wind(64, 12))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(200, 12))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(63, 12))?.statedForceAgrees).toBe(false);
+  });
+
+  it("treats every class between them as closed at both ends", () => {
+    for (let force = 1; force < BEAUFORT_KNOTS.length - 1; force += 1) {
+      const band = BEAUFORT_KNOTS[force];
+      if (!band) throw new Error("the scale runs 0 to 12");
+      expect(windFrom(wind(band[0], force))?.statedForceAgrees, `force ${force} bottom`).toBe(true);
+      expect(windFrom(wind(band[1], force))?.statedForceAgrees, `force ${force} top`).toBe(true);
+      expect(windFrom(wind(band[1] + 0.5, force))?.statedForceAgrees, `force ${force} over`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("has one place that knows how a class ends", () => {
+    expect(forceClass(0)).toMatchObject({ topIsExclusive: true, topIsOpen: false });
+    expect(forceClass(5)).toMatchObject({ topIsExclusive: false, topIsOpen: false });
+    expect(forceClass(12)).toMatchObject({ topIsExclusive: false, topIsOpen: true });
+    expect(forceClass(13)).toBeNull();
   });
 });
