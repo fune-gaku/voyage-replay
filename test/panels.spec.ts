@@ -375,7 +375,7 @@ describe("whether the sea was in the way", () => {
     expect(html).toContain("Whether the sea was in the way");
     expect(html).toContain("hidden by crests above");
     expect(html).toContain("no sea stated");
-    expect(html).toContain("an unstated sea is not a calm one");
+    expect(html).toContain("An unstated sea is not a calm one");
   });
 
   it("spreads a sea state across its class rather than printing one figure", () => {
@@ -687,5 +687,55 @@ describe("the buoy defaults the page names are the ones the view draws", () => {
     });
     expect(bare.heightMetres).toBe(named.heightMetres);
     expect(bare.group.children.length).toBe(named.group.children.length);
+  });
+});
+
+describe("the sea has a section of its own", () => {
+  /**
+   * The correction that found this: the occlusion table needs two ships and the sea does
+   * not. A scenario with one ship and a stated sea drew three metres of it, with a readable
+   * height and a readable direction, and the page said nothing whatever about them - the
+   * picture asserting a sea the page never mentioned.
+   */
+  it("describes the sea even where there is no encounter to judge", () => {
+    const subject = scenario([actor("A", northboundPoints(), COASTER)]);
+    subject.environment = {
+      lightCondition: "day",
+      waves: {
+        significantHeightMetres: 3,
+        peakPeriodSeconds: 8.6,
+        fromDegreesTrue: 290,
+        derivation: "inferred",
+      },
+    };
+    const html = panelsFor(subject);
+
+    // The encounter cannot be judged...
+    expect(html).toContain("Needs two actors.");
+    // ...but everything the view is drawing is still stated.
+    expect(html).toContain("The sea");
+    expect(html).toContain("3 m");
+    expect(html).toContain("8.6 s");
+    expect(html).toContain("290 deg true");
+    expect(html).toContain("inferred");
+  });
+
+  it("says the view draws flat water, and what that claims, where no sea is stated", () => {
+    const subject = scenario([actor("A", northboundPoints(), COASTER)]);
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the view therefore draws flat water");
+    expect(html).toContain("the strongest claim available");
+    expect(html).toContain("An unstated sea is not a calm one");
+  });
+
+  it("marks an assumed period and an assumed direction as assumed, in the table", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("1.25 to 2.5 m");
+    expect(html).toContain("(assumed)");
+    expect(html).toContain("assumed - nothing states it");
   });
 });

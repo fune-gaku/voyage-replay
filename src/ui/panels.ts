@@ -40,6 +40,7 @@ export function renderPanels(scenario: Scenario, prepared: Prepared[]): string {
     section("Actors", actorTable(prepared)),
     section("Closest approach", approach(prepared, scenario)),
     section("What each ship showed the other", aspects(prepared, scenario)),
+    section("The sea", seaSection(scenario)),
     section("Whether the sea was in the way", occlusion(prepared, scenario)),
     ...marksSection(scenario),
     section(`Plausibility screening (${findings.length})`, findingList(findings, scenario)),
@@ -410,6 +411,53 @@ interface Sighting {
 }
 
 /**
+ * What the sea was, and how much of that anybody wrote down.
+ *
+ * Its own section rather than a paragraph under the occlusion table, and that is a
+ * correction: the table needs two ships and the sea does not. A scenario with one ship and
+ * a stated sea drew three metres of it, with a readable height and a readable direction,
+ * and said nothing whatever about them - the picture asserting a sea the page never
+ * mentioned, which is the fault every other line here exists to prevent.
+ *
+ * Printed even when there is no sea to describe, because "nothing was stated" is the part a
+ * reader most needs and the flat water in the view is the strongest claim available.
+ */
+function seaSection(scenario: Scenario): string {
+  const at = Date.parse(scenario.meta.occurredAt) / 1000;
+  const { sea } = conditionsAt(scenario.origin, scenario.environment, at);
+  if (!sea) return `<p>${escapeHtml(NO_SEA)}</p>`;
+
+  const rows: [string, string][] = [
+    ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
+    ["Significant height", heightRange(sea)],
+    [
+      "Peak period",
+      `${sea.rough.peakPeriodSeconds.toFixed(1)} s${sea.periodAssumed ? " (assumed)" : ""}`,
+    ],
+    [
+      "Coming from",
+      sea.fromDegreesTrue === null
+        ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
+        : `${sea.fromDegreesTrue.toFixed(0)} deg true`,
+    ],
+    ["Derivation", sea.derivation],
+  ];
+  return keyValueTable(rows) + note(seaCaveat(sea));
+}
+
+function heightRange(sea: SeaEstimate): string {
+  const { calm, rough } = sea;
+  if (sea.source === "stated") return `${calm.significantHeightMetres} m`;
+  if (sea.roughEndIsOpen) return `${rough.significantHeightMetres} m or more`;
+  return `${calm.significantHeightMetres} to ${rough.significantHeightMetres} m`;
+}
+
+const NO_SEA =
+  "The file states no sea, and the view therefore draws flat water - which is not a " +
+  "neutral picture but the strongest claim available, that everything was in sight the " +
+  "whole time. An unstated sea is not a calm one.";
+
+/**
  * How much of the time a crest stood between the two.
  *
  * Two halves with quite different standing, and the table keeps them apart. The crest
@@ -528,23 +576,14 @@ function occlusionCaveat(sighting: Sighting, sea: SeaEstimate | null): string {
     `${sighting.observer.actor.id}'s eye and ${top.toFixed(1)} m for the top of ` +
     `${sighting.target.actor.id}'s superstructure - issue #8. Her lights stand higher than ` +
     `that and are correspondingly harder to hide, which this table does not answer for. ` +
-    seaCaveat(sea)
+    (sea ? "The sea these figures were run against is described in its own section above. " : "") +
+    "The figures count crossings independently, which runs high, and treat the sea as long " +
+    "crested along one line, which runs low."
   );
 }
 
-function seaCaveat(sea: SeaEstimate | null): string {
-  if (!sea) {
-    return (
-      "The file states no sea, so the last column is empty rather than zero: an unstated " +
-      "sea is not a calm one, and the view's flat water is the strongest claim available."
-    );
-  }
-  return (
-    `${heightSentence(sea)}${periodSentence(sea)}${directionSentence(sea)} ${tailNote(sea)} ` +
-    `The figures count crossings ` +
-    "independently, which runs high, and treat the sea as long crested along one line, which " +
-    "runs low."
-  );
+function seaCaveat(sea: SeaEstimate): string {
+  return `${heightSentence(sea)}${periodSentence(sea)}${directionSentence(sea)} ${tailNote(sea)}`;
 }
 
 /**
