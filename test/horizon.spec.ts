@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clearanceMetres,
+  crestOcclusionMetres,
   dropMetres,
   EFFECTIVE_RADIUS_METRES,
+  grazingPointMetres,
   hiddenHeightMetres,
   horizonMetres,
 } from "../src/core/horizon.js";
@@ -93,5 +96,79 @@ describe("what the bulge hides", () => {
 
   it("hides more of the same target the lower the eye", () => {
     expect(hiddenHeightMetres(10, 30_000)).toBeGreaterThan(hiddenHeightMetres(30, 30_000));
+  });
+});
+
+describe("the crest height that hides a target", () => {
+  const sightline = (eye: number, target: number, range: number) => ({
+    eyeHeightMetres: eye,
+    targetHeightMetres: target,
+    rangeMetres: range,
+  });
+
+  /**
+   * The one check worth having: this is the same geometry as the horizon approached from
+   * another side, so it must agree with the arithmetic already here. A crest of zero height
+   * hides her exactly where the two-horizons rule says she goes out of sight anyway.
+   */
+  it("reaches zero exactly where the two-horizons rule loses her", () => {
+    const pairs: [number, number][] = [
+      [6, 1.5],
+      [8, 3],
+      [20, 10],
+    ];
+    for (const [eye, target] of pairs) {
+      const range = horizonMetres(eye) + horizonMetres(target);
+      expect(crestOcclusionMetres(sightline(eye, target, range))).toBeCloseTo(0, 6);
+    }
+  });
+
+  /**
+   * Inside `sqrt(2R(h - f))` the sight line is still falling when it reaches her, so what
+   * hides her is a wave at her own position and the threshold is simply her height. Beyond
+   * it the line has bottomed out short of her and the horizon takes over.
+   */
+  it("is her own height until the grazing point stops being the target itself", () => {
+    const changeover = Math.sqrt(2 * EFFECTIVE_RADIUS_METRES * (8 - 1.5));
+    expect(changeover).toBeCloseTo(9754, -1);
+
+    for (const range of [500, 2_000, 6_000, changeover - 100]) {
+      expect(crestOcclusionMetres(sightline(8, 1.5, range))).toBeCloseTo(1.5, 6);
+      expect(grazingPointMetres(sightline(8, 1.5, range))).toBeCloseTo(range, 6);
+    }
+    expect(grazingPointMetres(sightline(8, 1.5, changeover + 1_000))).toBeLessThan(
+      changeover + 1_000,
+    );
+  });
+
+  it("falls away past that, and keeps falling as the range opens", () => {
+    const at = (range: number) => crestOcclusionMetres(sightline(8, 1.5, range));
+    expect(at(11_000)).toBeCloseTo(1.41, 2);
+    expect(at(15_000)).toBeCloseTo(0.22, 2);
+    expect(at(11_000)).toBeGreaterThan(at(13_000));
+    expect(at(13_000)).toBeGreaterThan(at(15_000));
+  });
+
+  it("takes a bigger crest to hide something taller, at the same range", () => {
+    expect(crestOcclusionMetres(sightline(8, 12, 15_000))).toBeGreaterThan(
+      crestOcclusionMetres(sightline(8, 6, 15_000)),
+    );
+    expect(crestOcclusionMetres(sightline(8, 6, 15_000))).toBeGreaterThan(
+      crestOcclusionMetres(sightline(8, 1.5, 15_000)),
+    );
+  });
+
+  /**
+   * Past the two-horizons range the earth alone has her, and the clearance goes negative:
+   * no sea at all is needed. Consumers rely on that rather than on a separate flag.
+   */
+  it("goes negative once the earth has hidden her without any help", () => {
+    const beyond = horizonMetres(8) + horizonMetres(1.5) + 2_000;
+    expect(crestOcclusionMetres(sightline(8, 1.5, beyond))).toBeLessThan(0);
+  });
+
+  it("clears by the eye's own height at zero range rather than dividing by it", () => {
+    expect(crestOcclusionMetres(sightline(8, 1.5, 0))).toBe(8);
+    expect(clearanceMetres(sightline(8, 1.5, 0), 0)).toBe(8);
   });
 });

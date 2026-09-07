@@ -22,19 +22,8 @@ import {
   type ColorRepresentation,
 } from "three";
 
+import { assumedHeights } from "../actors/vessel/heights.js";
 import type { Vessel } from "../core/types.js";
-
-/**
- * Freeboard and superstructure height are not in the data, and these are guesses.
- *
- * They are the two that a catalogue of ship classes is meant to replace (issue #8), because
- * neither varies smoothly with size: freeboard is depth minus draught, and depth is set by
- * class - a 499 GT Japanese coaster is 6.8 to 7.4 m of it whatever else about her varies.
- * The scenario already carries the draught; what is missing is the depth, and that has to
- * come from a source rather than from here.
- */
-const FREEBOARD_FRACTION_OF_BEAM = 0.55;
-const BRIDGE_HEIGHT_FRACTION_OF_BEAM = 0.75;
 
 /**
  * Where the bridge goes when nothing measured says otherwise, as a fraction of length aft
@@ -123,9 +112,10 @@ function planOutline(length: number, beam: number, boxBow: boolean): Shape {
 }
 
 export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullParts {
-  const beam = vessel.beamMetres;
-  const freeboard = beam * FREEBOARD_FRACTION_OF_BEAM;
-  const bridgeHeight = beam * BRIDGE_HEIGHT_FRACTION_OF_BEAM;
+  // Vertical dimensions are all assumed - see `actors/vessel/heights.ts` and issue #8.
+  const heights = assumedHeights(vessel);
+  const freeboard = heights.freeboardMetres;
+  const bridgeHeight = heights.superstructureMetres - freeboard;
   const bridge = bridgeOffsetOf(vessel);
 
   const group = new Group();
@@ -134,7 +124,7 @@ export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullPart
 
   return {
     group,
-    eyeHeightMetres: freeboard + bridgeHeight * 0.85,
+    eyeHeightMetres: heights.eyeMetres,
     bridgeOffsetForwardMetres: bridge.metres,
     bridgeFromOffsets: bridge.fromOffsets,
   };
