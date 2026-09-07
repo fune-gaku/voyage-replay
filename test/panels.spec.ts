@@ -1106,12 +1106,16 @@ describe("naming the end a period belongs to", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("for the 14 m drawn");
-    expect(html).not.toContain("s at the rough end");
+    // The whole page, not one sentence. The first fix left the very next clause calling the
+    // same 14 m the rough end, and a test that negated only "s at the rough end" passed.
+    expect(html).not.toContain("rough end");
   });
 
-  it("still names the rough end of a class that has one", () => {
+  it("still names the rough end of a class that has one, in both sentences", () => {
     const subject = scenario();
     subject.environment = { seaState: 4 };
-    expect(panelsFor(subject)).toContain("s at the rough end");
+    const html = panelsFor(subject);
+    expect(html).toContain("s at the rough end");
+    expect(html).toContain("at the rough end the highest tenth");
   });
 });

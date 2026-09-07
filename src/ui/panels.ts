@@ -883,11 +883,18 @@ function directionSentence(sea: SeaEstimate): string {
   );
 }
 
-/** Why the rough end is not the height of the waves. */
+/**
+ * Why the height quoted is not the height of the waves.
+ *
+ * Takes its end from `whichEnd` like the sentence before it. The first version said "at the
+ * rough end" unconditionally and sat immediately after a clause explaining that state 9's
+ * 14 m is a floor and the least the class allows - contradicting it in the next breath, and
+ * surviving a test that had negated the phrase only where it appeared earlier on the page.
+ */
 function tailNote(sea: SeaEstimate): string {
   const hs = sea.rough.significantHeightMetres;
   return (
-    `Significant height is the mean of the highest third: at the rough end the highest tenth ` +
+    `Significant height is the mean of the highest third: ${whichEnd(sea)} the highest tenth ` +
     `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
     `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
   );
