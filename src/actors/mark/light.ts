@@ -30,6 +30,7 @@ export type Unlit =
   | "the stated timings do not run for the period the character states"
   | "the stated timings do not show the character's flashes"
   | "the stated timings show a colour the character does not"
+  | "the stated timings put two phases of one colour side by side"
   | Unreadable;
 
 export type LightReading =
@@ -86,26 +87,58 @@ export function lightOf(mark: Mark): LightReading {
  * the page and the picture reporting different marks, from the same two fields. The timings
  * win where they agree, and where they do not, neither is drawn.
  *
- * Three things have to match: how long the sequence runs, how many appearances of light it
- * has, and what colours they are. Their exact lengths are not checked, because that is the
- * whole reason for stating them - the abbreviation never fixed them.
+ * What has to match is how long the sequence runs, how many appearances of light it has, and
+ * what colours they are. **What is not checked is how long each one lasts** - that is the
+ * whole reason for stating them, since the abbreviation never fixed it.
  */
 function disagreement(character: LightCharacter, stated: Phase[]): Unlit | null {
-  const period = character.periodSeconds;
-  const runs = stated.reduce((total, phase) => total + phase.seconds, 0);
-  if (period !== null && Math.abs(runs - period) > 1e-9) {
-    return "the stated timings do not run for the period the character states";
-  }
-
   const drawn = phasesOf(character);
-  if (appearances(stated) !== appearances(drawn)) {
-    return "the stated timings do not show the character's flashes";
-  }
+  return (
+    wrongLength(character, stated) ??
+    wrongCount(drawn, stated) ??
+    wrongColour(drawn, stated) ??
+    runTogether(stated)
+  );
+}
 
+function wrongLength(character: LightCharacter, stated: Phase[]): Unlit | null {
+  const period = character.periodSeconds;
+  if (period === null) return null;
+  const runs = stated.reduce((total, phase) => total + phase.seconds, 0);
+  return Math.abs(runs - period) > 1e-9
+    ? "the stated timings do not run for the period the character states"
+    : null;
+}
+
+/** The count is the message: an east cardinal is three flashes and a west is nine. */
+function wrongCount(drawn: Phase[], stated: Phase[]): Unlit | null {
+  return appearances(stated) === appearances(drawn)
+    ? null
+    : "the stated timings do not show the character's flashes";
+}
+
+function wrongColour(drawn: Phase[], stated: Phase[]): Unlit | null {
   const allowed = new Set<Phase["colour"]>(drawn.map((phase) => phase.colour));
   return stated.every((phase) => allowed.has(phase.colour))
     ? null
     : "the stated timings show a colour the character does not";
+}
+
+/**
+ * Two phases of one colour in a row are one phase, whatever the file calls them.
+ *
+ * `[1 s red, 1 s red, 8 s dark]` counts as two appearances and shows as one flash of two
+ * seconds - a single-flashing light where the character says a group of two. The count only
+ * means something if the phases actually alternate. An alternating light passes: its two
+ * appearances are of DIFFERENT colours, which is what makes it one.
+ */
+function runTogether(stated: Phase[]): Unlit | null {
+  for (let i = 1; i < stated.length; i += 1) {
+    if (stated[i]?.colour === stated[i - 1]?.colour) {
+      return "the stated timings put two phases of one colour side by side";
+    }
+  }
+  return null;
 }
 
 /** How many separate appearances of light there are, which is the count a mark is read by. */

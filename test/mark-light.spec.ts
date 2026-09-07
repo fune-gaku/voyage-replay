@@ -154,6 +154,43 @@ describe("lightOf", () => {
   });
 
   /**
+   * Two phases of one colour in a row are one phase, whatever the file calls them: a red
+   * second beside another red second is a two-second flash, and a character saying "group of
+   * two" over it is the page counting flashes the picture does not have.
+   */
+  it("refuses timings that run two phases of one colour together", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl(2) R 10s",
+          phases: [{ seconds: 1, colour: "red" }, { seconds: 1, colour: "red" }, { seconds: 8 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe("the stated timings put two phases of one colour side by side");
+    }
+  });
+
+  /** An alternating light is the exception, and the reason the rule is about COLOUR. */
+  it("takes an alternating light's two appearances with no darkness between them", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Al WR 4s",
+          phases: [
+            { seconds: 2.5, colour: "white" },
+            { seconds: 1.5, colour: "red" },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
+  /**
    * What stated timings are FOR: the split within the period, which the abbreviation never
    * fixed. A flash of a third of a second inside the same four-second period is exactly the
    * kind of thing a Light List carries and an abbreviation cannot.
