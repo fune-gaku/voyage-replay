@@ -17,6 +17,14 @@
  * mark). Nothing here is invented, and `test/light-character.spec.ts` checks the generated
  * sequences against Table 2's constraints rather than against this file's own arithmetic.
  *
+ * **Table 3's per-mark remarks are not applied here, and cannot be.** Some of them tighten
+ * the timings for one kind of mark - an isolated danger's flash and eclipse together are to
+ * be 1 to 1.5 s in a 5 s period, say - and knowing that a character belongs to an isolated
+ * danger means knowing what the mark MEANS, which the format cannot state yet. That is
+ * issue #42, and it wants this block as its source of truth rather than a second one. What
+ * is generated here conforms to Table 2, which binds every character regardless of what is
+ * carrying it.
+ *
  * **The abbreviation does not determine the sequence, and that is the whole difficulty.**
  * `Fl 4s` says one flash in every four seconds; it does not say how long the flash is.
  * E-110 gives bounds and worked examples, not a function - the exact split comes from the
@@ -87,7 +95,8 @@ export type Unreadable =
   | "the group is not a count"
   | "the period is not a number"
   | "a colour this system does not use"
-  | "a letter that is not in the Morse code";
+  | "a letter that is not in the Morse code"
+  | "an alternating light with fewer than two colours";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -174,6 +183,13 @@ function assemble(head: Head, rest: string): CharacterReading {
   const colourPart = period === null ? rest : rest.slice(0, rest.length - period[0].length);
   const colours = takeColours(colourPart);
   if (colours === null) return { read: false, because: "a colour this system does not use" };
+
+  // An alternating light is defined by showing different colours in turn (Table 2 class 10),
+  // so one colour does not describe one: drawn from the first colour twice it would burn
+  // steadily, which is a different class of light and a different mark.
+  if ((head.klass === "Al" || head.klass === "OcAl") && colours.length < 2) {
+    return { read: false, because: "an alternating light with fewer than two colours" };
+  }
 
   const morse = head.klass === "Mo" ? lettersOf(head.groups) : "";
   return { read: true, character: characterOf(head, colours, period?.[1], morse) };
@@ -345,6 +361,7 @@ function flashing(character: LightCharacter, colour: LightColour): Phase[] {
   // does; the eclipse that closes the period then carries the rest.
   const dark = flash;
   const groups = character.groups.length > 0 ? character.groups : [1];
+  const closing = closingEclipse(character, dark);
 
   const phases: Phase[] = [];
   groups.forEach((count, index) => {
@@ -352,21 +369,47 @@ function flashing(character: LightCharacter, colour: LightColour): Phase[] {
       phases.push({ seconds: flash, colour });
       if (i < count - 1) phases.push({ seconds: dark, colour: null });
     }
-    // **The eclipse between groups is three times the one within a group** (Table 2 class
-    // 4.3), and that is not decoration: at the same length, a composite Fl(2+1) would show
-    // as a plain Fl(3), which in the buoyage is a different mark.
-    const last = index < groups.length - 1;
-    phases.push({ seconds: last ? 3 * dark : dark, colour: null });
+    phases.push(afterAGroup(character, index === groups.length - 1, dark, closing));
   });
 
   if (character.longFlash) {
-    // "The duration of the eclipse immediately preceding a long flash should be equal to the
-    // duration of the eclipses between the flashes" (Table 3, south cardinal) - which the
-    // group above has just pushed. The long flash follows it, and darkness closes the period.
     phases.push({ seconds: LONG_FLASH_SECONDS, colour });
-    phases.push({ seconds: dark, colour: null });
+    phases.push({ seconds: closing, colour: null });
   }
-  return closeThePeriod(phases, period, dark);
+  return closeThePeriod(phases, period, closing);
+}
+
+/**
+ * The eclipse that follows a group.
+ *
+ * **Three times the one inside the group where another group follows** (Table 2 class 4.3):
+ * at the same length a composite Fl(2+1) would show as a plain Fl(3), which in the buoyage is
+ * a different mark. **But the eclipse before a LONG FLASH is not that**: Table 3 says it
+ * "should be equal to the duration of the eclipses between the flashes", so the south
+ * cardinal's six quick flashes run straight into its long one.
+ */
+function afterAGroup(
+  character: LightCharacter,
+  last: boolean,
+  dark: number,
+  closing: number,
+): Phase {
+  if (!last) return { seconds: 3 * dark, colour: null };
+  return { seconds: character.longFlash ? dark : closing, colour: null };
+}
+
+/**
+ * The darkness at the end of the period, before a stated period stretches it.
+ *
+ * A character with no period on it - "Q(3)" as written on some charts - would otherwise close
+ * with an eclipse the length of the ones inside its group, and show as a continuous quick
+ * light. And after a long flash it is at least as long as that flash: Table 3 says "the
+ * duration of a long flash should not be greater than the duration of the eclipse immediately
+ * following the long flash".
+ */
+function closingEclipse(character: LightCharacter, dark: number): number {
+  if (character.longFlash) return Math.max(3 * dark, LONG_FLASH_SECONDS);
+  return character.groups.length > 0 ? 3 * dark : dark;
 }
 
 /**
@@ -432,6 +475,8 @@ function morse(character: LightCharacter, colour: LightColour): Phase[] {
  */
 function alternating(character: LightCharacter): Phase[] {
   const period = character.periodSeconds ?? 4;
+  // Two colours by the time it reaches here: `parseCharacter` refuses an alternating light
+  // that names fewer, rather than letting one colour be shown twice as a steady light.
   const [first, second] = [character.colours[0] ?? "white", character.colours[1] ?? "white"];
   if (character.klass === "Al") {
     return [

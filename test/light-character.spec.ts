@@ -139,6 +139,22 @@ describe("reading a Light List abbreviation", () => {
     });
   });
 
+  /**
+   * An alternating light is defined by showing different colours in turn. One colour does not
+   * describe one, and drawing the first twice would burn steadily - a different class of
+   * light, which in the buoyage is a different mark.
+   */
+  it("refuses an alternating light that names only one colour", () => {
+    expect(parseCharacter("Al W 4s")).toEqual({
+      read: false,
+      because: "an alternating light with fewer than two colours",
+    });
+    expect(parseCharacter("OcAl Bu 3s")).toEqual({
+      read: false,
+      because: "an alternating light with fewer than two colours",
+    });
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
@@ -392,6 +408,34 @@ describe("what E-110 requires of any sequence", () => {
     expect(flashes("Fl(4) Y 20s")).toHaveLength(4);
     expect(flashes("Q(6)+LFl W 15s")).toHaveLength(7);
     expect(eclipses("Oc(3) Y 15s")).toHaveLength(3);
+  });
+});
+
+/**
+ * Some charts print a group character with no period at all. It still has to read as a group:
+ * an eclipse the length of the ones inside the group would run the flashes together into a
+ * continuous quick light, which is the north cardinal rather than the east or the west.
+ */
+describe("a group with no period stated on it", () => {
+  it("still closes with three times the eclipse inside the group", () => {
+    const dark = eclipses("Q(3)");
+    expect(dark.slice(0, -1)).toEqual([0.5, 0.5]);
+    expect(dark.at(-1)).toBeCloseTo(1.5, 9);
+  });
+
+  it("leaves a continuous quick light at its own rate", () => {
+    expect(eclipses("Q")).toEqual([0.5]);
+    expect(60 / cycleSeconds(sequence("Q"))).toBe(60);
+  });
+
+  /**
+   * Table 3: "the duration of a long flash should not be greater than the duration of the
+   * eclipse immediately following the long flash".
+   */
+  it("gives a long flash at least as much darkness after it", () => {
+    const phases = sequence("Q(6)+LFl");
+    const flash = phases.filter((phase) => phase.colour !== null).at(-1)?.seconds ?? 0;
+    expect(phases.at(-1)?.seconds ?? 0).toBeGreaterThanOrEqual(flash);
   });
 });
 

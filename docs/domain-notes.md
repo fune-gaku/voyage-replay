@@ -417,6 +417,12 @@ exactly** — Q(3) with 7.5 s of darkness, Q(9) with 6.5 s, Q(6)+LFl with 7 s, V
 VQ(9) with 5.75 s, VQ(6)+LFl with 5 s, Fl(2+1) 16s as 1/1/3/9. That agreement is the check that
 the rule has a source rather than a preference, and `test/light-character.spec.ts` holds it.
 
+**Table 3's per-mark remarks are a separate question.** Some of them tighten the timings for
+one kind of mark — an isolated danger's flash plus the eclipse within its group is to be 1 to
+1.5 s in a 5 s period — and applying one means knowing what the mark *means*, which the format
+cannot state yet (#42). What this tool generates conforms to Table 2, which binds every
+character whatever is carrying it.
+
 ### Where the sequence can go wrong quietly
 
 - **Level the eclipse between groups** and Fl(2+1) shows as Fl(3): a preferred-channel mark
