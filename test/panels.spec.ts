@@ -385,7 +385,9 @@ describe("whether the sea was in the way", () => {
 
     expect(html).not.toContain("no sea stated");
     expect(html).toContain("between 1.25 and 2.5 m");
-    expect(html).toContain("assumed from the height (7.9 s at the rough end)");
+    expect(html).toContain(
+      "assumed from the height, the file giving neither a period nor a wind speed",
+    );
   });
 
   /**
@@ -735,7 +737,7 @@ describe("the sea has a section of its own", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("1.25 to 2.5 m");
-    expect(html).toContain("(assumed)");
+    expect(html).toContain("(assumed from the height)");
     expect(html).toContain("assumed - nothing states it");
   });
 });
@@ -783,5 +785,92 @@ describe("a caveat only qualifies figures that are there", () => {
     const without = scenario();
     expect(panelsFor(without)).not.toContain("count crossings independently");
     expect(panelsFor(without)).toContain("The last column is empty rather than zero");
+  });
+});
+
+describe("the wind, printed whether or not there is a sea to go with it", () => {
+  const withWind = (
+    wind: Record<string, unknown>,
+    rest: Record<string, unknown> = {},
+  ): Scenario => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      wind: { derivation: "measured", ...wind },
+      ...rest,
+    };
+    return subject;
+  };
+
+  /**
+   * A wind with no stated sea is not nothing: it bounds how big the sea could have been,
+   * and it is the figure a deck log always carries where a wave height almost never is.
+   */
+  it("prints the wind even where the file states no sea", () => {
+    const html = panelsFor(withWind({ fromDegreesTrue: 250, speedKnots: 18 }));
+    expect(html).toContain("250 deg true");
+    expect(html).toContain("18 kn");
+    expect(html).toContain("the view therefore draws flat water");
+  });
+
+  it("shows a Beaufort force as its whole class, never as a midpoint", () => {
+    const html = panelsFor(withWind({ beaufortForce: 5 }));
+    expect(html).toContain("17 to 21 kn");
+    expect(html).not.toContain("19 kn");
+  });
+
+  /**
+   * Force 12 runs from 64 knots upward, so its two ends are the same number - and a version
+   * that tested them for equality before testing for openness printed "64 kn" over a storm
+   * with no ceiling. The sea state 9 fault, one field over.
+   */
+  it("says force 12 is open above, though both its ends are the same figure", () => {
+    const html = panelsFor(withWind({ beaufortForce: 12 }));
+    expect(html).toContain("64 kn or more");
+    expect(html).not.toContain("<td>64 kn</td>");
+  });
+
+  /**
+   * The wind is what settles a direction a sea state cannot give, and the page has to say
+   * that is where it came from - it is still not an observation of the waves.
+   */
+  it("names the wind as the source of a wave direction taken from it", () => {
+    const html = panelsFor(withWind({ fromDegreesTrue: 250, speedKnots: 18 }, { seaState: 4 }));
+    expect(html).toContain("drawn from the stated wind");
+    expect(html).toContain("A swell runs from wherever its own storm was");
+    expect(html).toContain("from the stated wind");
+  });
+
+  it("names the wind as the source of a period taken from it", () => {
+    const html = panelsFor(withWind({ speedKnots: 22 }, { seaState: 4 }));
+    expect(html).toContain("taken forwards from the stated wind");
+    expect(html).not.toContain("assumed from the height, the file giving neither");
+  });
+
+  /**
+   * One-sided. A sea too big for its wind is a swell from elsewhere or a mistranscription;
+   * a sea too small is the ordinary case and is passed over in silence.
+   */
+  it("reports a sea too big for its wind, and stays quiet about one too small", () => {
+    const big = panelsFor(
+      withWind(
+        { speedKnots: 5 },
+        { waves: { significantHeightMetres: 4, derivation: "measured" } },
+      ),
+    );
+    expect(big).toContain("bigger than the stated wind can raise");
+    expect(big).toContain("a swell is running from another weather system");
+
+    const small = panelsFor(
+      withWind(
+        { speedKnots: 40 },
+        { waves: { significantHeightMetres: 0.5, derivation: "measured" } },
+      ),
+    );
+    expect(small).not.toContain("bigger than the stated wind can raise");
+  });
+
+  it("says nothing about a wind where the file gives none", () => {
+    expect(panelsFor(scenario())).not.toContain("Wind from");
   });
 });

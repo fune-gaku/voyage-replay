@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import schema from "../spec/voyage.schema.json";
+import type { Environment } from "../src/core/types.js";
 
 import {
   assumedPeakPeriodSeconds,
+  BEAUFORT_KNOTS,
+  fullyDevelopedHeightMetres,
+  periodFromWindSeconds,
+  seaExceedsWind,
+  windFrom,
   HEIGHT_LIMIT_METRES,
   PERIOD_LIMITS_SECONDS,
   exceedanceProbability,
@@ -132,7 +138,7 @@ describe("what the file allows the sea to have been", () => {
     expect(estimate?.rough.significantHeightMetres).toBe(2.5);
     expect(estimate?.source).toBe("sea-state");
     expect(estimate?.derivation).toBe("inferred");
-    expect(estimate?.periodAssumed).toBe(true);
+    expect(estimate?.periodFrom).toBe("height");
   });
 
   it("collapses both ends onto a stated height and keeps its derivation", () => {
@@ -143,7 +149,7 @@ describe("what the file allows the sea to have been", () => {
     expect(estimate?.rough.significantHeightMetres).toBe(1.8);
     expect(estimate?.source).toBe("stated");
     expect(estimate?.derivation).toBe("measured");
-    expect(estimate?.periodAssumed).toBe(false);
+    expect(estimate?.periodFrom).toBe("stated");
   });
 
   it("prefers a stated height over the sea state when the file carries both", () => {
@@ -527,5 +533,166 @@ describe("the bounds the schema states and the ones the arithmetic enforces", ()
     expect(seawayOf(2, PERIOD_LIMITS_SECONDS.least / 10).peakPeriodSeconds).toBe(
       PERIOD_LIMITS_SECONDS.least,
     );
+  });
+});
+
+describe("the wind, which is the figure a deck log always has", () => {
+  const windy = (wind: Record<string, unknown>): Environment => ({
+    wind: { derivation: "measured", ...wind },
+  });
+
+  it("uses WMO's Beaufort ranges, and keeps them as ranges", () => {
+    expect(BEAUFORT_KNOTS).toHaveLength(13);
+    expect(BEAUFORT_KNOTS[4]).toEqual([11, 16]);
+    expect(BEAUFORT_KNOTS[5]).toEqual([17, 21]);
+    expect(BEAUFORT_KNOTS[8]).toEqual([34, 40]);
+
+    // Contiguous and rising from force 1 up: each class starts one knot above the last
+    // one's top. The 0-to-1 boundary is the published table's own quirk - calm is "under
+    // one knot" and force 1 is "one to three" - so it is left as WMO writes it rather than
+    // tidied into a gap that does not exist.
+    for (let force = 2; force < BEAUFORT_KNOTS.length - 1; force += 1) {
+      const previous = BEAUFORT_KNOTS[force - 1];
+      const here = BEAUFORT_KNOTS[force];
+      if (!previous || !here) throw new Error("the scale runs 0 to 12");
+      expect(here[0]).toBe(previous[1] + 1);
+      expect(here[1]).toBeGreaterThan(here[0]);
+    }
+  });
+
+  /**
+   * The two routes to a period are the same relation run in opposite directions - forwards
+   * from a wind, or backwards out of the height that wind would raise - so they have to
+   * land on the same answer. If they ever stop agreeing, one of the constants has drifted
+   * and the sea drawn from a stated wind is a different sea from the one drawn without.
+   */
+  it("gets the same period whichever way Pierson-Moskowitz is run", () => {
+    for (const knots of [8, 15, 22, 35]) {
+      const forwards = periodFromWindSeconds(knots);
+      const backwards = assumedPeakPeriodSeconds(fullyDevelopedHeightMetres(knots));
+      expect(forwards).toBeCloseTo(backwards, 9);
+    }
+  });
+
+  it("raises a fully developed sea as the square of the wind", () => {
+    expect(fullyDevelopedHeightMetres(20) / fullyDevelopedHeightMetres(10)).toBeCloseTo(4, 6);
+    // 0.21 U^2 / g, at 20 kn: a shade over two and a half metres.
+    expect(fullyDevelopedHeightMetres(20)).toBeCloseTo(2.27, 1);
+    expect(fullyDevelopedHeightMetres(0)).toBe(0);
+  });
+
+  it("takes a stated speed as stated, and a force as its whole class", () => {
+    expect(windFrom(windy({ speedKnots: 18 }))).toMatchObject({
+      slowestKnots: 18,
+      fastestKnots: 18,
+      source: "speed",
+    });
+    expect(windFrom(windy({ beaufortForce: 5 }))).toMatchObject({
+      slowestKnots: 17,
+      fastestKnots: 21,
+      source: "force",
+    });
+  });
+
+  it("prefers the speed where a file gives both, being the narrower statement", () => {
+    expect(windFrom(windy({ speedKnots: 18, beaufortForce: 9 }))?.source).toBe("speed");
+  });
+
+  it("carries a direction with no speed rather than inventing one", () => {
+    const wind = windFrom(windy({ fromDegreesTrue: 250 }));
+    expect(wind?.source).toBe("direction-only");
+    expect(wind?.fromDegreesTrue).toBe(250);
+  });
+
+  it("marks force 12 as open above, since the scale ends there", () => {
+    expect(windFrom(windy({ beaufortForce: 12 }))?.fastestIsOpen).toBe(true);
+    expect(windFrom(windy({ beaufortForce: 11 }))?.fastestIsOpen).toBe(false);
+  });
+
+  it("is null where the file states no wind", () => {
+    expect(windFrom(undefined)).toBeNull();
+    expect(windFrom({ seaState: 4 })).toBeNull();
+  });
+});
+
+describe("what the wind settles about the sea, and what it does not", () => {
+  const stated = (extra: Record<string, unknown>): Environment => ({
+    seaState: 4,
+    wind: { derivation: "measured", ...extra },
+  });
+
+  /**
+   * A wind sea runs with the wind, and both are stated as where they come from - so the
+   * bearing carries across unchanged. But a swell runs from wherever its own storm was, so
+   * an observation of the waves themselves still wins.
+   */
+  it("takes the direction from the wind, unless the waves state their own", () => {
+    expect(seawayFrom(stated({ fromDegreesTrue: 250 }))).toMatchObject({
+      fromDegreesTrue: 250,
+      directionFrom: "wind",
+    });
+
+    const both = seawayFrom({
+      wind: { fromDegreesTrue: 250, derivation: "measured" },
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 120, derivation: "measured" },
+    });
+    expect(both).toMatchObject({ fromDegreesTrue: 120, directionFrom: "stated" });
+  });
+
+  it("still has no direction at all where neither states one", () => {
+    expect(seawayFrom({ seaState: 4 })).toMatchObject({
+      fromDegreesTrue: null,
+      directionFrom: "assumed",
+    });
+  });
+
+  /**
+   * A force is a class. Choosing a period from one would mean choosing a speed out of the
+   * middle of it, which is the invention the sea state table refuses to make about heights.
+   */
+  it("takes the period from a stated speed, but never from a force alone", () => {
+    expect(seawayFrom(stated({ speedKnots: 22 }))?.periodFrom).toBe("wind");
+    expect(seawayFrom(stated({ beaufortForce: 6 }))?.periodFrom).toBe("height");
+    expect(seawayFrom({ seaState: 4 })?.periodFrom).toBe("height");
+  });
+
+  it("uses the period the file states over anything derived", () => {
+    const estimate = seawayFrom({
+      wind: { speedKnots: 22, derivation: "measured" },
+      waves: { significantHeightMetres: 2, peakPeriodSeconds: 5, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("stated");
+    expect(estimate?.rough.peakPeriodSeconds).toBe(5);
+  });
+
+  /**
+   * One-sided on purpose. A sea bigger than the wind can raise is a swell from elsewhere or
+   * a transcription error; a sea smaller is the ordinary case, because a sea needs fetch and
+   * time to reach what the wind can eventually give it. Flagging the ordinary case teaches a
+   * reader to ignore the column.
+   */
+  it("reports a sea too big for its wind, and says nothing about one too small", () => {
+    const tooBig = {
+      wind: { speedKnots: 5, derivation: "measured" as const },
+      waves: { significantHeightMetres: 4, derivation: "measured" as const },
+    };
+    expect(seaExceedsWind(seawayFrom(tooBig), windFrom(tooBig))).toBe(true);
+
+    const tooSmall = {
+      wind: { speedKnots: 40, derivation: "measured" as const },
+      waves: { significantHeightMetres: 0.5, derivation: "measured" as const },
+    };
+    expect(seaExceedsWind(seawayFrom(tooSmall), windFrom(tooSmall))).toBe(false);
+  });
+
+  it("declines to compare where either side is missing or open-ended", () => {
+    const noSpeed = { wind: { fromDegreesTrue: 90, derivation: "measured" as const }, seaState: 4 };
+    expect(seaExceedsWind(seawayFrom(noSpeed), windFrom(noSpeed))).toBeNull();
+
+    const open = { wind: { beaufortForce: 12, derivation: "measured" as const }, seaState: 4 };
+    expect(seaExceedsWind(seawayFrom(open), windFrom(open))).toBeNull();
+
+    const noSea = { wind: { speedKnots: 20, derivation: "measured" as const } };
+    expect(seaExceedsWind(seawayFrom(noSea), windFrom(noSea))).toBeNull();
   });
 });

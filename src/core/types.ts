@@ -121,11 +121,28 @@ export interface Waves {
   derivation: Derivation;
 }
 
+/**
+ * The wind, as somebody wrote it down.
+ *
+ * The one weather figure a deck log always has, and the one that settles a wave direction a
+ * sea state cannot give. Either a speed or a force may be stated, or both, or neither -
+ * a force is a CLASS and is carried as one, never collapsed to a midpoint, for the same
+ * reason a sea state is not.
+ */
+export interface Wind {
+  /** Direction it blows FROM, degrees true - the convention reports use. */
+  fromDegreesTrue?: number;
+  speedKnots?: number;
+  beaufortForce?: number;
+  derivation: Derivation;
+}
+
 export interface Environment {
   lightCondition?: "day" | "night" | "twilight" | "restricted-visibility";
   visibilityMetres?: number | null;
   seaState?: number | null;
   waves?: Waves;
+  wind?: Wind;
   current?: { setDegreesTrue?: number; driftKnots?: number };
 }
 

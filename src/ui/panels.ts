@@ -16,7 +16,13 @@ import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
-import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
+import {
+  ASSUMED_DIRECTION_DEGREES_TRUE,
+  fullyDevelopedHeightMetres,
+  meanOfHighest,
+  type SeaEstimate,
+  type WindEstimate,
+} from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
 import {
@@ -445,25 +451,84 @@ interface Sighting {
  */
 function seaSection(scenario: Scenario): string {
   const at = Date.parse(scenario.meta.occurredAt) / 1000;
-  const { sea } = conditionsAt(scenario.origin, scenario.environment, at);
-  if (!sea) return `<p>${escapeHtml(NO_SEA)}</p>`;
+  const conditions = conditionsAt(scenario.origin, scenario.environment, at);
+  const { sea } = conditions;
+  const wind = windRows(conditions) + disagreementNote(conditions);
+  if (!sea) return wind + `<p>${escapeHtml(NO_SEA)}</p>`;
 
   const rows: [string, string][] = [
     ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
     ["Significant height", heightRange(sea)],
     [
       "Peak period",
-      `${sea.rough.peakPeriodSeconds.toFixed(1)} s${sea.periodAssumed ? " (assumed)" : ""}`,
+      `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
     ],
     [
       "Coming from",
       sea.fromDegreesTrue === null
         ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
-        : `${sea.fromDegreesTrue.toFixed(0)} deg true`,
+        : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
     ],
     ["Derivation", sea.derivation],
   ];
-  return keyValueTable(rows) + note(seaCaveat(sea));
+  return wind + keyValueTable(rows) + note(seaCaveat(sea));
+}
+
+/**
+ * The wind, where the file gives one - and it is printed whether or not there is a sea.
+ *
+ * A wind with no stated sea is not nothing: it bounds how big the sea could have been, and
+ * it is the figure a deck log always carries where the wave height almost never is. A force
+ * is shown as its class, never as a midpoint, for the same reason a sea state is.
+ */
+function windRows(conditions: Conditions): string {
+  const { wind } = conditions;
+  if (!wind) return "";
+  return keyValueTable([
+    [
+      "Wind from",
+      wind.fromDegreesTrue === null ? "not stated" : `${wind.fromDegreesTrue} deg true`,
+    ],
+    ["Wind speed", windSpeed(wind)],
+    ["Wind derivation", wind.derivation],
+  ]);
+}
+
+/**
+ * The speed, said as tightly as the file says it and no tighter.
+ *
+ * The open end is checked FIRST. Force 12 runs from 64 knots upward, so its two ends are
+ * the same number - and a version that tested them for equality before testing for openness
+ * printed "64 kn" over a storm with no ceiling, which is the sea state 9 fault again one
+ * field over.
+ */
+function windSpeed(wind: WindEstimate): string {
+  if (wind.source === "direction-only") return "not stated";
+  if (wind.fastestIsOpen) return `${wind.slowestKnots} kn or more (Beaufort force)`;
+  if (wind.slowestKnots === wind.fastestKnots) return `${wind.fastestKnots} kn`;
+  return `${wind.slowestKnots} to ${wind.fastestKnots} kn (Beaufort force)`;
+}
+
+/**
+ * The one comparison the wind and the sea can be held to, and only in one direction.
+ *
+ * A sea bigger than the wind can raise is either carrying a swell from another weather
+ * system or has been mistranscribed - both worth a reader's attention. A sea smaller than
+ * the wind supports is the ordinary case and says nothing, so nothing is said.
+ */
+function disagreementNote(conditions: Conditions): string {
+  if (conditions.seaExceedsWind !== true) return "";
+  const { wind, sea } = conditions;
+  if (!wind || !sea) return "";
+  return note(
+    `The stated sea is bigger than the stated wind can raise: ` +
+      `${sea.calm.significantHeightMetres} m against the ` +
+      `${fullyDevelopedHeightMetres(wind.fastestKnots).toFixed(2)} m a fully developed sea ` +
+      `reaches at ${wind.fastestKnots} kn. Either a swell is running from another weather ` +
+      "system - which no wind stated here can account for - or one of the two figures is " +
+      "wrong. The reverse is not reported: a sea smaller than the wind supports is ordinary, " +
+      "since a sea needs both fetch and time to reach what the wind can give it.",
+  );
 }
 
 function heightRange(sea: SeaEstimate): string {
@@ -472,6 +537,19 @@ function heightRange(sea: SeaEstimate): string {
   if (sea.roughEndIsOpen) return `${rough.significantHeightMetres} m or more`;
   return `${calm.significantHeightMetres} to ${rough.significantHeightMetres} m`;
 }
+
+/** Where each derived figure came from, in the words the table shows. */
+const PERIOD_SOURCE: Record<SeaEstimate["periodFrom"], string> = {
+  stated: "stated",
+  wind: "from the stated wind",
+  height: "assumed from the height",
+};
+
+const DIRECTION_SOURCE: Record<SeaEstimate["directionFrom"], string> = {
+  stated: "stated",
+  wind: "from the stated wind",
+  assumed: "assumed",
+};
 
 const NO_SEA =
   "The file states no sea, and the view therefore draws flat water - which is not a " +
@@ -650,10 +728,15 @@ function heightSentence(sea: SeaEstimate): string {
 
 /** Only where the file left the period out, since then it is this project's guess and not hers. */
 function periodSentence(sea: SeaEstimate): string {
-  if (!sea.periodAssumed) return "";
+  if (sea.periodFrom === "stated") return "";
+  const source =
+    sea.periodFrom === "wind"
+      ? "taken forwards from the stated wind"
+      : "assumed from the height, the file giving neither a period nor a wind speed";
   return (
-    ` The period is assumed from the height (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the ` +
-    "rough end), which runs long in enclosed water and so errs towards saying she was visible."
+    ` The period is ${source} (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the rough end). ` +
+    "Either way it assumes a sea that has stopped growing, which runs long in enclosed " +
+    "water and so errs towards saying she was visible."
   );
 }
 
@@ -667,8 +750,15 @@ function periodSentence(sea: SeaEstimate): string {
  * not contain. A wind would settle it properly; the format has no field for one.
  */
 function directionSentence(sea: SeaEstimate): string {
-  if (sea.fromDegreesTrue !== null) {
-    return ` The file puts the sea as coming from ${sea.fromDegreesTrue.toFixed(0)} degrees true.`;
+  if (sea.directionFrom === "stated") {
+    return ` The file puts the sea as coming from ${String(sea.fromDegreesTrue)} degrees true.`;
+  }
+  if (sea.directionFrom === "wind") {
+    return (
+      ` Nothing states which way the sea runs, so it is drawn from the stated wind - ` +
+      `${String(sea.fromDegreesTrue)} degrees true - because a wind sea runs with the wind. ` +
+      "A swell runs from wherever its own storm was, which no wind here can say."
+    );
   }
   return (
     ` Nothing states which way the sea runs - a sea state does not carry a direction - so ` +

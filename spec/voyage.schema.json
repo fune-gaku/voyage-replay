@@ -88,6 +88,31 @@
             "derivation": { "$ref": "#/$defs/derivation" }
           }
         },
+        "wind": {
+          "description": "The one weather figure a deck log always has. A wind sea runs with the wind, so this settles a wave direction the sea state cannot give - though swell runs from wherever its storm was, so a stated wave direction still wins. Fully developed, the wind gives an UPPER bound on the height, not the height: a sea under a rising wind is smaller than the wind can eventually raise.",
+          "type": "object",
+          "required": ["derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "fromDegreesTrue": {
+              "description": "Direction the wind blows FROM, the convention reports use.",
+              "$ref": "#/$defs/degrees"
+            },
+            "speedKnots": {
+              "description": "Mean wind speed. Bounded above well past anything a merchant ship reports being under way in.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 150
+            },
+            "beaufortForce": {
+              "description": "Where a report gives a force rather than a speed, which is common. A force is a class and not a figure - 5 is 17 to 21 knots - so it is carried as one, and never collapsed to a midpoint.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
         "current": {
           "description": "Set (degrees true, the direction the water flows TOWARD) and drift (knots).",
           "type": "object",

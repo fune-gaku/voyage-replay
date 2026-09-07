@@ -25,7 +25,13 @@
  */
 
 import { moonPosition, sunPosition, type Horizontal, type MoonState } from "./celestial.js";
-import { seawayFrom, type SeaEstimate } from "./seaway.js";
+import {
+  seaExceedsWind,
+  seawayFrom,
+  windFrom,
+  type SeaEstimate,
+  type WindEstimate,
+} from "./seaway.js";
 import type { Environment, LatLon } from "./types.js";
 
 /**
@@ -78,6 +84,18 @@ export interface Conditions {
    * which is better than being handed a zero that looks like a measurement.
    */
   sea: SeaEstimate | null;
+  /** What the file says about the wind, or null. Nothing computes the weather. */
+  wind: WindEstimate | null;
+  /**
+   * Whether the stated sea is bigger than the stated wind can raise - or null where the two
+   * are not comparable, which is most files.
+   *
+   * Only ever reported in that direction. A sea SMALLER than the wind supports is ordinary:
+   * the wind has not blown long enough, or the fetch is short. The same one-sided reading
+   * `statedLightAgrees` makes about the sun, for the same reason - a column that flags the
+   * normal case teaches a reader to ignore it.
+   */
+  seaExceedsWind: boolean | null;
 }
 
 /**
@@ -94,6 +112,8 @@ export function conditionsAt(
   const sun = sunPosition(epochSeconds, at);
   const sunLevel = levelOf(sun.altitudeDegrees);
   const statedLight = environment?.lightCondition;
+  const sea = seawayFrom(environment);
+  const wind = windFrom(environment);
 
   return {
     epochSeconds,
@@ -105,7 +125,9 @@ export function conditionsAt(
     statedLightAgrees: agreement(statedLight, sunLevel),
     visibilityMetres: environment?.visibilityMetres ?? null,
     seaState: environment?.seaState ?? null,
-    sea: seawayFrom(environment),
+    sea,
+    wind,
+    seaExceedsWind: seaExceedsWind(sea, wind),
   };
 }
 

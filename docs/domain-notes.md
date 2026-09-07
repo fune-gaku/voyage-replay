@@ -229,3 +229,38 @@ width of a sea state class.
 Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
 them at the same place left the zero-crossing period six per cent long, against the published
 JONSWAP ratio of 0.778 — an implementation detail passing itself off as a property of the sea.
+
+### The wind, and the one thing it settles
+
+A wind sea runs with the wind, and both are stated as the direction they come from, so a
+stated wind gives a wave direction a sea state cannot. That is why `environment.wind` exists:
+it is the figure a deck log always carries, where a wave height almost never is.
+
+**It does not settle the sea.** Swell runs from wherever its own storm was, which is the
+ordinary case and is what makes a real sea confused, so a stated wave direction still wins
+over anything derived from the wind. Adding a wind does not remove the assumption about
+direction; it puts a step in front of it.
+
+**Fully developed is an upper bound, not a figure.** `Hs = 0.21 U^2/g` is the sea that wind
+raises once it has stopped growing, which needs both fetch and duration. A sea under a rising
+wind, or in enclosed water, is smaller. There is no bound the other way — which is why the
+comparison between a stated sea and a stated wind is reported **only** when the sea is the
+bigger of the two. A sea smaller than its wind supports is ordinary and says nothing; a
+column that flagged it would teach a reader to ignore the column.
+
+| | wind | Hs if fully developed | Tp |
+|---|---:|---:|---:|
+| BF 4 | 6.7 m/s | 0.96 m | 4.9 s |
+| BF 5 | 9.3 m/s | 1.85 m | 6.8 s |
+| BF 6 | 12.3 m/s | 3.24 m | 9.0 s |
+| BF 7 | 15.5 m/s | 5.14 m | 11.3 s |
+
+**A Beaufort force is a class**, exactly as a sea state is: 5 is 17 to 21 knots. It is kept as
+one. A stated speed drives the period; a force alone does not, because taking a period from a
+force means taking a speed out of the middle of a class, which is the invention the sea state
+table refuses to make about heights. Force 12 is open above, and its two ends are the same
+number — anything displaying it has to test for openness before testing them for equality.
+
+The period now runs forwards from a wind where one is stated, rather than backwards out of a
+height. **The round trip disappears; the bias does not** — both routes assume a sea that has
+stopped growing, so both run long in enclosed water.
