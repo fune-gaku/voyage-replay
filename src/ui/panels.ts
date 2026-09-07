@@ -1076,12 +1076,21 @@ function marksCaveat(marks: Mark[]): string {
 function assumedNote(marks: Mark[]): string {
   const chosen = marks.filter((m) => assumedOf(m).length > 0);
   if (chosen.length === 0) return "";
-  const fields = [...new Set(chosen.flatMap(assumedOf))].join(", ");
+  const fields = orList([...new Set(chosen.flatMap(assumedOf))]);
+  // The shape clause only where a shape was actually one of them. A beacon has none to
+  // choose, so a page whose only marks are beacons must not carry the buoyage warning.
   const shapes = chosen.some((m) => assumedOf(m).includes("shape"))
     ? " - and a can is port hand where a cone is starboard, so a shape drawn here is a " +
       "statement made here (issue #34)"
     : "";
-  return `${chosen.length} of ${marks.length} carry a ${fields} this tool chose rather than the source${shapes}.`;
+  const carry = chosen.length === 1 ? "carries" : "carry";
+  return `${chosen.length} of ${marks.length} ${carry} a ${fields} this tool chose rather than the source${shapes}.`;
+}
+
+/** "shape", "shape or colour", "shape, colour or height". */
+function orList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1] ?? ""}`;
 }
 
 function findingList(findings: Finding[], scenario: Scenario): string {

@@ -32,7 +32,7 @@ import {
   type ColorRepresentation,
 } from "three";
 
-import type { Mark, MarkColour, MarkShape } from "../core/types.js";
+import type { Mark, MarkColour, MarkKind, MarkShape } from "../core/types.js";
 
 /**
  * Where a report says nothing. A pillar is the commonest shape in open water, 2.4 m of body
@@ -55,7 +55,7 @@ export interface AssumedMark {
    * and would be a stump for a structure on a shoal, so one number covering both would not be
    * one assumption used twice but a second, worse one made silently.
    */
-  heightMetres: Record<Mark["kind"], number>;
+  heightMetres: Record<MarkKind, number>;
 }
 
 export const ASSUMED_MARK: AssumedMark = {
@@ -83,7 +83,11 @@ const PROPORTIONS: Record<MarkShape, { width: number; draught: number }> = {
 
 export interface MarkParts {
   group: Group;
-  /** Body height above the waterline, which is what a panel reports and a sightline wants. */
+  /**
+   * Body height **above the water**, which is what a panel reports and a sightline wants.
+   * A beacon's drawn footing goes below that and is not counted here: it is this renderer
+   * standing the structure on something, not a sounding.
+   */
   heightMetres: number;
 }
 

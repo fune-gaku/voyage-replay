@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import schema from "../spec/voyage.schema.json";
-import { DERIVATIONS, SOURCE_KINDS, VESSEL_TYPES } from "../src/core/types.js";
+import {
+  DERIVATIONS,
+  MARK_COLOURS,
+  MARK_KINDS,
+  MARK_SHAPES,
+  SOURCE_KINDS,
+  VESSEL_TYPES,
+} from "../src/core/types.js";
 
 /**
  * The schema is the contract; the TypeScript types are a mirror of it kept for our own
@@ -34,6 +41,21 @@ describe("the schema and the TypeScript types agree", () => {
 
   it("agrees on vessel type", () => {
     expect([...enumAt("vessel", "properties", "type")].sort()).toEqual([...VESSEL_TYPES].sort());
+  });
+
+  /**
+   * The three closed sets a sea mark carries. The kind is the one that matters most: four
+   * other fields mean different things depending on it, and two of them are refused outright
+   * on a beacon - so a value the schema takes and the code does not know is not a cosmetic
+   * drift but a mark whose shape and mooring nothing is checking.
+   */
+  it("agrees on mark kind", () => {
+    expect([...enumAt("mark", "properties", "kind")].sort()).toEqual([...MARK_KINDS].sort());
+  });
+
+  it("agrees on mark shape and colour", () => {
+    expect([...enumAt("mark", "properties", "shape")].sort()).toEqual([...MARK_SHAPES].sort());
+    expect([...enumAt("mark", "properties", "colour")].sort()).toEqual([...MARK_COLOURS].sort());
   });
 
   it("only knows about the vessel actor kind", () => {

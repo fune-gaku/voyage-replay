@@ -157,6 +157,9 @@ export interface ScenarioMeta {
   license?: string;
 }
 
+export const MARK_KINDS = ["buoy", "beacon"] as const;
+export type MarkKind = (typeof MARK_KINDS)[number];
+
 export const MARK_SHAPES = ["pillar", "spar", "can", "conical", "spherical"] as const;
 export type MarkShape = (typeof MARK_SHAPES)[number];
 
@@ -186,7 +189,7 @@ export interface Mooring {
 export interface Mark {
   id: string;
   name?: string;
-  kind: "buoy" | "beacon";
+  kind: MarkKind;
   at: LatLon;
   /**
    * IALA body shape, and only a buoy has one: a can is port hand, a cone starboard. A

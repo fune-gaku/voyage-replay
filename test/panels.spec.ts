@@ -518,6 +518,7 @@ describe("the sea marks a scenario carries", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("Sea marks (1)");
+    expect(html).toContain("1 of 1 carries a shape, colour or height this tool chose");
     expect(html).toContain("assumed pillar");
     expect(html).toContain("assumed yellow");
     expect(html).toContain("assumed 2.4 m");
@@ -644,15 +645,15 @@ describe("a beacon in the same table as a buoy", () => {
     subject.marks = [beacon({ colour: "black" })];
     const html = panelsFor(subject);
 
-    expect(html).toContain("1 of 1 carry a height this tool chose");
+    expect(html).toContain("1 of 1 carries a height this tool chose");
     expect(html).not.toContain("assumed pillar");
     expect(html).not.toContain("a statement made here");
   });
 
   /**
-   * A buoy's 2.4 m of body and a beacon's height above its foundation are not the same
-   * guess. Applying the buoy's figure to a structure would put a stump on a shoal with the
-   * sea most of the way up it - a second assumption made silently inside the first.
+   * Same datum, different guesses. 2.4 m is about right for a buoy's body and is a stump for
+   * a structure standing on a shoal, so applying the buoy's figure to a beacon would be a
+   * second assumption made silently inside the first.
    */
   it("assumes a height that belongs to the kind it is drawing", () => {
     const subject = scenario();
