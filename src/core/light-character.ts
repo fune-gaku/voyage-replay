@@ -98,7 +98,8 @@ export type Unreadable =
   | "a letter that is not in the Morse code"
   | "an alternating light with fewer than two colours"
   | "a period of no length"
-  | "a period too short for the flashes in it";
+  | "a period too short for the flashes in it"
+  | "a Morse light with no letters in it";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -194,6 +195,12 @@ function assemble(head: Head, rest: string): CharacterReading {
   }
 
   const morse = head.klass === "Mo" ? lettersOf(head.groups) : "";
+  // A Morse light IS its letters: with none it has no sequence at all, and would be read as
+  // valid, printed as "Mo W 7s", and drawn as a light that never shows.
+  if (head.klass === "Mo" && morse === "") {
+    return { read: false, because: "a Morse light with no letters in it" };
+  }
+
   return fitsItsPeriod(characterOf(head, colours, period?.[1], morse));
 }
 
@@ -356,22 +363,35 @@ function isophase(character: LightCharacter, colour: LightColour): Phase[] {
  */
 function occulting(character: LightCharacter, colour: LightColour): Phase[] {
   const period = character.periodSeconds ?? 4;
-  const count = character.groups[0] ?? 1;
-  if (count === 1) {
-    const dark = period / 4;
-    return [
-      { seconds: period - dark, colour },
-      { seconds: dark, colour: null },
-    ];
-  }
+  const groups = character.groups.length > 0 ? character.groups : [1];
+  const unit = occultingUnit(period, groups);
 
-  const unit = period / (2 * count + 2);
-  const phases: Phase[] = [{ seconds: 3 * unit, colour }];
-  for (let i = 0; i < count; i += 1) {
-    phases.push({ seconds: unit, colour: null });
-    if (i < count - 1) phases.push({ seconds: unit, colour });
+  const phases: Phase[] = [];
+  for (const count of groups) {
+    for (let i = 0; i < count; i += 1) {
+      phases.push({ seconds: unit, colour: null });
+      if (i < count - 1) phases.push({ seconds: unit, colour });
+    }
+    // Between groups, and closing the period, the light is three times the one inside a
+    // group (Table 2 class 2.2) - the same separation that makes a group of flashes a group,
+    // and for the same reason: level it and Oc(2+1) shows as Oc(3).
+    phases.push({ seconds: 3 * unit, colour });
   }
-  return phases;
+  return closeThePeriod(phases, period, 3 * unit);
+}
+
+/**
+ * The eclipse an occulting light hides for, and the light between eclipses inside a group.
+ *
+ * Taken as long as the period allows, which puts the light between groups at its minimum of
+ * three times the one inside one. For a single occulting light that comes to a quarter of the
+ * period - E-110's own example of l = 3 s, d = 1 s, p = 4 s.
+ */
+function occultingUnit(period: number, groups: number[]): number {
+  const eclipses = groups.reduce((total, count) => total + count, 0);
+  const inside = groups.reduce((total, count) => total + count - 1, 0);
+  const between = 3 * groups.length;
+  return period / (eclipses + inside + between);
 }
 
 /**
@@ -463,15 +483,18 @@ function flashLength(character: LightCharacter, period: number | null): number {
  * the same picture and count wrong when anything asked how many flashes there were.
  */
 function closeThePeriod(phases: Phase[], period: number | null, dark: number): Phase[] {
-  if (period === null) return phases;
-  if (phases.at(-1)?.colour !== null) return phases;
+  if (period === null || phases.length === 0) return phases;
 
+  // Whatever phase comes last, since it is the one the class builds to absorb the remainder:
+  // darkness for a flashing light, and the long appearance of light for an occulting one.
   const kept = phases.slice(0, -1);
   const filled = kept.reduce((total, phase) => total + phase.seconds, 0);
-  // Never shorter than an eclipse within the group: a stated period too short for the
-  // character would otherwise close it with negative darkness, and the sequence would run
-  // backwards through the light.
-  return [...kept, { seconds: Math.max(period - filled, dark), colour: null }];
+  // Never shorter than the phase the class asked for: a stated period too short for the
+  // character would otherwise close it with a negative length, and the sequence would run
+  // backwards through itself. `parseCharacter` refuses such a period, having built the
+  // sequence and found it did not fit.
+  const closing = phases[phases.length - 1];
+  return [...kept, { seconds: Math.max(period - filled, dark), colour: closing?.colour ?? null }];
 }
 
 /**

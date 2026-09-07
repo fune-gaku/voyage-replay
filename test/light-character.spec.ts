@@ -180,6 +180,17 @@ describe("reading a Light List abbreviation", () => {
     expect(cycleSeconds(sequence("Fl W 15s"))).toBeCloseTo(15, 9);
   });
 
+  /**
+   * A Morse light IS its letters. With none there is no sequence at all, so `Mo W 7s` would
+   * read as valid, print as "Mo W 7s", and draw as a light that never shows.
+   */
+  it("refuses a Morse light with nothing to spell", () => {
+    expect(parseCharacter("Mo W 7s")).toEqual({
+      read: false,
+      because: "a Morse light with no letters in it",
+    });
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
@@ -246,6 +257,24 @@ describe("the sequences E-110 prints as its own examples", () => {
     // Table 2 class 4.4: "d'' = 9 s; d' = 3 s; d = 1 s; l = 1 s; c = 2 s; p = 16 s".
     expect(flashes("Fl(2+1) R 16s")).toEqual([1, 1, 1]);
     expect(eclipses("Fl(2+1) R 16s")).toEqual([1, 3, 9]);
+  });
+
+  /**
+   * Table 2 class 2.3: "l'' >= l'", "l' >= 3 l", "l >= d". A composite group-occulting light
+   * is the mirror of a composite group-flashing one, and reading only its first group would
+   * draw Oc(2+1) as Oc(2) - a different light, with the page printing the character it was
+   * given.
+   */
+  it("gives a composite group-occulting light both of its groups", () => {
+    const eclipsed = eclipses("Oc(2+1) W 12s");
+    const lit = flashes("Oc(2+1) W 12s");
+
+    expect(eclipsed).toHaveLength(3);
+    // One appearance inside the first group, one between the groups, one closing the period.
+    expect(lit).toHaveLength(3);
+    expect(lit[1]).toBeGreaterThanOrEqual(3 * (lit[0] ?? 0));
+    expect(lit[2]).toBeGreaterThanOrEqual(lit[1] ?? 0);
+    expect(cycleSeconds(sequence("Oc(2+1) W 12s"))).toBeCloseTo(12, 9);
   });
 
   it("gives an isophase light equal light and darkness, and an occulting light three to one", () => {
@@ -423,6 +452,37 @@ describe("what E-110 requires of any sequence", () => {
 
     for (const text of CHARACTERS.filter((c) => /^(Fl|Q|VQ)/.test(c) && !c.includes("LFl"))) {
       for (const flash of flashes(text)) expect(flash, text).toBeLessThan(2);
+    }
+  });
+
+  /**
+   * Class 4.3: "In a group of two flashes, the duration of a flash together with the duration
+   * of the eclipse within the group should not be less than 1 s. In a group of three or more
+   * flashes, [...] not less than 2 s." A group whose flashes run together too fast is read as
+   * one longer flash, and the count is the message.
+   *
+   * Classes 5.2 and 6.2 set the same quantity by the rate instead - "1 s <= c <= 1.2 s" for a
+   * group quick light, "0.5 s <= c <= 0.6 s" for a group very quick one - so those are held
+   * to their own numbers rather than to class 4.3's.
+   */
+  it("leaves long enough between the flashes of a group to count them", () => {
+    const cycleWithin = (text: string): number => {
+      const phases = sequence(text);
+      return (phases[0]?.seconds ?? 0) + (phases[1]?.seconds ?? 0);
+    };
+
+    expect(cycleWithin("Fl(2) W 5s")).toBeGreaterThanOrEqual(1);
+    expect(cycleWithin("Fl(2) W 10s")).toBeGreaterThanOrEqual(1);
+    expect(cycleWithin("Fl(3) G 15s")).toBeGreaterThanOrEqual(2);
+    expect(cycleWithin("Fl(4) Y 20s")).toBeGreaterThanOrEqual(2);
+
+    for (const text of ["Q(3) W 10s", "Q(9) W 15s", "Q(6)+LFl W 15s"]) {
+      expect(cycleWithin(text), text).toBeGreaterThanOrEqual(1);
+      expect(cycleWithin(text), text).toBeLessThanOrEqual(1.2);
+    }
+    for (const text of ["VQ(3) W 5s", "VQ(9) W 10s", "VQ(6)+LFl W 10s"]) {
+      expect(cycleWithin(text), text).toBeGreaterThanOrEqual(0.5);
+      expect(cycleWithin(text), text).toBeLessThanOrEqual(0.6);
     }
   });
 

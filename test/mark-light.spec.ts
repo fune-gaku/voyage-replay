@@ -107,6 +107,70 @@ describe("lightOf", () => {
     }
   });
 
+  /**
+   * **A file may state both a character and its timings, and they can disagree.** `Fl(2) R
+   * 10s` with one ten-second green phase is a red group-flashing light on the page and a
+   * steady green one in the picture - the page and the picture reporting different marks out
+   * of the same two fields. Neither is drawn when they do not agree.
+   */
+  it("refuses timings that show a different light from the character beside them", () => {
+    const wrongCount = lightOf(
+      buoy({
+        light: { character: "Fl(2) R 10s", phases: [{ seconds: 10, colour: "red" }] },
+      }),
+    );
+    expect(wrongCount.known).toBe(false);
+    if (!wrongCount.known) {
+      expect(wrongCount.because).toBe("the stated timings do not show the character's flashes");
+    }
+
+    const wrongColour = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 4s",
+          phases: [{ seconds: 1, colour: "green" }, { seconds: 3 }],
+        },
+      }),
+    );
+    expect(wrongColour.known).toBe(false);
+    if (!wrongColour.known) {
+      expect(wrongColour.because).toBe("the stated timings show a colour the character does not");
+    }
+
+    const wrongPeriod = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 4s",
+          phases: [{ seconds: 1, colour: "red" }, { seconds: 8 }],
+        },
+      }),
+    );
+    expect(wrongPeriod.known).toBe(false);
+    if (!wrongPeriod.known) {
+      expect(wrongPeriod.because).toBe(
+        "the stated timings do not run for the period the character states",
+      );
+    }
+  });
+
+  /**
+   * What stated timings are FOR: the split within the period, which the abbreviation never
+   * fixed. A flash of a third of a second inside the same four-second period is exactly the
+   * kind of thing a Light List carries and an abbreviation cannot.
+   */
+  it("takes timings that agree with the character, however they divide the period", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 4s",
+          phases: [{ seconds: 0.3, colour: "red" }, { seconds: 3.7 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
   it("takes a light on a beacon as readily as on a buoy", () => {
     const reading = lightOf({ ...buoy(), kind: "beacon", light: { character: "Q(9) W 15s" } });
     expect(reading.known).toBe(true);

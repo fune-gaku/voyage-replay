@@ -27,6 +27,9 @@ import type { LightPhase, Mark } from "../../core/types.js";
 export type Unlit =
   | "the file does not say whether it carried a light"
   | "the stated timings include a phase of no length"
+  | "the stated timings do not run for the period the character states"
+  | "the stated timings do not show the character's flashes"
+  | "the stated timings show a colour the character does not"
   | Unreadable;
 
 export type LightReading =
@@ -61,13 +64,53 @@ export function lightOf(mark: Mark): LightReading {
   if (stated === "unusable") {
     return { known: false, because: "the stated timings include a phase of no length" };
   }
+  if (stated === null) {
+    return {
+      known: true,
+      character: reading.character,
+      phases: phasesOf(reading.character),
+      timings: "inferred",
+    };
+  }
 
-  return {
-    known: true,
-    character: reading.character,
-    phases: stated ?? phasesOf(reading.character),
-    timings: stated === null ? "inferred" : "stated",
-  };
+  const quarrel = disagreement(reading.character, stated);
+  if (quarrel) return { known: false, because: quarrel };
+  return { known: true, character: reading.character, phases: stated, timings: "stated" };
+}
+
+/**
+ * Whether the stated timings show the character stated beside them, or nothing.
+ *
+ * **A file may state both, and they can disagree.** `Fl(2) R 10s` with one ten-second green
+ * phase is a red group-flashing light on the page and a steady green one in the picture -
+ * the page and the picture reporting different marks, from the same two fields. The timings
+ * win where they agree, and where they do not, neither is drawn.
+ *
+ * Three things have to match: how long the sequence runs, how many appearances of light it
+ * has, and what colours they are. Their exact lengths are not checked, because that is the
+ * whole reason for stating them - the abbreviation never fixed them.
+ */
+function disagreement(character: LightCharacter, stated: Phase[]): Unlit | null {
+  const period = character.periodSeconds;
+  const runs = stated.reduce((total, phase) => total + phase.seconds, 0);
+  if (period !== null && Math.abs(runs - period) > 1e-9) {
+    return "the stated timings do not run for the period the character states";
+  }
+
+  const drawn = phasesOf(character);
+  if (appearances(stated) !== appearances(drawn)) {
+    return "the stated timings do not show the character's flashes";
+  }
+
+  const allowed = new Set<Phase["colour"]>(drawn.map((phase) => phase.colour));
+  return stated.every((phase) => allowed.has(phase.colour))
+    ? null
+    : "the stated timings show a colour the character does not";
+}
+
+/** How many separate appearances of light there are, which is the count a mark is read by. */
+function appearances(phases: Phase[]): number {
+  return phases.filter((phase) => phase.colour !== null).length;
 }
 
 /**
