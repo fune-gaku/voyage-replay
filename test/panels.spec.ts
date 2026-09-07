@@ -656,6 +656,29 @@ describe("what the page says about a mark's light", () => {
     expect(html).toContain("nominal range");
   });
 
+  /**
+   * Every light in the scene starts its sequence at the same instant, because nothing in the
+   * file says otherwise - so two marks with the same character keep step on screen. That is a
+   * relationship a viewer would read out of the picture, and nobody stated it.
+   */
+  it("says why two lights in one scene keep step, and only where there are two", () => {
+    const pair = scenario();
+    pair.marks = [
+      buoy({ character: "Fl(2) R 10s" }),
+      {
+        id: "no-3",
+        kind: "buoy",
+        at: { lat: 33.91, lon: 131.71 },
+        light: { character: "Fl(2) G 10s" },
+      },
+    ];
+    expect(panelsFor(pair)).toContain("nothing states the phase of one light against another");
+
+    const alone = scenario();
+    alone.marks = [buoy({ character: "Fl(2) R 10s" })];
+    expect(panelsFor(alone)).not.toContain("phase of one light against another");
+  });
+
   /** No light in the file, nothing to explain: an inference nobody made needs no paragraph. */
   it("explains nothing about lights where no mark carries one", () => {
     const subject = scenario();

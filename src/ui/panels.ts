@@ -1127,11 +1127,21 @@ function lightNote(marks: Mark[]): string {
   if (!readings.some((reading) => reading.known)) return "";
 
   const inferred = readings.filter((r) => r.known && r.timings === "inferred").length;
+  // Two lights in one scene start together here, because nothing says otherwise. A file has
+  // nowhere to put the phase of one against another, and a viewer watching two marks flash
+  // in step would be reading a relationship out of the picture that nobody stated.
+  const together =
+    readings.filter((reading) => reading.known).length > 1
+      ? " Where more than one mark is lit, all of them start their sequence at the same " +
+        "instant: nothing states the phase of one light against another, so any two that " +
+        "appear to keep step here are keeping step for that reason."
+      : "";
   const drawn =
     "A light is drawn from a bridge at night and nowhere else: a chart is not a moment, so " +
     "the plan view does not blink, and a light is not what a mark looks like by day. It is " +
     "drawn at whatever range the mark is in view at, which overstates a real one - a light " +
-    "has a nominal range, and the format has nowhere to put it yet.";
+    "has a nominal range, and the format has nowhere to put it yet." +
+    together;
   if (inferred === 0) return drawn;
   return (
     `The timings of ${inferred} of these are this tool's. An abbreviation says how often a ` +
