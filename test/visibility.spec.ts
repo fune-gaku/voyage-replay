@@ -54,6 +54,20 @@ describe("how much of the time the sea is in the way", () => {
   });
 
   /**
+   * A still sea has no crests to hide behind, but the earth is still there. An early return
+   * of zero on a calm - which is the obvious way to write it - reports a target in sight
+   * from beyond the horizon, and puts a negative crest threshold and "0.0%" on the same row.
+   */
+  it("still lets the earth hide her when the sea is flat calm", () => {
+    const beyond = horizonMetres(8) + horizonMetres(1.5) + 3_000;
+    const inside = horizonMetres(8) + horizonMetres(1.5) - 3_000;
+
+    expect(occludedFraction(look(beyond), seawayOf(0)).rigidFraction).toBe(1);
+    expect(occludedFraction(look(beyond), seawayOf(0)).ridingFraction).toBe(1);
+    expect(occludedFraction(look(inside), seawayOf(0)).rigidFraction).toBe(0);
+  });
+
+  /**
    * Past the two-horizons range the earth has her without help, so the answer has to be
    * certainty. The crossing rate alone cannot say this - crossings of a level far BELOW the
    * mean surface are rare too, for the opposite reason - which is what the first term of
@@ -86,18 +100,37 @@ describe("holding her rigid against letting her ride the sea", () => {
   });
 
   /**
-   * A vessel riding the sea cannot be hidden by the wave she is sitting on: within a
-   * wavelength of her, her freeboard and the surface are the same wave. Held here at the
-   * limit, where the whole line is inside that stretch and there is no independent sea
-   * between the two at all - the rigid model, which does not float, still finds a crest.
+   * A vessel riding the sea cannot be hidden by the wave she is sitting on. Held at the
+   * limit, where the whole sight line is inside the stretch that moves with her and there
+   * is no independent sea between the two at all - while the rigid model, which does not
+   * float, still finds a crest over the same water.
    */
   it("is never hidden by her own wave, however rough it is", () => {
     const sea = seawayOf(4, 8);
-    const close = { eyeHeightMetres: 8, targetHeightMetres: 1.5, rangeMetres: 40 };
-    expect(sea.peakWavelengthMetres).toBeGreaterThan(close.rangeMetres);
-
+    const close = {
+      eyeHeightMetres: 8,
+      targetHeightMetres: 1.5,
+      rangeMetres: sea.correlationLengthMetres * 0.9,
+    };
     expect(occludedFraction(close, sea).ridingFraction).toBe(0);
     expect(occludedFraction(close, sea).rigidFraction).toBeGreaterThan(0);
+  });
+
+  /**
+   * The width of that exclusion is the sea's own correlation length, not its wavelength.
+   * Using the wavelength would throw away nine times as much line as the surface's coherence
+   * justifies, and with it real crests the sea does support - so just outside the coherent
+   * stretch, and well inside a wavelength, there is independent sea again.
+   */
+  it("finds independent sea again well inside one wavelength of her", () => {
+    const sea = seawayOf(4, 8);
+    const justOutside = {
+      eyeHeightMetres: 8,
+      targetHeightMetres: 1.5,
+      rangeMetres: sea.correlationLengthMetres * 2,
+    };
+    expect(justOutside.rangeMetres).toBeLessThan(sea.peakWavelengthMetres / 3);
+    expect(occludedFraction(justOutside, sea).ridingFraction).toBeGreaterThan(0);
   });
 
   it("keeps riding within reach of rigid rather than answering a different question", () => {

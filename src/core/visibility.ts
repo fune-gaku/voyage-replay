@@ -39,13 +39,18 @@
  * exactly what issue #32 holds back for want of a recorded GM. Picking one here would be
  * making that judgement quietly.
  *
- * **A riding vessel cannot be hidden by the wave she is sitting on.** Within a wavelength
- * of her the sea and her freeboard are the same wave, so her height above it is her height,
- * whatever the sea is doing; treating that stretch as an independent surface lets the
- * arithmetic put her in a trough and raise a crest under her at the same instant. That
- * stretch is excluded. Structural rather than large - about a point at eight kilometres,
- * less further out, since the correlation dies within a wavelength and the line is
- * kilometres long - but the case it removes is impossible rather than unlikely.
+ * **A riding vessel cannot be hidden by the wave she is sitting on.** Where the sea is still
+ * the same wave as the one under her, her height above it is her height whatever the sea is
+ * doing; treating that stretch as an independent surface lets the arithmetic put her in a
+ * trough and raise a crest beneath her at the same instant. That stretch is excluded, and
+ * its width is the seaway's OWN correlation length - not its wavelength, which is nine
+ * times longer and would throw away real crests the sea does support.
+ *
+ * The correction is worth about two tenths of a point, because the surface decorrelates in
+ * about an eighth of a wave - five metres against a sight line of kilometres. It is here
+ * because the case it removes is impossible rather than unlikely, which is a different
+ * argument from it being large; the version that used a whole wavelength was worth five
+ * times more and was wrong.
  *
  * ## Known biases, in both directions
  *
@@ -70,8 +75,9 @@ interface Ride {
   /** Her own displacement from the mean surface, which tilts the whole sight line. */
   liftMetres: number;
   /**
-   * How much of the line nearest her moves with her rather than independently. Zero for a
-   * vessel held rigid at a fixed height above the mean surface, since then nothing does.
+   * How much of the line nearest her moves with her rather than independently: the seaway's
+   * correlation length. Zero for a vessel held rigid at a fixed height above the mean
+   * surface, since then nothing does.
    */
   coupledMetres: number;
 }
@@ -151,14 +157,16 @@ export function occludedFractionBounds(
  */
 function ridingProbability(sightline: Sightline, seaway: Seaway): number {
   const sigma = seaway.surfaceStdDevMetres;
-  if (sigma <= 0) return 0;
+  // A flat calm lifts nobody, so the two bounds are the same answer - which is not
+  // necessarily zero: the earth still hides whatever is past the horizon.
+  if (sigma <= 0) return blockedProbability(sightline, seaway, HELD_RIGID);
 
   let weighted = 0;
   let weights = 0;
   for (let i = -HEAVE_NODES; i <= HEAVE_NODES; i += 1) {
     const z = (i / HEAVE_NODES) * HEAVE_LIMIT_SIGMA;
     const weight = Math.exp(-(z * z) / 2);
-    const ride = { liftMetres: sigma * z, coupledMetres: seaway.peakWavelengthMetres };
+    const ride = { liftMetres: sigma * z, coupledMetres: seaway.correlationLengthMetres };
     weighted += weight * blockedProbability(sightline, seaway, ride);
     weights += weight;
   }
@@ -175,26 +183,45 @@ function ridingProbability(sightline: Sightline, seaway: Seaway): number {
  * whether it is covered fixes that end without touching the other.
  */
 function blockedProbability(sightline: Sightline, seaway: Seaway, ride: Ride): number {
+  if (sightline.rangeMetres <= 0) return 0;
+  const walk = walkTheLine(sightline, seaway, ride);
+  // Every point was inside her own wave: at that range there is no independent sea between.
+  if (!walk) return 0;
+
+  const crossings = (walk.crossings * seaway.rmsWavenumberPerMetre) / (2 * Math.PI);
+  const alreadyCovered = exceedanceProbability(seaway, walk.lowestClearance);
+  return 1 - (1 - alreadyCovered) * Math.exp(-crossings);
+}
+
+/**
+ * The clearance profile, reduced to the two numbers the Rice form wants.
+ *
+ * A flat calm falls out of this without a special case, which is the reason it is one
+ * function rather than an early return: with no crests there is nothing to cross, so the
+ * whole answer is `exceedanceProbability` of the lowest clearance - zero while the sight
+ * line stays above the water, and one past the range where the earth alone has taken her.
+ * An early return of zero on a still sea would have said she was in sight from beyond the
+ * horizon.
+ */
+function walkTheLine(
+  sightline: Sightline,
+  seaway: Seaway,
+  ride: Ride,
+): { crossings: number; lowestClearance: number } | null {
   const sigma = seaway.surfaceStdDevMetres;
   const range = sightline.rangeMetres;
-  if (sigma <= 0 || range <= 0) return 0;
-
   const step = range / ALONG_LINE_STEPS;
   let crossings = 0;
   let lowestClearance = Infinity;
+
   for (let i = 0; i <= ALONG_LINE_STEPS; i += 1) {
     const at = i * step;
     // The stretch nearest her is her own wave, not an independent surface. See above.
     if (range - at < ride.coupledMetres) continue;
     const clearance = clearanceMetres(sightline, at) + ride.liftMetres * (at / range);
     lowestClearance = Math.min(lowestClearance, clearance);
-    const rate = Math.exp(-(clearance * clearance) / (2 * sigma * sigma));
+    const rate = sigma > 0 ? Math.exp(-(clearance * clearance) / (2 * sigma * sigma)) : 0;
     crossings += (i === 0 || i === ALONG_LINE_STEPS ? 0.5 : 1) * rate * step;
   }
-  // Every point was inside her own wave: at that range there is no independent sea between.
-  if (lowestClearance === Infinity) return 0;
-  crossings *= seaway.rmsWavenumberPerMetre / (2 * Math.PI);
-
-  const alreadyCovered = exceedanceProbability(seaway, lowestClearance);
-  return 1 - (1 - alreadyCovered) * Math.exp(-crossings);
+  return lowestClearance === Infinity ? null : { crossings, lowestClearance };
 }

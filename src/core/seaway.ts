@@ -67,6 +67,24 @@ const CONVERGENCE_LIMIT_OVER_PEAK = 40;
 
 const SPECTRUM_STEPS = 4000;
 
+/**
+ * How much of the surface's shape has to survive for it still to count as the same wave.
+ *
+ * `visibility.ts` needs a distance over which a floating vessel and the water under her move
+ * together, and this is the choice that fixes it: the correlation length is then where the
+ * along-line autocorrelation first falls to this. A half is the usual coherence convention -
+ * past it the surface is more different from hers than the same.
+ *
+ * The LENGTH is not a constant, because it comes out of the spectrum. It is a fixed fraction
+ * of the peak wavelength - 0.116 of it, whatever the period - which is far shorter than the
+ * wavelength itself: `k = w^2/g` squares the spread, so the wavenumber spectrum is much
+ * broader than the frequency one and the surface decorrelates within a fraction of a wave.
+ */
+const SAME_WAVE_CORRELATION = 0.5;
+
+/** Bisection steps for the correlation length. Twenty halvings of a wavelength is millimetres. */
+const CORRELATION_STEPS = 20;
+
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
   significantHeightMetres: number;
@@ -80,12 +98,18 @@ export interface Seaway {
    * SPACE. See `TAIL_CUTOFF_FRACTION_OF_PEAK`: this one is cutoff-dependent.
    */
   rmsWavenumberPerMetre: number;
-  /**
-   * Wavelength at the peak, in deep water. The distance over which the sea stops being the
-   * same wave, which is what `visibility.ts` needs to know how far from a floating vessel
-   * the surface can be treated as moving independently of her.
-   */
+  /** Wavelength at the peak, in deep water. */
   peakWavelengthMetres: number;
+  /**
+   * How far along the surface it stays the same wave: where the autocorrelation first falls
+   * to `SAME_WAVE_CORRELATION`.
+   *
+   * Much shorter than the peak wavelength - about an eighth of it - and that is the point.
+   * `visibility.ts` uses it to exclude the stretch where a floating vessel and the water
+   * cannot be treated as independent, and using the wavelength there would throw away nine
+   * times as much line as the sea's own coherence justifies.
+   */
+  correlationLengthMetres: number;
 }
 
 /**
@@ -171,11 +195,13 @@ function fromSeaState(seaState: number | null | undefined): SeaEstimate | null {
 export function seawayOf(significantHeightMetres: number, peakPeriodSeconds?: number): Seaway {
   const height = Math.max(significantHeightMetres, 0);
   const period = peakPeriodSeconds ?? assumedPeakPeriodSeconds(height);
+  const wavelength = (GRAVITY_METRES_PER_SECOND_SQUARED * period * period) / (2 * Math.PI);
   return {
     significantHeightMetres: height,
     peakPeriodSeconds: period,
     surfaceStdDevMetres: height / 4,
-    peakWavelengthMetres: (GRAVITY_METRES_PER_SECOND_SQUARED * period * period) / (2 * Math.PI),
+    peakWavelengthMetres: wavelength,
+    correlationLengthMetres: correlationLengthOf(period, wavelength),
     ...periodsAndWavenumber(period),
   };
 }
@@ -208,13 +234,23 @@ export function assumedPeakPeriodSeconds(significantHeightMetres: number): numbe
  * evenly spaced points either miss the peak or waste thousands on the tail.
  */
 function moment(peakRadiansPerSecond: number, order: number, from: number, to: number): number {
+  return weightedMoment(peakRadiansPerSecond, (w) => w ** order, from, to);
+}
+
+/** The same integral with an arbitrary weight, which the correlation needs a cosine for. */
+function weightedMoment(
+  peakRadiansPerSecond: number,
+  weight: (w: number) => number,
+  from: number,
+  to: number,
+): number {
   const ratio = (to / from) ** (1 / SPECTRUM_STEPS);
   let total = 0;
   let w = from;
   for (let i = 0; i <= SPECTRUM_STEPS; i += 1) {
     const ends = i === 0 || i === SPECTRUM_STEPS ? 0.5 : 1;
     // d(omega) = omega * d(ln omega), and ln(ratio) is that constant step.
-    total += ends * w ** order * density(w, peakRadiansPerSecond) * w * Math.log(ratio);
+    total += ends * weight(w) * density(w, peakRadiansPerSecond) * w * Math.log(ratio);
     w *= ratio;
   }
   return total;
@@ -255,6 +291,39 @@ function density(w: number, peak: number): number {
   const width = w <= peak ? 0.07 : 0.09;
   const peakedness = Math.exp(-((w - peak) ** 2) / (2 * width * width * peak * peak));
   return (Math.exp(-1.25 * (peak / w) ** 4) / w ** 5) * PEAK_ENHANCEMENT ** peakedness;
+}
+
+/**
+ * The along-line autocorrelation of the surface at one separation.
+ *
+ * `int S(w) cos(k(w) d) dw / int S(w) dw`, over the same truncated range the wavenumber
+ * moment uses, since it is the same question about the same short waves.
+ */
+function correlationAt(peakPeriodSeconds: number, separationMetres: number): number {
+  const peak = (2 * Math.PI) / peakPeriodSeconds;
+  const from = peak / 6;
+  const to = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
+  const cosine = (w: number): number =>
+    Math.cos(((w * w) / GRAVITY_METRES_PER_SECOND_SQUARED) * separationMetres);
+  return weightedMoment(peak, cosine, from, to) / moment(peak, 0, from, to);
+}
+
+/**
+ * Where the surface stops being the same wave, by bisection.
+ *
+ * The correlation falls monotonically from one over the first fraction of a wavelength, so
+ * bracketing on `[0, peak wavelength]` is safe: by a full wavelength it has long since gone
+ * negative and come back.
+ */
+function correlationLengthOf(peakPeriodSeconds: number, peakWavelengthMetres: number): number {
+  let inside = 0;
+  let outside = peakWavelengthMetres;
+  for (let i = 0; i < CORRELATION_STEPS; i += 1) {
+    const middle = (inside + outside) / 2;
+    if (correlationAt(peakPeriodSeconds, middle) > SAME_WAVE_CORRELATION) inside = middle;
+    else outside = middle;
+  }
+  return outside;
 }
 
 /**

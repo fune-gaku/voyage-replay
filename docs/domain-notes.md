@@ -181,24 +181,29 @@ Measured, 8 m eye on 1.5 m freeboard in a 2 m sea:
 Neither is the conservative side, so neither can be picked. Both are returned. Which is nearer
 the truth depends on her heave response, which needs a GM no report states — issue #32.
 
-**A riding vessel cannot be hidden by the wave she is sitting on.** Within a wavelength of her,
-her freeboard and the surface are the same wave, so her height above it is her height whatever
-the sea is doing. Treating that stretch as independent lets the arithmetic put her in a trough
-and raise a crest under her at the same instant. It is excluded. Structural rather than large —
-about a point at 8 km and less further out, because the surface decorrelates within roughly a
-wavelength while the sight line runs for kilometres — but the case it removes is impossible
-rather than unlikely.
+**A riding vessel cannot be hidden by the wave she is sitting on.** Where the sea is still the
+same wave as the one under her, her height above it is her height whatever the sea is doing, and
+treating that stretch as independent lets the arithmetic put her in a trough and raise a crest
+beneath her at the same instant. It is excluded.
 
-Note that the wavenumber spectrum is far broader than the frequency spectrum, since `k = ω²/g`
-squares the spread. That is why the correlation dies so fast: for a 5.5 s sea the along-line
-autocorrelation is essentially zero by ten metres, against a peak wavelength of 47 m.
+**The width of that exclusion is the correlation length, not the wavelength**, and the two are
+not close. `k = ω²/g` squares the spread of the spectrum, so the wavenumber content is far
+broader than the frequency content and the surface decorrelates within a fraction of a wave: the
+autocorrelation falls to a half at **0.116 of the peak wavelength**, the same ratio for every
+period, which is 5.5 m for a 5.5 s sea against a 47 m wavelength. Excluding a whole wavelength
+instead throws away nine times as much sight line as the sea's coherence justifies, and with it
+real crests.
+
+Done correctly the correction is worth about two tenths of a point. It is in because the case it
+removes is impossible rather than unlikely — which is a different argument from its being large.
 
 ### Known biases, in both directions
 
 - **Counting crossings independently runs high.** They cluster, and Rice assumes they do not.
   Measured against the Monte Carlo, both bounds carry it in the same direction and by a similar
-  margin — held rigid 18.3% against 10.5% at 8 km, riding 34.9% against 30.0% — so it shifts the
-  pair rather than widening or narrowing it.
+  margin — held rigid 18.3% against 10.5% at 8 km, riding 35.9% against 30.0% — so it shifts the
+  pair rather than widening or narrowing it. This is much the largest of the modelling errors
+  here, and far smaller than the width of a sea state class.
 - **A long-crested sea runs low.** The calculation works along one line; real seas are short
   crested, which decorrelates the surface along it and makes blocking likelier.
 - **The assumed period runs long.** With no stated period, Pierson-Moskowitz for a fully

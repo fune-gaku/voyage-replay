@@ -193,3 +193,39 @@ describe("how far away the sea stops being the same wave", () => {
     );
   });
 });
+
+describe("how far the surface stays the same wave", () => {
+  /**
+   * Much shorter than the wavelength, and that is the physics rather than a tuning choice:
+   * `k = w^2/g` squares the spread of the spectrum, so the wavenumber content is far broader
+   * than the frequency content and the surface decorrelates within a fraction of a wave. The
+   * ratio is what matters, since `visibility.ts` excludes this stretch and using a wavelength
+   * instead would throw away nine times as much sight line.
+   */
+  it("decorrelates within about an eighth of a wavelength, not within one", () => {
+    const seaway = seawayOf(2, 5.5);
+    expect(seaway.correlationLengthMetres / seaway.peakWavelengthMetres).toBeCloseTo(0.116, 2);
+    expect(seaway.correlationLengthMetres).toBeLessThan(seaway.peakWavelengthMetres / 5);
+  });
+
+  /**
+   * The spectrum's shape does not depend on how long its waves are, so neither does this
+   * ratio. A correlation length that drifted with period would mean the shape integrals were
+   * picking up the scale from somewhere they should not.
+   */
+  it("keeps that ratio whatever the period, because the shape is scale-free", () => {
+    const ratios = [3.5, 5.5, 10].map((period) => {
+      const seaway = seawayOf(1, period);
+      return seaway.correlationLengthMetres / seaway.peakWavelengthMetres;
+    });
+    for (const ratio of ratios) {
+      expect(ratio).toBeCloseTo(ratios[0] ?? 0, 4);
+    }
+  });
+
+  it("grows with the waves in absolute terms, as the square of the period", () => {
+    expect(
+      seawayOf(1, 12).correlationLengthMetres / seawayOf(1, 6).correlationLengthMetres,
+    ).toBeCloseTo(4, 2);
+  });
+});
