@@ -126,10 +126,10 @@ Where it stands, and the floors it must not fall below:
 
 | | Measured | Floor |
 |---|---:|---:|
-| Lines | 99.43% | 98% |
-| Statements | 97.99% | 95% |
+| Lines | 99.67% | 99% |
+| Statements | 98.18% | 97% |
 | Functions | 100% | 99% |
-| Branches | 89.31% | 83% |
+| Branches | 91.38% | 90% |
 
 #### What is excluded, and the exclusion that was wrong
 

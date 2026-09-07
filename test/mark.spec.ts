@@ -190,14 +190,28 @@ describe("a beacon", () => {
   }
 
   /**
-   * The stated height is above the foundation, and that is where the drawn structure has to
-   * reach - a beacon whose body ended at its own height above the WATER would be the
-   * renderer answering a question with the buoy's datum.
+   * The stated height is above the WATER, and that is where the drawn structure has to reach.
+   * The footing below the surface is this renderer standing it on something - no depth is
+   * stated anywhere - so counting it into the height would sink the top by an amount nobody
+   * measured, and the top is the part a sightline asks about.
    */
-  it("stands from below the water up to the height it was given", () => {
+  it("stands from below the water up to the height it was given, above the water", () => {
     const { top, bottom } = extent(beacon({ heightMetres: 6 }));
     expect(top).toBeCloseTo(6, 5);
     expect(bottom).toBeLessThan(0);
+  });
+
+  /**
+   * The same claim from the other side: the whole structure is TALLER than the height it was
+   * given, and what is reported back is only the part above the water. A beacon that reported
+   * its full extent would be handing a sightline a figure measured from a fiction.
+   */
+  it("keeps the invented footing out of the height it reports", () => {
+    const built = buildMark(beacon({ heightMetres: 6 }));
+    const { top, bottom } = extent(beacon({ heightMetres: 6 }));
+
+    expect(built.heightMetres).toBe(6);
+    expect(top - bottom).toBeGreaterThan(built.heightMetres);
   });
 
   it("reports the height it was given, and assumes one where the source states none", () => {

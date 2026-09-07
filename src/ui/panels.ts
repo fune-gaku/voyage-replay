@@ -945,9 +945,10 @@ function tailNote(sea: SeaEstimate): string {
  * starboard, so a shape this tool chose is a statement this tool made.
  *
  * **The two kinds do not answer the same questions, so the table must not read as if they
- * did.** A beacon has no IALA shape and no watch circle, and its height is measured from
- * its foundation; a buoy has all three, and the position given for her is her sinker's. One
- * table takes both, so every cell that differs by kind says which is being reported.
+ * did.** A beacon has no IALA shape and no watch circle, and what it does have below the
+ * water is drawn rather than stated; a buoy has both, and the position given for her is her
+ * sinker's. One table takes both, so every cell that differs by kind says which is being
+ * reported.
  *
  * Absent entirely when a scenario carries no marks, rather than an empty table: a section
  * headed "Sea marks" over nothing invites the reading that there were none.
@@ -961,9 +962,7 @@ function marksSection(scenario: Scenario): string[] {
     mark.name ?? "-",
     mark.kind,
     `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
-    // A beacon has no IALA body shape - the schema refuses one - so there is nothing to
-    // report and nothing was assumed.
-    mark.kind === "beacon" ? "a structure" : stated(mark.shape, ASSUMED_MARK.shape),
+    shapeCell(mark),
     stated(mark.colour, ASSUMED_MARK.colour),
     heightCell(mark),
     watchCircleCell(mark),
@@ -983,19 +982,32 @@ function stated(value: string | undefined, fallback: string): string {
 }
 
 /**
- * The height, and what it was measured from - which is not the same question for both kinds.
+ * The body shape, where the mark is the kind that has one.
  *
- * A buoy's body stands above her own waterline. A beacon's stands above the foundation it
- * is built on, and the sea runs past it somewhere in between. One field takes both, so
- * without the datum the two figures read as comparable when they are not.
+ * A beacon has no IALA shape - the schema refuses one - so nothing was assumed in its place.
+ * But something is on the screen, and the form drawn there was chosen here: the format has no
+ * vocabulary for towers, lattices, columns and piles yet (issue #42). Reporting the field as
+ * simply empty would leave the picture making the only statement about it.
+ */
+function shapeCell(mark: Mark): string {
+  if (mark.kind === "beacon") return "a structure, form chosen here";
+  return stated(mark.shape, ASSUMED_MARK.shape);
+}
+
+/**
+ * The height, and what it was measured from - which the number alone does not say.
+ *
+ * **Above the water for both kinds**, though what is usual differs wildly between them. A
+ * beacon's structure carries on below the surface and the picture draws it doing so, but how
+ * far down is invented here: nothing states the depth of the ground it stands on. Reporting
+ * a beacon's height from its foundation would be quoting a datum the format cannot place.
  */
 function heightCell(mark: Mark): string {
-  const datum = mark.kind === "beacon" ? "above its foundation" : "above the waterline";
   const height =
     mark.heightMetres === undefined
-      ? `assumed ${ASSUMED_MARK.heightMetres} m`
+      ? `assumed ${ASSUMED_MARK.heightMetres[mark.kind]} m`
       : `${mark.heightMetres} m`;
-  return `${height} ${datum}`;
+  return `${height} above the water`;
 }
 
 /**
@@ -1049,7 +1061,12 @@ function marksCaveat(marks: Mark[]): string {
   if (marks.some((m) => m.kind === "beacon")) {
     parts.push(
       "A beacon neither heaves nor tilts: it is built on the ground it marks, the sea runs " +
-        "past it, and the position given for it is the structure's own.",
+        "past it, and the position given for it is the structure's own. Its height is the " +
+        "part above the water; it is drawn carrying on below the surface onto a footing, " +
+        "and how far down that goes is this tool standing it on something rather than a " +
+        "depth anybody stated. What kind of structure - a tower, a lattice, a column, a " +
+        "pile - is a vocabulary this format does not have either, so the one on screen is " +
+        "this tool's: issue #42.",
     );
   }
   return parts.filter((p) => p !== "").join(" ");

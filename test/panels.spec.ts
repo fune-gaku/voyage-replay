@@ -531,7 +531,7 @@ describe("the sea marks a scenario carries", () => {
 
     expect(html).toContain("<td>can</td>");
     expect(html).toContain("<td>red</td>");
-    expect(html).toContain("<td>3.1 m above the waterline</td>");
+    expect(html).toContain("<td>3.1 m above the water</td>");
     expect(html).toContain("No. 2");
     // "assumed" appears elsewhere on the page - the hull's bridge, the occlusion heights -
     // so the check has to be about this row rather than about the word.
@@ -587,17 +587,32 @@ describe("a beacon in the same table as a buoy", () => {
   });
 
   /**
-   * Heights measured from different data must not print alike. A beacon's 8 m stands above
-   * its foundation with the sea somewhere up the column; a buoy's 8 m is all of it above her
-   * own waterline. Printed as "8 m" twice the page invites a comparison that is not there.
+   * A number without its datum is not a height. Both kinds are reported above the water -
+   * the only datum this format can place, since nothing states how deep the ground under a
+   * beacon is - and the page says so rather than leaving a bare "8 m" to be read against a
+   * structure height out of a light list.
    */
-  it("says what each height was measured from", () => {
+  it("says what the height was measured from, which is the water for both", () => {
     const subject = scenario();
-    subject.marks = [beacon({ heightMetres: 8 }), buoy({ heightMetres: 8 })];
+    subject.marks = [beacon({ heightMetres: 8 }), buoy({ heightMetres: 3 })];
     const html = panelsFor(subject);
 
-    expect(html).toContain("<td>8 m above its foundation</td>");
-    expect(html).toContain("<td>8 m above the waterline</td>");
+    expect(html).toContain("<td>8 m above the water</td>");
+    expect(html).toContain("<td>3 m above the water</td>");
+  });
+
+  /**
+   * And the part below the surface is drawn, not reported. It has to be there or the
+   * structure hangs in mid-air, and it is proportional to the beacon rather than to any
+   * sounding - so the page has to own it before a reader takes it for a depth.
+   */
+  it("owns the footing it drew under the water", () => {
+    const subject = scenario();
+    subject.marks = [beacon({ heightMetres: 8 })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the part above the water");
+    expect(html).toContain("rather than a depth anybody stated");
   });
 
   /**
@@ -632,6 +647,35 @@ describe("a beacon in the same table as a buoy", () => {
     expect(html).toContain("1 of 1 carry a height this tool chose");
     expect(html).not.toContain("assumed pillar");
     expect(html).not.toContain("a statement made here");
+  });
+
+  /**
+   * A buoy's 2.4 m of body and a beacon's height above its foundation are not the same
+   * guess. Applying the buoy's figure to a structure would put a stump on a shoal with the
+   * sea most of the way up it - a second assumption made silently inside the first.
+   */
+  it("assumes a height that belongs to the kind it is drawing", () => {
+    const subject = scenario();
+    subject.marks = [beacon(), buoy()];
+    const html = panelsFor(subject);
+
+    expect(ASSUMED_MARK.heightMetres.beacon).not.toBe(ASSUMED_MARK.heightMetres.buoy);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres.beacon} m above the water`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres.buoy} m above the water`);
+  });
+
+  /**
+   * Nothing was assumed in the shape's place, but a structure of some form is on the screen
+   * and the format has no word for which. Left blank, the picture would be making the only
+   * statement about it - the fault the whole column exists to prevent.
+   */
+  it("owns the structure it drew, having no vocabulary to have been told one", () => {
+    const subject = scenario();
+    subject.marks = [beacon()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("form chosen here");
+    expect(html).toContain("issue #42");
   });
 
   /** Nothing about riding a sea belongs on a page whose only mark is built on the ground. */
@@ -769,7 +813,7 @@ describe("the buoy defaults the page names are the ones the view draws", () => {
 
     expect(html).toContain(`assumed ${ASSUMED_MARK.shape}`);
     expect(html).toContain(`assumed ${ASSUMED_MARK.colour}`);
-    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres} m`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres.buoy} m`);
   });
 
   it("draws exactly what it named, so the two cannot come apart", () => {
@@ -780,7 +824,7 @@ describe("the buoy defaults the page names are the ones the view draws", () => {
       at: { lat: 33.9, lon: 131.7 },
       shape: ASSUMED_MARK.shape,
       colour: ASSUMED_MARK.colour,
-      heightMetres: ASSUMED_MARK.heightMetres,
+      heightMetres: ASSUMED_MARK.heightMetres.buoy,
     });
     expect(bare.heightMetres).toBe(named.heightMetres);
     expect(bare.group.children.length).toBe(named.group.children.length);

@@ -160,7 +160,7 @@
           "enum": ["green", "red", "yellow", "black", "white"]
         },
         "heightMetres": {
-          "description": "Body height, excluding any topmark. THE DATUM DIFFERS BY KIND: above the waterline for a buoy, above the foundation for a beacon - the sea runs past a beacon somewhere in between, so the two figures are not comparable and a page reporting one says which it is. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
+          "description": "Body height ABOVE THE WATER, excluding any topmark, and the same datum for both kinds. A buoy stands above her own waterline. A beacon continues below the sea to a foundation whose depth nothing in this format states - so a height measured from that foundation, which is what a light list gives as the structure height, could not be placed against the water at all. The part above the water is the figure the picture and a sightline both need. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
           "type": "number",
           "exclusiveMinimum": 0
         },

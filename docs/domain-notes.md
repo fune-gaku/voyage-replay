@@ -323,15 +323,31 @@ carry means the same thing.
 | the stated position | her **sinker's** | its own |
 | how far it may be from it | the watch circle | nowhere |
 | body shape | IALA, and it means something | engineering, and it means nothing |
-| `heightMetres` measured from | her waterline | its foundation |
+| `heightMetres` measured from | the water | the water |
 | in a sea | heaves and tilts with it | the sea runs past it |
 
-Two of those are traps rather than differences. **A shape is a statement in the buoyage** — a
-can is port hand, a cone starboard, a sphere safe water — so a beacon has none to give, and a
-format that accepted one and then drew a structure would have told whoever wrote it that it
-was understood. The schema refuses it. **And `heightMetres` is one field answering two
-questions**: 8 m of beacon and 8 m of buoy are not comparable quantities, so nothing may print
-either without naming the datum.
+**A shape is a statement in the buoyage** — a can is port hand, a cone starboard, a sphere
+safe water — so a beacon has none to give, and a format that accepted one and then drew a
+structure would have told whoever wrote it that it was understood. The schema refuses it.
+
+### The height is above the water, for both, and that is not the obvious choice
+
+A light list gives a beacon two heights: the light above mean sea level, and the structure
+above its own base. The second is the natural reading of "how tall is it" and **cannot be
+used here at all** — placing a top from it needs the depth of the ground under the
+foundation, and nothing in this format states that. A renderer given 8 m from a foundation
+and no sounding either invents the depth or ignores the datum.
+
+So `heightMetres` is **above the water for both kinds**, which is the figure the picture needs
+and the figure a sightline asks about. The consequence is that a beacon is drawn **taller than
+its stated height**: the footing below the surface is proportional to the structure, is not a
+sounding, and is not counted into what the mark reports back. The panel says so, because a
+part of the picture that nobody stated has to be owned somewhere.
+
+This was got wrong first time round. The schema and the panel said "above its foundation"
+while `render/mark.ts` put the top at `heightMetres` above the **water** — a 6 m beacon
+standing 8.1 m from its plinth with the page calling it 6 m. The page and the picture
+disagreeing about the same mark, which is the failure this repository keeps returning to.
 
 ### A buoy is not at her charted position
 

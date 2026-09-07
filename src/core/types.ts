@@ -163,13 +163,6 @@ export type MarkShape = (typeof MARK_SHAPES)[number];
 export const MARK_COLOURS = ["green", "red", "yellow", "black", "white"] as const;
 export type MarkColour = (typeof MARK_COLOURS)[number];
 
-/**
- * A sea mark, which is a place rather than a passage.
- *
- * Not an `Actor`: it does not move, so it has no track, no derivation of motion and nothing
- * to say about heading. What it does have is a fixed position, which is often the thing a
- * report turns on - which side of the buoy she passed.
- */
 /** What a buoy swings on. Meaningless for anything built on a foundation. */
 export interface Mooring {
   depthMetres?: number;
@@ -202,8 +195,13 @@ export interface Mark {
   shape?: MarkShape;
   colour?: MarkColour;
   /**
-   * Body height. **The datum differs by kind**: above the waterline for a buoy, above the
-   * foundation for a beacon. `ui/panels.ts` says which, since one field takes both.
+   * Body height **above the water**, and the same datum for both kinds.
+   *
+   * A beacon's structure carries on below the sea to a foundation, and nothing in this
+   * format states how deep that is - so a height measured from the foundation, which is what
+   * a light list gives as the structure height, could not be placed against the water at
+   * all. What the picture needs and what a sightline needs are the same figure: the part
+   * standing above the surface.
    */
   heightMetres?: number;
   mooring?: Mooring;
