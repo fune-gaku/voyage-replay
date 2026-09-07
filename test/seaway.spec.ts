@@ -20,6 +20,7 @@ import {
   SEA_STATE_HEIGHT_METRES,
   seaStateClass,
   seawayFrom,
+  SPEED_LIMIT_KNOTS,
   seawayOf,
   SPREADING_EXPONENT,
   surfaceAt,
@@ -1018,6 +1019,38 @@ describe("which refusal the core recorded", () => {
       { beaufortForce: 11, derivation: "measured" as const },
     ]) {
       expect(seawayFrom({ seaState: 9, wind })?.periodDeclined).toBe("sea-has-no-ceiling");
+    }
+  });
+});
+
+describe("the wind's bounds, held to the schema's like the sea's", () => {
+  /**
+   * The rule arrived two reviews earlier for the height and the period, and was not applied
+   * to the wind when the field was added: the schema bounds it, `windFrom` is exported, and
+   * a caller that has not been through `validateScenario` can reach it. Two copies in two
+   * languages, neither able to import the other.
+   */
+  it("bounds the speed the same in both", () => {
+    const wind = schema.properties.environment.properties.wind.properties;
+    expect(wind.speedKnots.maximum).toBe(SPEED_LIMIT_KNOTS);
+    expect(wind.speedKnots.minimum).toBe(0);
+    expect(wind.beaufortForce.maximum).toBe(BEAUFORT_KNOTS.length - 1);
+    expect(wind.beaufortForce.minimum).toBe(0);
+  });
+
+  it("clamps a speed past the end of the scale rather than carrying it", () => {
+    const absurd = windFrom({ wind: { speedKnots: 1e308, derivation: "measured" } });
+    expect(absurd?.fastestKnots).toBe(SPEED_LIMIT_KNOTS);
+    expect(windFrom({ wind: { speedKnots: -5, derivation: "measured" } })?.fastestKnots).toBe(0);
+  });
+
+  it("keeps every figure finite for a wind past the end of the scale", () => {
+    const estimate = seawayFrom({
+      wind: { speedKnots: 1e308, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    for (const value of Object.values(estimate?.rough ?? {})) {
+      expect(Number.isFinite(value)).toBe(true);
     }
   });
 });

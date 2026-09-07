@@ -120,6 +120,20 @@ const CORRELATION_STEPS = 20;
 export const HEIGHT_LIMIT_METRES = 30;
 export const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
 
+/**
+ * And the same for a wind, for the same reason and by the same argument.
+ *
+ * The schema bounds it; `windFrom` is exported and a caller that has not been through
+ * `validateScenario` can reach it. 150 knots is past the strongest surface wind ever
+ * recorded - 1996's 113 knots at Barrow Island, and 231 mph in a 1934 gust on Mount
+ * Washington, neither of them a sea a ship is under way in.
+ *
+ * The lesson from the height and the period took two reviews to arrive at and was not
+ * applied to this field when it was added, which is the whole of why it is written here
+ * next to them rather than somewhere of its own.
+ */
+export const SPEED_LIMIT_KNOTS = 150;
+
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
   significantHeightMetres: number;
@@ -1033,13 +1047,14 @@ export function windFrom(environment: Environment | undefined): WindEstimate | n
     statedForce: wind.beaufortForce ?? null,
   };
   if (wind.speedKnots !== undefined) {
+    const speed = clamp(wind.speedKnots, 0, SPEED_LIMIT_KNOTS);
     return {
       ...stated,
-      slowestKnots: wind.speedKnots,
-      fastestKnots: wind.speedKnots,
+      slowestKnots: speed,
+      fastestKnots: speed,
       fastestIsOpen: false,
       source: "speed",
-      statedForceAgrees: forceAgrees(wind.speedKnots, wind.beaufortForce),
+      statedForceAgrees: forceAgrees(speed, wind.beaufortForce),
     };
   }
   return { ...stated, ...speedOfForce(wind.beaufortForce), statedForceAgrees: null };
