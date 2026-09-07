@@ -46,8 +46,15 @@ export interface DrawnMark {
   pattern: From<MarkPattern>;
   /** The IALA body shape, for a buoy. Null for a beacon, which has none (#40). */
   shape: From<MarkShape> | null;
-  /** The shape on top, where the buoyage gives one. Null where nothing is known. */
-  topmark: From<{ shape: Topmark; colour: MarkColour }> | null;
+  /**
+   * The shape on top - and **absence has an origin too**.
+   *
+   * Three answers, not two. A `From` carrying a shape is one that is drawn; a `From` carrying
+   * null is a file saying the mark had none, which R1001 allows for in so many words; a bare
+   * null is nothing known either way. The middle one is a fact about the mark, and printing it
+   * the same as the last would lose the only thing the source said.
+   */
+  topmark: From<{ shape: Topmark; colour: MarkColour } | null> | null;
   /** How a beacon is built, which means nothing. Null for a buoy, which has a shape instead. */
   construction: From<MarkConstruction> | null;
 }
@@ -88,8 +95,10 @@ export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): Drawn
 function topmarkOf(
   mark: Mark,
   meant: Appearance | null,
-): From<{ shape: Topmark; colour: MarkColour }> | null {
-  if (mark.topmark === false || !meant?.topmark) return null;
+): From<{ shape: Topmark; colour: MarkColour } | null> | null {
+  // A stated absence is a statement, and it survives having nothing to draw.
+  if (mark.topmark === false) return { value: null, from: "stated" };
+  if (!meant?.topmark) return null;
   return {
     value: meant.topmark,
     from: mark.topmark === true ? "from its purpose" : "chosen from what its purpose allows",

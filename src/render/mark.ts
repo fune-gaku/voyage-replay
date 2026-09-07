@@ -37,7 +37,7 @@ import {
   type ColorRepresentation,
 } from "three";
 
-import { CHOSEN, drawnAppearance } from "../actors/mark/appearance.js";
+import { CHOSEN, drawnAppearance, type DrawnMark } from "../actors/mark/appearance.js";
 import type { BuoyageRegion, Topmark } from "../actors/mark/buoyage.js";
 import type { LightColour } from "../core/light-character.js";
 import type {
@@ -146,17 +146,24 @@ export function buildMark(mark: Mark, region: BuoyageRegion | null = null): Mark
   const group = new Group();
   group.name = `mark:${mark.id}`;
   const shape = drawn.shape?.value ?? ASSUMED_MARK.shape;
-  const parts = drawn.construction
-    ? beacon(height, drawn.construction.value, paint)
-    : body(shape, height, drawn.pattern.value, paint);
-  for (const part of parts) group.add(part);
-
   const staff = carriesAStaff(shape, drawn.construction !== null);
+  for (const part of standing(drawn, shape, height, paint)) group.add(part);
   if (staff) group.add(mast(height, paint(0)));
-  if (drawn.topmark) {
-    for (const part of topmark(drawn.topmark.value, height, staff)) group.add(part);
+
+  // A stated absence carries a null value - the file said there was no topmark - and so
+  // there is nothing to draw for it, which is true of a mark nothing is known about too.
+  const above = drawn.topmark?.value;
+  if (above) {
+    for (const part of topmark(above, height, staff)) group.add(part);
   }
   return withLamp(mark, group, height, staff);
+}
+
+/** The body of a buoy, or the structure of a beacon - the parts that stand in the water. */
+function standing(drawn: DrawnMark, shape: MarkShape, height: number, paint: Painter): Mesh[] {
+  return drawn.construction
+    ? beacon(height, drawn.construction.value, paint)
+    : body(shape, height, drawn.pattern.value, paint);
 }
 
 /**

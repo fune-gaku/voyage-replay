@@ -731,9 +731,14 @@ describe("what the page says a mark means", () => {
     told.marks = [cardinal({ topmark: true })];
     expect(panelsFor(told)).toContain("black two cones point up, from its purpose");
 
+    // A stated absence is a statement, and it must not read like a file that said nothing.
     const without = scenario();
     without.marks = [cardinal({ topmark: false })];
-    expect(panelsFor(without)).toContain("<td>none drawn</td>");
+    expect(panelsFor(without)).toContain("<td>none, stated</td>");
+
+    const silent = scenario();
+    silent.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
+    expect(panelsFor(silent)).toContain("<td>nothing says</td>");
   });
 
   /**
@@ -809,7 +814,7 @@ describe("what the page says a mark means", () => {
   it("draws no topmark where nothing says what the mark is", () => {
     const subject = scenario();
     subject.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
-    expect(panelsFor(subject)).toContain("<td>none drawn</td>");
+    expect(panelsFor(subject)).toContain("<td>nothing says</td>");
   });
 });
 

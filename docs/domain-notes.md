@@ -516,6 +516,10 @@ cardinal, isolated danger, safe water and special marks are the same the world o
   striped, isolated danger is banded — a single-colour field leaves out most of the system.
   The pattern is carried as a kind and an ordered list, and the order is the message: black
   over yellow is north, yellow over black is south.
+- **A stated absence is not a silence.** `topmark: false` and a file that says nothing draw
+  the same picture — no topmark — and must not print the same words: the first is a fact the
+  source gave, the second is the limit of the source. Collapsing them loses the only thing
+  the source said. The same shape as the watch circle's three answers (#40), on a boolean.
 - **"Topmark (if any)" is how R1001 heads that column, in every table.** The purpose says
   what a topmark would *be*; it does not say whether the mark had one — an authority may leave
   them off where weather or ice make them impractical. So a file can state that there was none,

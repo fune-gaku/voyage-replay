@@ -1042,12 +1042,19 @@ function patternCell(pattern: From<MarkPattern>): string {
 
 /**
  * The shape on top, which for a cardinal mark is the only thing that tells north from south
- * by day. It comes from the purpose or not at all: a topmark is a statement OF the meaning,
- * so one invented here would say something no source does.
+ * by day.
+ *
+ * **Three answers.** One drawn, with where it came from; a stated absence, which R1001 allows
+ * for in so many words and which is a fact about the mark; and nothing known either way. The
+ * middle and the last look alike in the picture - no topmark - and must not look alike here.
  */
 function topmarkCell(drawn: DrawnMark): string {
-  if (!drawn.topmark) return "none drawn";
-  return saying(drawn.topmark, `${drawn.topmark.value.colour} ${drawn.topmark.value.shape}`);
+  const topmark = drawn.topmark;
+  if (!topmark) return "nothing says";
+  // A file that says the mark carried none has said something, and it is not the same thing
+  // as a file that says nothing - which is what the cell above this one would print.
+  if (topmark.value === null) return "none, stated";
+  return saying(topmark, `${topmark.value.colour} ${topmark.value.shape}`);
 }
 
 /**
