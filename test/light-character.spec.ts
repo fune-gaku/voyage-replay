@@ -155,6 +155,23 @@ describe("reading a Light List abbreviation", () => {
    * describe one, and drawing the first twice would burn steadily - a different class of
    * light, which in the buoyage is a different mark.
    */
+  /**
+   * Exactly two colours, and different ones. `Al WW` alternates white with white, which on
+   * the water is a fixed light under a page calling it alternating; a third colour is printed
+   * on the page and dropped from the picture.
+   */
+  it("refuses an alternating light of one colour twice, or of three", () => {
+    expect(parseCharacter("Al WW 4s")).toEqual({
+      read: false,
+      because: "an alternating light showing one colour twice",
+    });
+    expect(parseCharacter("Al WRG 6s")).toEqual({
+      read: false,
+      because: "an alternating light of more than two colours",
+    });
+    expect(parseCharacter("Al WR 4s").read).toBe(true);
+  });
+
   it("refuses an alternating light that names only one colour", () => {
     expect(parseCharacter("Al W 4s")).toEqual({
       read: false,

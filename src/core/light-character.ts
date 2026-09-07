@@ -108,7 +108,9 @@ export type Unreadable =
   | "a group of one, which is not a group"
   | "a composite group on a class that has none"
   | "a composite group of more than two groups"
-  | "a composite group whose groups are the same size";
+  | "a composite group whose groups are the same size"
+  | "an alternating light of more than two colours"
+  | "an alternating light showing one colour twice";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -279,11 +281,15 @@ function wrongComposite(character: LightCharacter): Unreadable | null {
  */
 function wrongColours(character: LightCharacter): Unreadable | null {
   const alternates = character.klass === "Al" || character.klass === "OcAl";
-  if (alternates && character.colours.length < 2) {
-    return "an alternating light with fewer than two colours";
+  if (!alternates) {
+    return character.colours.length > 1 ? "two colours on a light that does not alternate" : null;
   }
-  return !alternates && character.colours.length > 1
-    ? "two colours on a light that does not alternate"
+  if (character.colours.length < 2) return "an alternating light with fewer than two colours";
+  // Exactly two, and different ones. `Al WW` alternates white with white, which is a fixed
+  // light with a page calling it alternating; a third colour is printed and then dropped.
+  if (character.colours.length > 2) return "an alternating light of more than two colours";
+  return character.colours[0] === character.colours[1]
+    ? "an alternating light showing one colour twice"
     : null;
 }
 
