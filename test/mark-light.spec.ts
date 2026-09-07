@@ -15,6 +15,12 @@ function buoy(overrides: Partial<Mark> = {}): Mark {
  * none. A stated character nobody can read is a third thing again, and only that one is an
  * error in the file.
  */
+/**
+ * The reasons below are the generator's own: one E-110 validator runs over the sequence this
+ * tool draws from an abbreviation and over any a scenario states for itself. Two validators
+ * would drift - and did, refusing a stated `Q W 1s` of half a second lit and half dark, which
+ * is E-110's own worked example and exactly what the generator produces.
+ */
 describe("lightOf", () => {
   it("does not read silence as an unlit mark", () => {
     const reading = lightOf(buoy());
@@ -216,7 +222,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe("the stated timings do not keep the character's groups apart");
+      expect(reading.because).toBe("a group not kept apart from the next");
     }
   });
 
@@ -236,9 +242,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings hold a long flash for less than two seconds",
-      );
+      expect(reading.because).toBe("a long flash of less than two seconds");
     }
   });
 
@@ -263,9 +267,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings spell a different letter from the character's",
-      );
+      expect(reading.because).toBe("a dash no longer than a dot");
     }
   });
 
@@ -306,9 +308,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings flash at a rate that is not the character's class",
-      );
+      expect(reading.because).toBe("a rate that is not its own class's");
     }
 
     // And one inside the band is taken, however it divides its second.
@@ -339,9 +339,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings hold an ordinary flash for two seconds or more",
-      );
+      expect(reading.because).toBe("an ordinary flash of two seconds or more");
     }
   });
 
@@ -381,9 +379,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings flash at a rate that is not the character's class",
-      );
+      expect(reading.because).toBe("a rate that is not its own class's");
     }
   });
 
@@ -403,9 +399,7 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(false);
     if (!reading.known) {
-      expect(reading.because).toBe(
-        "the stated timings divide light and darkness unlike the class of light they are on",
-      );
+      expect(reading.because).toBe("light and darkness divided unlike its class");
     }
   });
 
@@ -467,6 +461,49 @@ describe("lightOf", () => {
     );
     expect(reading.known).toBe(true);
     if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
+  /**
+   * The contradiction that made one validator out of two. E-110's worked example for a
+   * continuous quick light is half a second lit and half dark - which is exactly what this
+   * tool generates - and the stated-timings side used to refuse it, because it held every
+   * flashing class to darkness STRICTLY longer than light. Classes 5.1 and 6.1 say `d >= l`.
+   */
+  it("takes the sequence E-110 prints for a quick light, stated as well as drawn", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Q W 1s",
+          phases: [{ seconds: 0.5, colour: "white" }, { seconds: 0.5 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
+  /**
+   * And the same rules reach stated timings that leave a group too tight to count, which is
+   * what the shared validator is for: the rule lives in one place and both sides ask it.
+   */
+  it("refuses stated timings whose group runs together", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl(2) W 5s",
+          phases: [
+            { seconds: 0.1, colour: "white" },
+            { seconds: 0.1 },
+            { seconds: 0.1, colour: "white" },
+            { seconds: 4.7 },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe("flashes too close together in a group to be counted");
+    }
   });
 
   it("takes a light on a beacon as readily as on a buoy", () => {

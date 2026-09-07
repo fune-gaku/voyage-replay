@@ -110,7 +110,8 @@ export type Unreadable =
   | "a composite group of more than two groups"
   | "a composite group whose groups are the same size"
   | "an alternating light of more than two colours"
-  | "an alternating light showing one colour twice";
+  | "an alternating light showing one colour twice"
+  | Nonconformity;
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -363,11 +364,18 @@ function fitsItsPeriod(character: LightCharacter): CharacterReading {
     return { read: false, because: "a period outside the rate that makes it that class" };
   }
 
-  const drawn = cycleSeconds(phasesOf(character));
+  const phases = phasesOf(character);
+  const drawn = cycleSeconds(phases);
   if (drawn - stated > 1e-9) {
     return { read: false, because: "a period too short for the flashes in it" };
   }
-  return { read: true, character };
+
+  // And the sequence it would draw has to be a light of the class written above it. The same
+  // question `actors/mark/light.ts` asks of a sequence a scenario states for itself, asked by
+  // the same code: a stated sequence and a generated one are judged alike or the tool ends up
+  // refusing an arrangement it produces itself.
+  const fault = nonconformity(character, phases);
+  return fault === null ? { read: true, character } : { read: false, because: fault };
 }
 
 function characterOf(
@@ -647,7 +655,15 @@ function closingEclipse(character: LightCharacter, dark: number): number {
  */
 function flashLength(character: LightCharacter, period: number | null): number {
   const rate = FLASHES_PER_MINUTE[character.klass];
-  if (rate !== undefined) return 60 / rate / 2;
+  if (rate !== undefined) {
+    // A CONTINUOUS quick light's period is its own flash cycle, so a stated one sets the
+    // rate: `Q W 0.8s` is 75 flashes a minute, which is a quick light. Built at the
+    // specification's 60 instead, it would run for a second and be refused for not fitting
+    // the period it just stated. A group's period covers the whole group, and there the
+    // specified rate is what lives inside it.
+    if (character.groups.length === 0 && period !== null) return period / 2;
+    return 60 / rate / 2;
+  }
   if (character.klass === "LFl") return LONG_FLASH_SECONDS;
 
   const flashes = character.groups.reduce((total, count) => total + count, 0) || 1;
@@ -709,6 +725,11 @@ function morse(character: LightCharacter, colour: LightColour): Phase[] {
       gap.role = "separator";
     }
   }
+  // The darkness closing the period separates one repetition of the letters from the next,
+  // like the eclipse after a group of flashes - and marking it so keeps it out of the
+  // comparison that holds the gap BETWEEN letters to three times the gaps inside one.
+  const closing = phases.at(-1);
+  if (closing) closing.role = "separator";
   return closeThePeriod(phases, character.periodSeconds, dot);
 }
 
@@ -785,3 +806,173 @@ export function formatCharacter(character: LightCharacter): string {
 function codeFor(colour: LightColour): string {
   return Object.keys(COLOUR_CODES).find((code) => COLOUR_CODES[code] === colour) ?? "";
 }
+
+/**
+ * What Table 2 asks of a SEQUENCE, rather than of an abbreviation.
+ *
+ * One validator, run over the sequence this file generates and again over any a scenario
+ * states for itself (`actors/mark/light.ts`). Both are answering the same question - is this
+ * a light of the class written above it - and two validators would drift, which is how a
+ * stated `Q W 1s` of half a second lit and half dark came to be refused while the generated
+ * one, E-110's own worked example, was not.
+ *
+ * Measured off the phases. The roles the generator attaches say which phase is meant to be
+ * what; the durations are then read from the sequence itself, so a stated sequence is judged
+ * by what it does rather than by what it was called.
+ */
+export type Nonconformity =
+  | "light and darkness divided unlike its class"
+  | "a long flash of less than two seconds"
+  | "an ordinary flash of two seconds or more"
+  | "flashes too close together in a group to be counted"
+  | "a group not kept apart from the next"
+  | "a composite group whose last darkness is shorter than the one before"
+  | "a rate that is not its own class's"
+  | "a dash no longer than a dot"
+  | "phases of unequal length inside a group";
+
+/** How each class divides its period, which is what the class MEANS (Table 2 classes 2-7). */
+const BALANCE: Partial<Record<LightClass, "lit" | "dark" | "equal" | "dark or equal">> = {
+  Oc: "lit",
+  OcAl: "lit",
+  Iso: "equal",
+  Fl: "dark",
+  LFl: "dark",
+  // "d >= l" (classes 5.1 and 6.1), not "d > l": E-110's own examples for a continuous quick
+  // and very quick light are half lit and half dark.
+  Q: "dark or equal",
+  VQ: "dark or equal",
+  UQ: "dark or equal",
+};
+
+export function nonconformity(character: LightCharacter, phases: Phase[]): Nonconformity | null {
+  return (
+    wrongBalance(character, phases) ??
+    wrongFlashes(phases) ??
+    wrongGroupCycle(character, phases) ??
+    wrongSeparators(phases) ??
+    wrongRate(character, phases) ??
+    wrongElements(phases)
+  );
+}
+
+function wrongBalance(character: LightCharacter, phases: Phase[]): Nonconformity | null {
+  const wanted = BALANCE[character.klass];
+  if (wanted === undefined) return null;
+
+  const lit = total(phases.filter((phase) => phase.colour !== null));
+  const dark = total(phases.filter((phase) => phase.colour === null));
+  const held = {
+    lit: lit > dark,
+    dark: lit < dark,
+    equal: Math.abs(lit - dark) < TOLERANCE,
+    "dark or equal": lit <= dark + TOLERANCE,
+  }[wanted];
+  return held ? null : "light and darkness divided unlike its class";
+}
+
+/** Two seconds is the line between a flash and a long flash, and it cuts both ways. */
+function wrongFlashes(phases: Phase[]): Nonconformity | null {
+  if (lengths(phases, "long flash").some((seconds) => seconds < LONG_FLASH_SECONDS)) {
+    return "a long flash of less than two seconds";
+  }
+  return lengths(phases, "flash").some((seconds) => seconds >= LONG_FLASH_SECONDS)
+    ? "an ordinary flash of two seconds or more"
+    : null;
+}
+
+/**
+ * "In a group of two flashes, the duration of a flash together with the duration of the
+ * eclipse within the group should not be less than 1 s. In a group of three or more flashes,
+ * [...] not less than 2 s" (class 4.3, and class 2.2 says the same of an occulting group).
+ *
+ * A quick light is exempt: its own classes fix that cycle by the rate instead, and `wrongRate`
+ * holds it to that.
+ */
+function wrongGroupCycle(character: LightCharacter, phases: Phase[]): Nonconformity | null {
+  if (RATE_BAND[character.klass] !== undefined) return null;
+  const biggest = Math.max(...character.groups, 0);
+  if (biggest < 2) return null;
+
+  const cycles = withinCycles(phases);
+  const least = biggest >= 3 ? 2 : 1;
+  return cycles.some((cycle) => cycle < least - TOLERANCE)
+    ? "flashes too close together in a group to be counted"
+    : null;
+}
+
+/**
+ * The phase separating two groups is three times the ones inside one, and in a composite
+ * group the darkness closing the period is at least as long as the one between the groups
+ * (classes 2.3 and 4.4). Level either and the groups stop being groups.
+ */
+function wrongSeparators(phases: Phase[]): Nonconformity | null {
+  const separators = phases.filter((phase) => phase.role === "separator");
+  for (const separator of separators) {
+    const inside = phases.filter(
+      (phase) =>
+        phase.role !== "separator" && (phase.colour === null) === (separator.colour === null),
+    );
+    if (inside.some((phase) => separator.seconds < 3 * phase.seconds - TOLERANCE)) {
+      return "a group not kept apart from the next";
+    }
+  }
+  const last = separators.at(-1)?.seconds ?? 0;
+  const before = separators.at(-2)?.seconds ?? 0;
+  return separators.length > 1 && last < before - TOLERANCE
+    ? "a composite group whose last darkness is shorter than the one before"
+    : null;
+}
+
+/** Quick is 50 to 79 flashes a minute, very quick 80 to 159, ultra quick 160 to 300. */
+function wrongRate(character: LightCharacter, phases: Phase[]): Nonconformity | null {
+  const band = RATE_BAND[character.klass];
+  if (band === undefined) return null;
+
+  // Inside a group where there is one; otherwise the whole cycle, since a continuous quick
+  // light's period IS its flash cycle.
+  const cycles = withinCycles(phases);
+  const rates = (cycles.length > 0 ? cycles : [cycleSeconds(phases)]).map((cycle) => 60 / cycle);
+  return rates.some((rate) => rate < band[0] || rate > band[1])
+    ? "a rate that is not its own class's"
+    : null;
+}
+
+/**
+ * A dash is "not less than three times the duration of a dot", and the flashes of a group are
+ * "of equal duration" - both class definitions rather than preferences. Dot-then-dash is A
+ * and dash-then-dot is N, and a group whose flashes differ is not a group of that many.
+ */
+function wrongElements(phases: Phase[]): Nonconformity | null {
+  const dots = lengths(phases, "dot");
+  const dashes = lengths(phases, "dash");
+  if (dots.length > 0 && dashes.length > 0 && Math.min(...dashes) < 3 * Math.max(...dots)) {
+    return "a dash no longer than a dot";
+  }
+  const flashes = lengths(phases, "flash");
+  const uneven = flashes.length > 1 && Math.max(...flashes) - Math.min(...flashes) > TOLERANCE;
+  return uneven ? "phases of unequal length inside a group" : null;
+}
+
+/** A flash and the eclipse after it, for every pair inside a group. */
+function withinCycles(phases: Phase[]): number[] {
+  const cycles: number[] = [];
+  for (let i = 0; i + 1 < phases.length; i += 1) {
+    const lit = phases[i];
+    const dark = phases[i + 1];
+    if (lit?.colour == null) continue;
+    if (dark?.colour !== null || dark.role === "separator") continue;
+    cycles.push(lit.seconds + dark.seconds);
+  }
+  return cycles;
+}
+
+function lengths(phases: Phase[], role: PhaseRole): number[] {
+  return phases.filter((phase) => phase.role === role).map((phase) => phase.seconds);
+}
+
+function total(phases: Phase[]): number {
+  return phases.reduce((sum, phase) => sum + phase.seconds, 0);
+}
+
+const TOLERANCE = 1e-9;

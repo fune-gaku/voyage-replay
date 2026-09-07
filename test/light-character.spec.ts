@@ -287,6 +287,40 @@ describe("reading a Light List abbreviation", () => {
   });
 
   /**
+   * A group whose flashes run together cannot be counted, and the count is the message.
+   * "In a group of two flashes, the duration of a flash together with the duration of the
+   * eclipse within the group should not be less than 1 s. In a group of three or more
+   * flashes, [...] not less than 2 s" (Table 2 class 4.3; class 2.2 says it of an occulting
+   * group). A period too short to leave that room cannot be drawn as that character.
+   */
+  it("refuses a period that leaves a group too tight to count", () => {
+    for (const text of ["Fl(2) W 2s", "Fl(3) W 2s", "Oc(2) W 2s"]) {
+      expect(parseCharacter(text), text).toEqual({
+        read: false,
+        because: "flashes too close together in a group to be counted",
+      });
+    }
+    expect(parseCharacter("Fl(2) W 10s").read).toBe(true);
+    expect(parseCharacter("Fl(3) G 15s").read).toBe(true);
+  });
+
+  /**
+   * A continuous quick light's period IS its flash cycle, so a period inside the class's band
+   * has to be BUILT from that period rather than from the specification's standard rate.
+   * Built at 60 a minute instead, `Q W 0.8s` - which is 75 a minute, squarely quick - would
+   * run for a second and then be refused for not fitting the period it had just stated.
+   */
+  it("builds a continuous quick light at the rate its own period states", () => {
+    expect(cycleSeconds(sequence("Q W 0.8s"))).toBeCloseTo(0.8, 9);
+    expect(cycleSeconds(sequence("VQ W 0.4s"))).toBeCloseTo(0.4, 9);
+    expect(cycleSeconds(sequence("UQ W 0.2s"))).toBeCloseTo(0.2, 9);
+
+    // And the group form still takes the specified rate, since there the period covers the
+    // whole group: E-110's own example of Q(3) 10s is half-second flashes.
+    expect(flashes("Q(3) W 10s")).toEqual([0.5, 0.5, 0.5]);
+  });
+
+  /**
    * Below its own minimum a light is a different class: "Fl 1s" is sixty flashes a minute,
    * which is a quick light. E-110 Table 2 gives 2 s for an isophase, single-occulting or
    * single-flashing light, and a long-flashing light needs darkness of three times a flash of

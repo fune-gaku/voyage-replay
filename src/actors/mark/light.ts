@@ -15,11 +15,11 @@
  */
 
 import {
+  nonconformity,
   parseCharacter,
   phasesOf,
   type LightCharacter,
   type Phase,
-  type PhaseRole,
   type Unreadable,
 } from "../../core/light-character.js";
 import type { LightPhase, Mark } from "../../core/types.js";
@@ -31,13 +31,7 @@ export type Unlit =
   | "the stated timings do not run for the period the character states"
   | "the stated timings show a colour the character does not"
   | "the stated timings never show one of the character's colours"
-  | "the stated timings divide light and darkness unlike the class of light they are on"
   | "the stated timings are not the shape of the character's own sequence"
-  | "the stated timings do not keep the character's groups apart"
-  | "the stated timings hold a long flash for less than two seconds"
-  | "the stated timings hold an ordinary flash for two seconds or more"
-  | "the stated timings flash at a rate that is not the character's class"
-  | "the stated timings spell a different letter from the character's"
   | Unreadable;
 
 export type LightReading =
@@ -104,9 +98,36 @@ function disagreement(character: LightCharacter, stated: Phase[]): Unlit | null 
     wrongLength(character, stated) ??
     wrongShape(drawn, stated) ??
     wrongColour(drawn, stated) ??
-    wrongBalance(character, stated) ??
-    wrongParts(character, drawn, stated)
+    // And then the same question the generator answers about its own sequence: is this a
+    // light of the class written above it. One validator for both, because two would drift -
+    // and did, refusing a stated sequence that the generator produces itself.
+    nonconformity(character, wearing(drawn, stated))
   );
+}
+
+/**
+ * The stated phases, wearing the roles of the sequence they were matched against.
+ *
+ * `wrongShape` has already established that the two run in the same order and light and
+ * darken together, so the role of the nth generated phase is what the nth stated phase is
+ * for. The validator then measures the stated durations rather than the generated ones,
+ * which is the whole point of stating them.
+ */
+function wearing(drawn: Phase[], stated: Phase[]): Phase[] {
+  return stated.map((phase, i) => {
+    const role = drawn[i]?.role;
+    return role === undefined ? phase : { ...phase, role };
+  });
+}
+
+/** The sequence has to run for exactly as long as the character says it does. */
+function wrongLength(character: LightCharacter, stated: Phase[]): Unlit | null {
+  const period = character.periodSeconds;
+  if (period === null) return null;
+  const runs = stated.reduce((total, phase) => total + phase.seconds, 0);
+  return Math.abs(runs - period) > 1e-9
+    ? "the stated timings do not run for the period the character states"
+    : null;
 }
 
 /**
@@ -127,165 +148,6 @@ function wrongShape(drawn: Phase[], stated: Phase[]): Unlit | null {
   return sameNullness
     ? null
     : "the stated timings are not the shape of the character's own sequence";
-}
-
-/**
- * The few durations E-110 fixes for a particular phase rather than for the sequence.
- *
- * These are what make a character its class. A "long flash" of half a second is not a long
- * flash (Table 2 class 4.2 and its footnote); a group whose separating eclipse is no longer
- * than the ones inside it is not a group (class 4.3), so `Fl(2+1)` stated with even gaps is
- * `Fl(3)`, which in the buoyage is a different mark; and a quick light flashing at twelve a
- * minute is a flashing light (classes 5 to 7). The rest of the split stays free.
- */
-function wrongParts(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
-  // Two seconds is the line between a flash and a long flash (Table 2 class 4.2 and its
-  // footnote), and it cuts both ways: a flash of 2.2 s under `Fl` is an LFl on the water with
-  // the page still saying `Fl`, which in the buoyage is a safe-water mark shown as a special
-  // one.
-  if (lengthsOf(drawn, stated, "long flash").some((seconds) => seconds < 2)) {
-    return "the stated timings hold a long flash for less than two seconds";
-  }
-  if (lengthsOf(drawn, stated, "flash").some((seconds) => seconds >= 2)) {
-    return "the stated timings hold an ordinary flash for two seconds or more";
-  }
-  if (dashShorterThanDot(drawn, stated)) {
-    return "the stated timings spell a different letter from the character's";
-  }
-  return separatorsTooShort(drawn, stated) ?? offItsRate(character, drawn, stated);
-}
-
-/** The stated durations of the phases the character built for one purpose. */
-function lengthsOf(drawn: Phase[], stated: Phase[], role: PhaseRole): number[] {
-  return stated.filter((_, i) => drawn[i]?.role === role).map((phase) => phase.seconds);
-}
-
-/**
- * A dash is "not less than three times the duration of a dot" (Table 2 class 8).
- *
- * Which is not a nicety: dot-then-dash is A and dash-then-dot is N, and a safe-water mark
- * shows Mo(A). Timings that reverse the two spell a different letter under the same
- * character.
- */
-function dashShorterThanDot(drawn: Phase[], stated: Phase[]): boolean {
-  const dots = lengthsOf(drawn, stated, "dot");
-  const dashes = lengthsOf(drawn, stated, "dash");
-  if (dots.length === 0 || dashes.length === 0) return false;
-  return Math.min(...dashes) < 3 * Math.max(...dots);
-}
-
-/**
- * The phase that separates one group from the next is three times the ones inside a group.
- *
- * Measured against the phases of the same kind - darkness for a flashing light, light for an
- * occulting one - because that is the pair the rule compares.
- */
-function separatorsTooShort(drawn: Phase[], stated: Phase[]): Unlit | null {
-  const separators = stated.filter((_, i) => drawn[i]?.role === "separator");
-  if (separators.length === 0) return null;
-
-  for (const separator of separators) {
-    const inside = stated.filter(
-      (phase, i) =>
-        drawn[i]?.role !== "separator" && (phase.colour === null) === (separator.colour === null),
-    );
-    if (inside.some((phase) => separator.seconds < 3 * phase.seconds - 1e-9)) {
-      return "the stated timings do not keep the character's groups apart";
-    }
-  }
-  return null;
-}
-
-/** Quick is 50 to 79 flashes a minute, very quick 80 to 159, ultra quick 160 to 300. */
-function offItsRate(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
-  const band = RATE_BAND[character.klass];
-  if (band === undefined) return null;
-
-  // A CONTINUOUS quick light has no group, so it has no pair inside one: its whole cycle is
-  // the flash cycle. Left to the pair rule alone, `Q` stated as two seconds lit and three
-  // dark passes as a quick light while showing twelve flashes a minute.
-  // Falling back to the whole cycle whenever no pair inside a group can be measured, not
-  // only where the character has no group at all: any arrangement that leaves the rate
-  // unmeasured would otherwise pass a quick light unchecked.
-  const inside = insideRates(drawn, stated);
-  const rates =
-    inside.length > 0 ? inside : [60 / stated.reduce((total, phase) => total + phase.seconds, 0)];
-  return rates.some((rate) => rate < band[0] || rate > band[1])
-    ? "the stated timings flash at a rate that is not the character's class"
-    : null;
-}
-
-/**
- * The rate of each flash-and-eclipse pair inside a group, in flashes a minute.
- *
- * Inside a group only. The eclipse that separates the groups is not part of anybody's rate -
- * a west cardinal's nine flashes are quick and the six and a half seconds after them are not
- * a slow tenth flash. A continuous quick light has no pair here at all, and is held to its
- * band by its period instead, in `core/light-character.ts`.
- */
-function insideRates(drawn: Phase[], stated: Phase[]): number[] {
-  const roles = drawn.map((phase) => phase.role);
-  const seconds = stated.map((phase) => phase.seconds);
-  const rates: number[] = [];
-  for (let i = 0; i + 1 < roles.length; i += 1) {
-    const pair = (seconds[i] ?? 0) + (seconds[i + 1] ?? 0);
-    const inside = roles[i] === "flash" && roles[i + 1] !== "separator";
-    if (inside) rates.push(60 / pair);
-  }
-  return rates;
-}
-
-/** The bands that define the quick classes (E-110 Table 2, classes 5, 6 and 7). */
-const RATE_BAND: Partial<Record<LightCharacter["klass"], [number, number]>> = {
-  Q: [50, 79],
-  VQ: [80, 159],
-  UQ: [160, 300],
-};
-
-/**
- * Which classes are mostly lit, which are mostly dark, and which are neither.
- *
- * This is the definition of the class rather than a property of it (E-110 Table 2): "a light
- * in which the total duration of light in a period is longer than the total duration of
- * darkness" IS an occulting light, and the reverse is a flashing one. Stated timings that get
- * it backwards show an occulting light under a flashing character - `Fl R 4s` with 3.5 s of
- * red and half a second of darkness is a different class of light on the same page.
- *
- * Morse is absent on purpose: a long letter can be lit for most of its period, and E-110 puts
- * no ratio on the class. So is F, which is all light, and Al, which is all light in two
- * colours - the alternation rule catches those instead.
- */
-const BALANCE: Partial<Record<LightCharacter["klass"], "lit" | "dark" | "equal">> = {
-  Oc: "lit",
-  OcAl: "lit",
-  Iso: "equal",
-  Fl: "dark",
-  LFl: "dark",
-  Q: "dark",
-  VQ: "dark",
-  UQ: "dark",
-};
-
-function wrongBalance(character: LightCharacter, stated: Phase[]): Unlit | null {
-  const wanted = BALANCE[character.klass];
-  if (wanted === undefined) return null;
-
-  const lit = stated.reduce((t, p) => t + (p.colour === null ? 0 : p.seconds), 0);
-  const dark = stated.reduce((t, p) => t + (p.colour === null ? p.seconds : 0), 0);
-  const held =
-    wanted === "equal" ? Math.abs(lit - dark) < 1e-9 : wanted === "lit" ? lit > dark : lit < dark;
-  return held
-    ? null
-    : "the stated timings divide light and darkness unlike the class of light they are on";
-}
-
-function wrongLength(character: LightCharacter, stated: Phase[]): Unlit | null {
-  const period = character.periodSeconds;
-  if (period === null) return null;
-  const runs = stated.reduce((total, phase) => total + phase.seconds, 0);
-  return Math.abs(runs - period) > 1e-9
-    ? "the stated timings do not run for the period the character states"
-    : null;
 }
 
 /**
