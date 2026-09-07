@@ -227,6 +227,24 @@ describe("reading a Light List abbreviation", () => {
   });
 
   /**
+   * A group of one is a single-flashing light with a bracket round it, and it reads as a
+   * group everywhere that asks: `Q(1) 10s` would be drawn as one flash in ten seconds - six
+   * a minute - while calling itself quick. A trailing one in a COMPOSITE is a real thing:
+   * E-110 reserves Fl(2+1) for a preferred-channel mark.
+   */
+  it("refuses a group of one, and keeps the one at the end of a composite", () => {
+    expect(parseCharacter("Q(1) W 10s")).toEqual({
+      read: false,
+      because: "a group of one, which is not a group",
+    });
+    expect(parseCharacter("Fl(1) R 10s")).toEqual({
+      read: false,
+      because: "a group of one, which is not a group",
+    });
+    expect(parseCharacter("Fl(2+1) R 16s").read).toBe(true);
+  });
+
+  /**
    * Below its own minimum a light is a different class: "Fl 1s" is sixty flashes a minute,
    * which is a quick light. E-110 Table 2 gives 2 s for an isophase, single-occulting or
    * single-flashing light, and a long-flashing light needs darkness of three times a flash of

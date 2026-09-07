@@ -204,10 +204,12 @@ function offItsRate(character: LightCharacter, drawn: Phase[], stated: Phase[]):
   // A CONTINUOUS quick light has no group, so it has no pair inside one: its whole cycle is
   // the flash cycle. Left to the pair rule alone, `Q` stated as two seconds lit and three
   // dark passes as a quick light while showing twelve flashes a minute.
+  // Falling back to the whole cycle whenever no pair inside a group can be measured, not
+  // only where the character has no group at all: any arrangement that leaves the rate
+  // unmeasured would otherwise pass a quick light unchecked.
+  const inside = insideRates(drawn, stated);
   const rates =
-    character.groups.length > 0
-      ? insideRates(drawn, stated)
-      : [60 / stated.reduce((total, phase) => total + phase.seconds, 0)];
+    inside.length > 0 ? inside : [60 / stated.reduce((total, phase) => total + phase.seconds, 0)];
   return rates.some((rate) => rate < band[0] || rate > band[1])
     ? "the stated timings flash at a rate that is not the character's class"
     : null;

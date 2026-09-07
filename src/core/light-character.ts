@@ -104,7 +104,8 @@ export type Unreadable =
   | "a Morse light with no letters in it"
   | "a group on a class that has none"
   | "a long flash on a class that does not take one"
-  | "two colours on a light that does not alternate";
+  | "two colours on a light that does not alternate"
+  | "a group of one, which is not a group";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -212,6 +213,13 @@ const GROUPED_CLASSES: LightClass[] = ["Oc", "Fl", "Q", "VQ"];
 function wrongForItsClass(character: LightCharacter): Unreadable | null {
   if (character.groups.length > 0 && !GROUPED_CLASSES.includes(character.klass)) {
     return "a group on a class that has none";
+  }
+  // A group of one is a single-flashing light with a bracket round it, and it reads as a
+  // group everywhere that asks: `Q(1) 10s` would be drawn as one flash in ten seconds - six
+  // a minute - while calling itself quick. A trailing one in a COMPOSITE is a real thing,
+  // and E-110 reserves Fl(2+1) for a preferred-channel mark.
+  if (character.groups.length === 1 && character.groups[0] === 1) {
+    return "a group of one, which is not a group";
   }
   // A trailing long flash belongs to the south cardinal, which is a group quick or group very
   // quick light and nothing else (Table 2 classes 5.2 and 6.2).
