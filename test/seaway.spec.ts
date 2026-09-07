@@ -821,3 +821,25 @@ describe("a wind that could not have raised the sea it is stated beside", () => 
     expect(estimate?.rough.peakPeriodSeconds).toBeGreaterThan(PERIOD_LIMITS_SECONDS.least);
   });
 });
+
+describe("keeping the figure a speed overrode", () => {
+  /**
+   * A page that reports a disagreement without naming the other side of it has hidden half
+   * the input while claiming to expose it: a reader cannot check "these are not the same
+   * wind" against a force they are never shown.
+   */
+  it("carries the stated force even where the speed is what gets used", () => {
+    const both = windFrom({ wind: { speedKnots: 18, beaufortForce: 9, derivation: "measured" } });
+    expect(both?.source).toBe("speed");
+    expect(both?.fastestKnots).toBe(18);
+    expect(both?.statedForce).toBe(9);
+  });
+
+  it("has no force to carry where the file gave none", () => {
+    expect(windFrom({ wind: { speedKnots: 18, derivation: "measured" } })?.statedForce).toBeNull();
+  });
+
+  it("carries it where the force is what the speed came from", () => {
+    expect(windFrom({ wind: { beaufortForce: 5, derivation: "measured" } })?.statedForce).toBe(5);
+  });
+});

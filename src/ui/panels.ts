@@ -18,6 +18,7 @@ import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
+  BEAUFORT_KNOTS,
   fullyDevelopedHeightMetres,
   meanOfHighest,
   type SeaEstimate,
@@ -504,13 +505,23 @@ function windRows(conditions: Conditions): string {
  * with no way to know the file disagreed with itself. Nothing here decides which is right.
  */
 function forceNote(wind: WindEstimate): string {
-  if (wind.statedForceAgrees !== false) return "";
+  if (wind.statedForceAgrees !== false || wind.statedForce === null) return "";
   return note(
-    `The file also states a Beaufort force, and the two are not the same wind: ` +
-      `${wind.fastestKnots} kn does not fall in that force's class. The speed is used, ` +
-      "being the narrower statement, and which of the two is right is not something this " +
-      "tool can decide - but the sea drawn from one would not be the sea drawn from the other.",
+    `The file also states Beaufort force ${wind.statedForce}, which is ` +
+      `${beaufortRange(wind.statedForce)}, and the two are not the same wind: the stated ` +
+      `${wind.fastestKnots} kn does not fall in it. The speed is used, being the narrower ` +
+      "statement, and which of the two is right is not something this tool can decide - but " +
+      "the sea drawn from one would not be the sea drawn from the other.",
   );
+}
+
+/** A force written out as its class, so a reader can check a disagreement rather than take it. */
+function beaufortRange(force: number): string {
+  const band = BEAUFORT_KNOTS[force];
+  if (!band) return "not a force on the scale";
+  return force === BEAUFORT_KNOTS.length - 1
+    ? `${band[0]} kn or more`
+    : `${band[0]} to ${band[1]} kn`;
 }
 
 /**
@@ -523,9 +534,10 @@ function forceNote(wind: WindEstimate): string {
  */
 function windSpeed(wind: WindEstimate): string {
   if (wind.source === "direction-only") return "not stated";
-  if (wind.fastestIsOpen) return `${wind.slowestKnots} kn or more (Beaufort force)`;
-  if (wind.slowestKnots === wind.fastestKnots) return `${wind.fastestKnots} kn`;
-  return `${wind.slowestKnots} to ${wind.fastestKnots} kn (Beaufort force)`;
+  if (wind.source === "force" && wind.statedForce !== null) {
+    return `force ${wind.statedForce}: ${beaufortRange(wind.statedForce)}`;
+  }
+  return `${wind.fastestKnots} kn`;
 }
 
 /**

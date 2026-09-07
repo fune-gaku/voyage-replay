@@ -813,9 +813,9 @@ describe("the wind, printed whether or not there is a sea to go with it", () => 
     expect(html).toContain("the view therefore draws flat water");
   });
 
-  it("shows a Beaufort force as its whole class, never as a midpoint", () => {
+  it("shows a Beaufort force as its number and its whole class, never as a midpoint", () => {
     const html = panelsFor(withWind({ beaufortForce: 5 }));
-    expect(html).toContain("17 to 21 kn");
+    expect(html).toContain("force 5: 17 to 21 kn");
     expect(html).not.toContain("19 kn");
   });
 
@@ -826,7 +826,7 @@ describe("the wind, printed whether or not there is a sea to go with it", () => 
    */
   it("says force 12 is open above, though both its ends are the same figure", () => {
     const html = panelsFor(withWind({ beaufortForce: 12 }));
-    expect(html).toContain("64 kn or more");
+    expect(html).toContain("force 12: 64 kn or more");
     expect(html).not.toContain("<td>64 kn</td>");
   });
 
@@ -929,6 +929,9 @@ describe("a file that states a speed and a force that are not the same wind", ()
     expect(html).toContain("the two are not the same wind");
     expect(html).toContain("not something this tool can decide");
     expect(html).toContain("<td>18 kn</td>");
+    // And the other side of the disagreement, which the reader has to be able to check.
+    expect(html).toContain("Beaufort force 9");
+    expect(html).toContain("41 to 47 kn");
   });
 
   it("stays quiet where the two agree, and where only one is stated", () => {

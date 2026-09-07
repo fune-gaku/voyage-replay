@@ -924,6 +924,15 @@ export interface WindEstimate {
    * right; it only declines to hide that there is a question.
    */
   statedForceAgrees: boolean | null;
+  /**
+   * The Beaufort force the file gave, whatever the speed came out of.
+   *
+   * Carried even where a speed overrides it, because a page that reports a disagreement
+   * without naming the other side of it has hidden half the input while claiming to expose
+   * it. A reader cannot check "these are not the same wind" against a force they are never
+   * shown.
+   */
+  statedForce: number | null;
 }
 
 /**
@@ -939,6 +948,7 @@ export function windFrom(environment: Environment | undefined): WindEstimate | n
   const stated = {
     fromDegreesTrue: wind.fromDegreesTrue ?? null,
     derivation: wind.derivation,
+    statedForce: wind.beaufortForce ?? null,
   };
   if (wind.speedKnots !== undefined) {
     return {
@@ -964,7 +974,7 @@ function forceAgrees(speedKnots: number, force: number | undefined): boolean | n
 /** A force is a class, so it comes back as one. No force at all comes back as no speed. */
 function speedOfForce(
   force: number | undefined,
-): Omit<WindEstimate, "fromDegreesTrue" | "derivation" | "statedForceAgrees"> {
+): Omit<WindEstimate, "fromDegreesTrue" | "derivation" | "statedForceAgrees" | "statedForce"> {
   const band = force === undefined ? undefined : BEAUFORT_KNOTS[force];
   if (!band) {
     return { slowestKnots: 0, fastestKnots: 0, fastestIsOpen: false, source: "direction-only" };
