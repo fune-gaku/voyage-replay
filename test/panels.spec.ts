@@ -361,3 +361,133 @@ describe("the plausibility table", () => {
     expect(html).not.toContain("Nothing implausible.");
   });
 });
+
+describe("whether the sea was in the way", () => {
+  /**
+   * The section's two halves stand differently, and the panel has to keep them apart. The
+   * crest height that would hide her is geometry and holds whatever the file says about the
+   * weather; the fraction of the time the sea offers one needs a sea, and the reference
+   * case - like most reports - states none.
+   */
+  it("prints the crest threshold even where the file states no sea", () => {
+    const html = panelsFor(scenario());
+    expect(html).toContain("Whether the sea was in the way");
+    expect(html).toContain("hidden by crests above");
+    expect(html).toContain("no sea stated");
+    expect(html).toContain("an unstated sea is not a calm one");
+  });
+
+  it("spreads a sea state across its class rather than printing one figure", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("no sea stated");
+    expect(html).toContain("between 1.25 and 2.5 m");
+    expect(html).toContain("assumed from the height (7.9 s at the rough end)");
+  });
+
+  /**
+   * Two ships a few hundred metres apart, one of them 36 m to the top of her
+   * superstructure. No sea in the class can put a crest between them, and the cell says so
+   * with a single figure - the bounds having collapsed - rather than inventing a spread.
+   */
+  it("hides nothing at a few hundred metres, and does not print a range for it", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+    expect(html).toContain("<td>0.0%</td>");
+    expect(html).not.toContain("% to ");
+  });
+
+  it("says a stated height is stated, and stops assuming a period once given one", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 1.8, peakPeriodSeconds: 5, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("The file states a significant height of 1.8 m");
+    expect(html).not.toContain("The period is assumed from the height");
+  });
+
+  it("names the assumed heights as assumed, and points at the issue that fixes them", () => {
+    const html = panelsFor(scenario());
+    expect(html).toContain("assumed from the beam and neither is recorded");
+    expect(html).toContain("issue #8");
+    // A night case is argued over lights, and lights are not what this table answers for.
+    expect(html).toContain("Her lights stand higher");
+  });
+
+  it("says significant height is not the height of the waves", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 5 };
+    const html = panelsFor(subject);
+    expect(html).toContain("mean of the highest third");
+    expect(html).toContain("highest hundredth");
+  });
+
+  it("marks sea state 9 as open above rather than letting 14 m pass for a bound", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 9 };
+    const html = panelsFor(subject);
+    expect(html).toContain("14 m or more");
+    expect(html).not.toContain("between 14 and 14");
+  });
+
+  it("declines rather than guessing when either ship has no particulars", () => {
+    const subject = scenario([
+      actor("A", northboundPoints()),
+      actor("B", westboundPoints(), COASTER),
+    ]);
+    expect(panelsFor(subject)).toContain("every height here is derived from the beam");
+  });
+
+  it("needs two actors, like the rest of the encounter sections", () => {
+    const subject = scenario([actor("A", northboundPoints(), COASTER)]);
+    expect(panelsFor(subject)).toContain("Needs two actors.");
+  });
+});
+
+describe("what the sea section says about where its figures came from", () => {
+  /**
+   * The schema requires a derivation on a stated wave height precisely so that a
+   * reconstructed one cannot read as a recorded one. The occlusion figures are more
+   * sensitive to this number than to anything else on the row, so dropping it on the way to
+   * the panel would put the guarantee back where it started.
+   */
+  it("prints the derivation beside a stated height", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 1.8, derivation: "inferred" },
+    };
+    expect(panelsFor(subject)).toContain("significant height of 1.8 m (inferred)");
+
+    subject.environment.waves = { significantHeightMetres: 1.8, derivation: "measured" };
+    expect(panelsFor(subject)).toContain("significant height of 1.8 m (measured)");
+  });
+
+  it("calls a sea state's figures inferred, because somebody read them off the water", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    expect(panelsFor(subject)).toContain("between 1.25 and 2.5 m (inferred)");
+  });
+
+  /**
+   * The cell has to be the narrower claim of the two. A closed range over a class that runs
+   * to any height at all would invent the bound the caveat beneath it is denying.
+   */
+  it("prints a floor rather than a range where the class is open above", () => {
+    const subject = scenario([
+      actor("A", northboundPoints(), COASTER),
+      actor("B", silentPoints(), COASTER),
+    ]);
+    subject.environment = { lightCondition: "night", seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("or more</td>");
+    expect(html).toContain("the last column is a floor and not a range");
+  });
+});

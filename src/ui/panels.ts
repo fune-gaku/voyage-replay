@@ -7,11 +7,15 @@
  * reconstruction without them is an animation.
  */
 
+import { assumedHeights } from "../actors/vessel/heights.js";
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
+import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { meanOfHighest, type SeaEstimate } from "../core/seaway.js";
+import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
 import {
   closestPointOfApproach,
@@ -34,6 +38,7 @@ export function renderPanels(scenario: Scenario, prepared: Prepared[]): string {
     section("Actors", actorTable(prepared)),
     section("Closest approach", approach(prepared, scenario)),
     section("What each ship showed the other", aspects(prepared, scenario)),
+    section("Whether the sea was in the way", occlusion(prepared, scenario)),
     section(`Plausibility screening (${findings.length})`, findingList(findings, scenario)),
   ].join("");
 }
@@ -358,6 +363,205 @@ function lightsSeen(vessel: Vessel, there: SampledState, bearing: number): strin
 
   const aspect = describeAspect(visibleLights(vessel, normaliseDegrees(bearing + 180 - standIn)));
   return heading === undefined ? `${aspect} (from course over ground)` : aspect;
+}
+
+/**
+ * One ship looking for another across a sea, which needs both ships' particulars.
+ *
+ * Separate from `Encounter` because it asks a different question and needs a different
+ * thing to be present: light arcs need the target's heading and nothing about the observer,
+ * whereas how much sea stands between them turns on how high the observer's eye is.
+ */
+interface Sighting {
+  observer: Prepared;
+  target: Prepared;
+  observerVessel: Vessel;
+  targetVessel: Vessel;
+  timeZone: string;
+}
+
+/**
+ * How much of the time a crest stood between the two.
+ *
+ * Two halves with quite different standing, and the table keeps them apart. The crest
+ * height at which she starts to be hidden is GEOMETRY: an eye height, a target height and a
+ * range, assuming nothing about the sea, and it is worth printing even where the file says
+ * nothing about the weather. What fraction of the time the sea is over that height needs a
+ * sea, and every sea this project has met is a class somebody estimated by eye.
+ *
+ * The fraction is a pair because four things nobody wrote down go into it - both heights,
+ * the wave height and the period - and the width of a sea state class alone can move it by
+ * a factor of fifty. Where the two ends agree, that is a finding; where they straddle, the
+ * source does not settle the question and the honest output says so.
+ */
+function occlusion(prepared: Prepared[], scenario: Scenario): string {
+  const both = pair(prepared);
+  if (!both) return "<p>Needs two actors.</p>";
+  const [observer, target] = both;
+  const observerVessel = observer.actor.vessel;
+  const targetVessel = target.actor.vessel;
+  if (!observerVessel || !targetVessel) {
+    return "<p>Needs particulars for both ships: every height here is derived from the beam.</p>";
+  }
+
+  const cpa = closestPointOfApproach(observer.track, target.track);
+  if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
+
+  const at = Date.parse(scenario.meta.occurredAt) / 1000;
+  const { sea } = conditionsAt(scenario.origin, scenario.environment, at);
+  const sighting = {
+    observer,
+    target,
+    observerVessel,
+    targetVessel,
+    timeZone: scenario.meta.timeZone,
+  };
+  return occlusionTable(sighting, cpa.epochSeconds, sea) + note(occlusionCaveat(sighting, sea));
+}
+
+function occlusionTable(sighting: Sighting, cpaSeconds: number, sea: SeaEstimate | null): string {
+  const rows: string[][] = [];
+  for (let back = 420; back >= 0; back -= 60) {
+    const row = occlusionRow(sighting, cpaSeconds - back, sea);
+    if (row) rows.push(row);
+  }
+  const head = ["time", "range", "hidden by crests above", "of the time behind one"];
+  return dataTable(head, rows);
+}
+
+/** One minute of it: how low a crest would do, and how often the sea offers one. */
+function occlusionRow(
+  sighting: Sighting,
+  epochSeconds: number,
+  sea: SeaEstimate | null,
+): string[] | null {
+  const here = sampleAt(sighting.observer.track, epochSeconds);
+  const there = sampleAt(sighting.target.track, epochSeconds);
+  if (!here || !there) return null;
+
+  const sightline = sightlineOf(sighting, distanceMetres(here.position, there.position));
+  return [
+    formatClock(epochSeconds, sighting.timeZone),
+    `${sightline.rangeMetres.toFixed(0)} m`,
+    `${crestOcclusionMetres(sightline).toFixed(2)} m`,
+    hiddenCell(sightline, sea),
+  ];
+}
+
+/**
+ * The eye and the target height this section asks about.
+ *
+ * The top of the superstructure, which is the last of the hull to go: it answers "was any
+ * part of her above the sea", not "were her lights". They stand higher and the caveat says
+ * so, since the same arithmetic run at a lamp's height gives a different and gentler answer.
+ */
+function sightlineOf(sighting: Sighting, rangeMetres: number): Sightline {
+  return {
+    eyeHeightMetres: assumedHeights(sighting.observerVessel).eyeMetres,
+    targetHeightMetres: assumedHeights(sighting.targetVessel).superstructureMetres,
+    rangeMetres,
+  };
+}
+
+/**
+ * The cell, which has to be the narrower claim of the two on the row.
+ *
+ * A closed range is printed only where the source closes it. Sea state 9 has no upper
+ * bound, so its top figure is a floor and the cell says "or more" - a cell reading
+ * "53.1% to 91.4%" over a class that runs to any height at all would be inventing the
+ * bound the caveat below it is busy denying.
+ */
+function hiddenCell(sightline: Sightline, sea: SeaEstimate | null): string {
+  if (!sea) return "no sea stated";
+  const bounds = occludedFractionBounds(sightline, sea);
+  const low = (bounds.lowestFraction * 100).toFixed(1);
+  const high = (bounds.highestFraction * 100).toFixed(1);
+  // Nothing stands above a hundred per cent, so the open end has nothing left to say.
+  const open = bounds.highestFractionIsFloor && bounds.highestFraction < 0.9995;
+
+  if (low === high) return open ? `${low}% or more` : `${low}%`;
+  return open ? `${low}% to ${high}% or more` : `${low}% to ${high}%`;
+}
+
+/**
+ * What the two columns rest on, which is not the same thing at all.
+ *
+ * The caveat carries the assumptions rather than the table, because a figure printed
+ * without them is the fault this project keeps having to fix: a number in a cell reads as
+ * measured whatever the prose beside it says, so the prose has to be unmissable and the
+ * cell has to be the narrower claim of the two.
+ */
+function occlusionCaveat(sighting: Sighting, sea: SeaEstimate | null): string {
+  const eye = assumedHeights(sighting.observerVessel).eyeMetres;
+  const top = assumedHeights(sighting.targetVessel).superstructureMetres;
+  return (
+    `Both heights are assumed from the beam and neither is recorded: ${eye.toFixed(1)} m for ` +
+    `${sighting.observer.actor.id}'s eye and ${top.toFixed(1)} m for the top of ` +
+    `${sighting.target.actor.id}'s superstructure - issue #8. Her lights stand higher than ` +
+    `that and are correspondingly harder to hide, which this table does not answer for. ` +
+    seaCaveat(sea)
+  );
+}
+
+function seaCaveat(sea: SeaEstimate | null): string {
+  if (!sea) {
+    return (
+      "The file states no sea, so the last column is empty rather than zero: an unstated " +
+      "sea is not a calm one, and the view's flat water is the strongest claim available."
+    );
+  }
+  return (
+    `${heightSentence(sea)}${periodSentence(sea)} ${tailNote(sea)} The figures count crossings ` +
+    "independently, which runs high, and treat the sea as long crested along one line, which " +
+    "runs low."
+  );
+}
+
+/**
+ * Where the height came from, in the same breath as the height.
+ *
+ * The derivation is required by the schema precisely so that a reconstructed height and a
+ * recorded one cannot be read as the same claim, and the occlusion figures are more
+ * sensitive to this number than to anything else on the row. Printing the height without it
+ * would put the format's own guarantee back where it started.
+ *
+ * Sea state 9 gets "or more" rather than a range, both because 14 to 14 is not one and
+ * because the class genuinely has no upper end.
+ */
+function heightSentence(sea: SeaEstimate): string {
+  const { calm, rough, derivation } = sea;
+  if (sea.source === "stated") {
+    return `The file states a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
+  }
+  if (sea.roughEndIsOpen) {
+    return (
+      `Sea state gives a significant height of ${rough.significantHeightMetres} m or more ` +
+      `(${derivation}), with nothing above it, so the last column is a floor and not a range.`
+    );
+  }
+  return (
+    `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
+    `${rough.significantHeightMetres} m (${derivation}).`
+  );
+}
+
+/** Only where the file left the period out, since then it is this project's guess and not hers. */
+function periodSentence(sea: SeaEstimate): string {
+  if (!sea.periodAssumed) return "";
+  return (
+    ` The period is assumed from the height (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the ` +
+    "rough end), which runs long in enclosed water and so errs towards saying she was visible."
+  );
+}
+
+/** Why the rough end is not the height of the waves. */
+function tailNote(sea: SeaEstimate): string {
+  const hs = sea.rough.significantHeightMetres;
+  return (
+    `Significant height is the mean of the highest third: at the rough end the highest tenth ` +
+    `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
+    `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
+  );
 }
 
 function findingList(findings: Finding[], scenario: Scenario): string {

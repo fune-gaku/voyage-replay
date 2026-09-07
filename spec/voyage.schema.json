@@ -63,6 +63,31 @@
           "minimum": 0
         },
         "seaState": { "type": ["integer", "null"], "minimum": 0, "maximum": 9 },
+        "waves": {
+          "description": "Figures for the sea, as against the sea state class, which is a different kind of statement. 'derivation' is required for the same reason it is on a track point: a height reconstructed from testimony is not a measurement, and a reconstruction that cannot tell them apart cannot be checked.",
+          "type": "object",
+          "required": ["significantHeightMetres", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "significantHeightMetres": {
+              "description": "Significant wave height: the mean of the highest third. Individual waves run well above it - the highest tenth averages 1.27 times this, and the largest of an hour's waves about 1.9 times. Bounded above because the arithmetic downstream stops returning numbers long before the type does; the highest ever measured is 19 m.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 30
+            },
+            "peakPeriodSeconds": {
+              "description": "Period of the spectral peak. Assumed from the height where absent, which runs long in fetch-limited water.",
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 30
+            },
+            "fromDegreesTrue": {
+              "description": "Direction the waves come FROM, degrees true - the convention reports use.",
+              "$ref": "#/$defs/degrees"
+            },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
         "current": {
           "description": "Set (degrees true, the direction the water flows TOWARD) and drift (knots).",
           "type": "object",

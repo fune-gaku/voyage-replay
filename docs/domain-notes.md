@@ -103,3 +103,129 @@ Two things about the first one:
 - **The impact itself trips every check.** A hull being struck genuinely does violate all three, so
   a cluster of findings within a few seconds is the collision, not a data problem. Findings spread
   across an otherwise quiet track are the ones worth reading.
+
+## The sea, and what it hides
+
+`core/seaway.ts` turns whatever a report says about the sea into figures; `core/visibility.ts`
+asks whether those figures put a crest between two ships. Both exist because a flat sea is not
+a neutral default — it is the claim that a target was in sight continuously, which is usually
+the thing a collision report is arguing about.
+
+### Significant wave height is the mean of the highest third
+
+Not "the wave height", and treating it as such loses the tail that does the hiding. For a
+narrow-band sea the individual heights are Rayleigh distributed, `P(H > h) = exp(−2h²/Hs²)`,
+which fixes the ratios:
+
+| | ÷ Hs |
+|---|---:|
+| mean wave | 0.63 |
+| significant (highest third) | 1.00 |
+| highest tenth | 1.27 |
+| highest hundredth | 1.67 |
+| largest in 87 minutes | ≈ 1.89 |
+
+The surface itself is Gaussian with a standard deviation of **Hs/4**. That is not an
+approximation layered on Hs; for a linear sea it is the definition, and it is what makes the
+occlusion arithmetic closed-form.
+
+### Sea state is a class, and a wide one
+
+WMO code 3700. State 4 spans 1.25–2.5 m — a factor of two in height, which becomes a factor of
+about fifty in how much of the time a low target is hidden. So `SeaEstimate` carries both ends
+and never a midpoint. State 9 is open above 14 m, and that has to survive all the way to the
+cell: the pair is a floor there, not an interval, so it reads "or more" rather than a range.
+
+Taking the ends of a class is a bracket only because more sea means more hiding, and that is
+not obvious — a taller sea comes with a longer assumed period, whose longer waves cross a sight
+line *less* often, so the two effects pull opposite ways. The spread wins throughout the range
+that matters, and `test/visibility.spec.ts` holds it: if it stopped winning, the interior of a
+class could sit outside the pair.
+
+### The occluding waves are not at the target, and not at one point
+
+Two mistakes with the same cause. The clearance of a sight line above the mean surface is
+**quadratic about its grazing point** — `c(x) = A + (x − x*)² / 2R` — so it takes kilometres to
+rise by one standard deviation: 2.1 km at Hs 1.25 m, 3.0 km at 2.5 m. Hundreds of waves stand
+within a whisker of the line, and the target is hidden if any one of them is over it.
+
+Asking only about the closest point is wrong by one to two orders of magnitude, always the same
+way. Measured on an 8 m eye looking at 1.5 m of freeboard at 13 km in a 1.25 m sea:
+
+| | hidden |
+|---|---:|
+| probability at the grazing point | 0.1% |
+| independent crests along the line | 9% |
+| spectral Monte Carlo | **48%** |
+
+The implementation integrates the level-crossing rate along the line instead (the Rice form),
+which is closed-form and needs no random numbers.
+
+Inside `d = sqrt(2R(h − f))` the grazing point falls beyond the target and clamps back onto it:
+at short range what hides a low vessel is the wave in front of *her*, and the threshold is
+simply her own height. When the target is taller than the eye the line rises the whole way and
+the threshold is the observer's own eye height.
+
+### A vessel floats, and which way that cuts reverses with range
+
+Every height is above the *mean* surface, but a ship rides the sea: dropping into a trough hides
+her, rising on a crest shows her. Near the horizon the rise wins; closer in the drop does. An
+8 m eye on 1.5 m freeboard in a 2 m sea — what this code returns, and what a spectral Monte
+Carlo on the same geometry gives:
+
+| range | held rigid | riding | Monte Carlo, rigid / riding |
+|---:|---:|---:|---|
+| 8 km | 18.3% | 35.9% | 10.5 / 30.0 |
+| 11 km | 82.2% | 63.9% | 63.0 / 52.8 |
+| 13 km | 100% | 93.8% | 100 / 89.6 |
+
+Both run high, for the reason in *Known biases* below. **The reversal is in both**, which is
+what matters: it is a property of the problem and not of the approximation.
+
+Neither is the conservative side, so neither can be picked. Both are returned. Which is nearer
+the truth depends on her heave response, which needs a GM no report states — issue #32.
+
+**A riding vessel cannot be hidden by the wave she is sitting on.** Where the sea is still the
+same wave as the one under her, her height above it is her height whatever the sea is doing, and
+treating that stretch as independent lets the arithmetic put her in a trough and raise a crest
+beneath her at the same instant. It is excluded.
+
+**The width of that exclusion is the correlation length, not the wavelength**, and the two are
+not close. `k = ω²/g` squares the spread of the spectrum, so the wavenumber content is far
+broader than the frequency content and the surface decorrelates within a fraction of a wave: the
+autocorrelation falls to a half at **0.116 of the peak wavelength**, the same ratio for every
+period, which is 5.5 m for a 5.5 s sea against a 47 m wavelength. Excluding a whole wavelength
+instead throws away nine times as much sight line as the sea's coherence justifies, and with it
+real crests.
+
+Done correctly the correction is worth about two tenths of a point. It is in because the case it
+removes is impossible rather than unlikely — which is a different argument from its being large.
+
+### Known biases, in both directions
+
+- **Counting crossings independently runs high.** They cluster, and Rice assumes they do not.
+  Measured against the Monte Carlo, both bounds carry it in the same direction and by a similar
+  margin — held rigid 18.3% against 10.5% at 8 km, riding 35.9% against 30.0% — so it shifts the
+  pair rather than widening or narrowing it. This is much the largest of the modelling errors
+  here, and far smaller than the width of a sea state class.
+- **A long-crested sea runs low.** The calculation works along one line; real seas are short
+  crested, which decorrelates the surface along it and makes blocking likelier.
+- **The assumed period runs long.** With no stated period, Pierson-Moskowitz for a fully
+  developed sea gives the longest waves that height can belong to. Fetch-limited water — the
+  Inland Sea, where the reference case happened — is steeper, so its waves cross a sight line
+  more often. The assumption errs towards saying she was visible.
+- **Every height is a fraction of the beam.** `actors/vessel/heights.ts`, issue #8. This is the
+  largest assumption in the chain after the wave height itself.
+
+### The one constant that had to be chosen
+
+The second spectral moment **in wavenumber** diverges logarithmically — `k²S(ω)` falls off as
+`ω⁻¹` — so the root-mean-square wavenumber, and with it the crossing rate, depends on where the
+tail is cut. `TAIL_CUTOFF_FRACTION_OF_PEAK = 0.35` is that choice, named for the same reason
+`REFRACTION_COEFFICIENT` is. Widening it from 0.5 Tp to 0.175 Tp, nearly a factor of three,
+moves one occlusion figure from 76% to 89% — real, and an order of magnitude smaller than the
+width of a sea state class.
+
+Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
+them at the same place left the zero-crossing period six per cent long, against the published
+JONSWAP ratio of 0.778 — an implementation detail passing itself off as a property of the sea.

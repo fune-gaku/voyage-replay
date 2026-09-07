@@ -103,10 +103,29 @@ export interface Actor {
   track: Track;
 }
 
+/**
+ * The sea, as somebody wrote it down.
+ *
+ * Separate from `seaState` rather than replacing it, because the two are different
+ * statements: a sea state is a class read off the water's appearance, and these are
+ * figures. `derivation` is required for the same reason it is required on a track point -
+ * a wave height reconstructed from a witness saying "she was pitching heavily" is not a
+ * buoy record, and a reconstruction that cannot tell them apart cannot be checked.
+ */
+export interface Waves {
+  significantHeightMetres: number;
+  /** Period of the spectral peak. Assumed from the height where it is not stated. */
+  peakPeriodSeconds?: number;
+  /** Direction the waves come FROM, degrees true - the convention reports use. */
+  fromDegreesTrue?: number;
+  derivation: Derivation;
+}
+
 export interface Environment {
   lightCondition?: "day" | "night" | "twilight" | "restricted-visibility";
   visibilityMetres?: number | null;
   seaState?: number | null;
+  waves?: Waves;
   current?: { setDegreesTrue?: number; driftKnots?: number };
 }
 

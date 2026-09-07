@@ -25,6 +25,7 @@
  */
 
 import { moonPosition, sunPosition, type Horizontal, type MoonState } from "./celestial.js";
+import { seawayFrom, type SeaEstimate } from "./seaway.js";
 import type { Environment, LatLon } from "./types.js";
 
 /**
@@ -69,6 +70,14 @@ export interface Conditions {
   /** Straight from the file: nothing computes the weather. */
   visibilityMetres: number | null;
   seaState: number | null;
+  /**
+   * The sea, worked out from whatever the file says about it, or null when it says nothing.
+   *
+   * Null rather than a calm sea, and the distinction is the point: an unstated sea is not a
+   * flat one. Everything downstream has to decide for itself what to do with not knowing,
+   * which is better than being handed a zero that looks like a measurement.
+   */
+  sea: SeaEstimate | null;
 }
 
 /**
@@ -96,6 +105,7 @@ export function conditionsAt(
     statedLightAgrees: agreement(statedLight, sunLevel),
     visibilityMetres: environment?.visibilityMetres ?? null,
     seaState: environment?.seaState ?? null,
+    sea: seawayFrom(environment),
   };
 }
 

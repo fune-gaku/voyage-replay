@@ -68,3 +68,69 @@ export function hiddenHeightMetres(eyeHeightMetres: number, distanceMetres: numb
   const beyond = distanceMetres - horizonMetres(eyeHeightMetres);
   return beyond <= 0 ? 0 : dropMetres(beyond);
 }
+
+/**
+ * One line of sight, from an eye at one height to something of another height.
+ *
+ * Grouped rather than passed as three loose numbers because they only mean anything
+ * together, and because getting the first two the wrong way round silently answers a
+ * different question - the same reason `visibleLights` names whose bearing it wants.
+ *
+ * Both heights are above the MEAN surface. A vessel floating on a sea rides up and down
+ * with it, which is a real effect and a large one at long range; it is handled where the
+ * sea is known, in `core/visibility.ts`, not here. This module knows only geometry.
+ */
+export interface Sightline {
+  eyeHeightMetres: number;
+  /** Height above the waterline of the part of the target being asked about. */
+  targetHeightMetres: number;
+  rangeMetres: number;
+}
+
+/**
+ * How far the sight line clears the mean surface, at one distance along it.
+ *
+ * The eye is at its own height; the target is at its own height minus the drop over the
+ * whole range, because it stands on a surface that has fallen away; between them the line
+ * is straight and the surface keeps falling, which is what makes this a parabola rather
+ * than a wedge.
+ */
+export function clearanceMetres(sightline: Sightline, atMetres: number): number {
+  const { eyeHeightMetres, targetHeightMetres, rangeMetres } = sightline;
+  if (rangeMetres <= 0) return eyeHeightMetres;
+  const target = targetHeightMetres - dropMetres(rangeMetres);
+  const along = (target - eyeHeightMetres) * (atMetres / rangeMetres);
+  return eyeHeightMetres + along + dropMetres(atMetres);
+}
+
+/**
+ * Where along the line it comes closest to the water.
+ *
+ * Inside `sqrt(2R(h - f))` the minimum falls beyond the target and is clamped back to it:
+ * at short range what hides a low vessel is the wave in front of HER, not the horizon, and
+ * the threshold there is simply her own height.
+ */
+export function grazingPointMetres(sightline: Sightline): number {
+  const { eyeHeightMetres, targetHeightMetres, rangeMetres } = sightline;
+  if (rangeMetres <= 0) return 0;
+  const rise = eyeHeightMetres - targetHeightMetres;
+  const unclamped = (EFFECTIVE_RADIUS_METRES * rise) / rangeMetres + rangeMetres / 2;
+  return Math.min(Math.max(unclamped, 0), rangeMetres);
+}
+
+/**
+ * The crest height at which this target starts to be hidden.
+ *
+ * Pure geometry: it assumes nothing whatever about the sea, which is what makes it usable
+ * where the sea is unknown - and the sea is always unknown, since no report this project
+ * has met states a wave height. It is also the same arithmetic as the horizon, seen from a
+ * different side: this reaches zero exactly where `horizonMetres(h) + horizonMetres(f)`
+ * says the target drops out of sight, which is why it lives here rather than beside the
+ * module that first wanted it.
+ *
+ * From an 8 m eye, a 1.5 m freeboard is hidden by crests above 1.50 m at 2 km, 1.41 m at
+ * 11 km and 0.22 m at 15 km.
+ */
+export function crestOcclusionMetres(sightline: Sightline): number {
+  return clearanceMetres(sightline, grazingPointMetres(sightline));
+}
