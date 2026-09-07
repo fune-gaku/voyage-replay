@@ -99,7 +99,11 @@ export type Unreadable =
   | "an alternating light with fewer than two colours"
   | "a period of no length"
   | "a period too short for the flashes in it"
-  | "a Morse light with no letters in it";
+  | "a period too short for that class of light"
+  | "a Morse light with no letters in it"
+  | "a group on a class that has none"
+  | "a long flash on a class that does not take one"
+  | "two colours on a light that does not alternate";
 
 export type CharacterReading =
   { read: true; character: LightCharacter } | { read: false; because: Unreadable };
@@ -187,22 +191,76 @@ function assemble(head: Head, rest: string): CharacterReading {
   const colours = takeColours(colourPart);
   if (colours === null) return { read: false, because: "a colour this system does not use" };
 
-  // An alternating light is defined by showing different colours in turn (Table 2 class 10),
-  // so one colour does not describe one: drawn from the first colour twice it would burn
-  // steadily, which is a different class of light and a different mark.
-  if ((head.klass === "Al" || head.klass === "OcAl") && colours.length < 2) {
-    return { read: false, because: "an alternating light with fewer than two colours" };
-  }
-
   const morse = head.klass === "Mo" ? lettersOf(head.groups) : "";
-  // A Morse light IS its letters: with none it has no sequence at all, and would be read as
-  // valid, printed as "Mo W 7s", and drawn as a light that never shows.
-  if (head.klass === "Mo" && morse === "") {
-    return { read: false, because: "a Morse light with no letters in it" };
-  }
-
-  return fitsItsPeriod(characterOf(head, colours, period?.[1], morse));
+  const character = characterOf(head, colours, period?.[1], morse);
+  const misfit = wrongForItsClass(character);
+  return misfit === null ? fitsItsPeriod(character) : { read: false, because: misfit };
 }
+
+/** The classes that count something in brackets (Table 2 classes 2.2, 2.3, 4.3, 4.4, 5.2, 6.2). */
+const GROUPED_CLASSES: LightClass[] = ["Oc", "Fl", "Q", "VQ"];
+
+/**
+ * Parts of the abbreviation that its class does not take.
+ *
+ * **Every one of these would otherwise be printed and then ignored.** `Iso(3) W 4s` shows a
+ * group on the page and an isophase light in the picture; `Fl WR 4s` names two colours and
+ * shows only the first. A field the format accepts and the renderer drops is the page and the
+ * picture disagreeing, with whoever wrote the file caught in between.
+ */
+function wrongForItsClass(character: LightCharacter): Unreadable | null {
+  if (character.groups.length > 0 && !GROUPED_CLASSES.includes(character.klass)) {
+    return "a group on a class that has none";
+  }
+  // A trailing long flash belongs to the south cardinal, which is a group quick or group very
+  // quick light and nothing else (Table 2 classes 5.2 and 6.2).
+  if (character.longFlash && character.klass !== "Q" && character.klass !== "VQ") {
+    return "a long flash on a class that does not take one";
+  }
+  // A Morse light IS its letters: with none it has no sequence at all, and would read as
+  // valid, print as "Mo W 7s", and draw as a light that never shows.
+  if (character.klass === "Mo" && character.morse === "") {
+    return "a Morse light with no letters in it";
+  }
+  return wrongColours(character);
+}
+
+/**
+ * How many colours the class takes.
+ *
+ * An alternating light is defined by showing different colours in turn (Table 2 classes 10
+ * and 11), so one colour does not describe one - drawn from the first colour twice it would
+ * burn steadily, which is another class again. Every other class shows one colour, and a
+ * second named beside it would be printed on the page and dropped from the picture.
+ */
+function wrongColours(character: LightCharacter): Unreadable | null {
+  const alternates = character.klass === "Al" || character.klass === "OcAl";
+  if (alternates && character.colours.length < 2) {
+    return "an alternating light with fewer than two colours";
+  }
+  return !alternates && character.colours.length > 1
+    ? "two colours on a light that does not alternate"
+    : null;
+}
+
+/**
+ * The shortest period each class can be shown in and still BE that class.
+ *
+ * From E-110 Table 2: an isophase, single-occulting or single-flashing light has "the period
+ * should not be less than 2 s", and a long-flashing light needs darkness of three times a
+ * flash of not less than two seconds. Below these a light is a different class - "Fl 1s" is
+ * sixty flashes a minute, which is a quick light and not a flashing one.
+ *
+ * **Table 1's maxima are deliberately not enforced.** They tell an authority what to build,
+ * and this tool reconstructs lights that exist: refusing a source's own figure because IALA
+ * would not recommend it is letting a derivation rule swallow a stated value.
+ */
+const LEAST_PERIOD_SECONDS: Partial<Record<LightClass, number>> = {
+  Iso: 2,
+  Oc: 2,
+  Fl: 2,
+  LFl: 8,
+};
 
 /**
  * A last question of the whole character: can it be shown in the period it states?
@@ -221,9 +279,15 @@ function fitsItsPeriod(character: LightCharacter): CharacterReading {
   if (stated === null) return { read: true, character };
   if (stated <= 0) return { read: false, because: "a period of no length" };
 
+  const least = LEAST_PERIOD_SECONDS[character.klass];
+  if (least !== undefined && stated < least) {
+    return { read: false, because: "a period too short for that class of light" };
+  }
+
   const drawn = cycleSeconds(phasesOf(character));
-  if (drawn - stated > 1e-9)
+  if (drawn - stated > 1e-9) {
     return { read: false, because: "a period too short for the flashes in it" };
+  }
   return { read: true, character };
 }
 

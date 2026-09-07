@@ -980,7 +980,9 @@ function marksSection(scenario: Scenario): string[] {
     watchCircleCell(mark),
     lightCell(mark),
   ]);
-  return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
+  return [
+    section(`Sea marks (${marks.length})`, dataTable(head, rows) + notes(marksCaveat(marks))),
+  ];
 }
 
 /**
@@ -1084,7 +1086,7 @@ function assumedOf(mark: Mark): Choosable[] {
  * beacon, or the beacon sentence over a fleet of buoys, is the picture and the page
  * disagreeing in prose - the failure `plans/done/antenna-offset-6.md` records.
  */
-function marksCaveat(marks: Mark[]): string {
+function marksCaveat(marks: Mark[]): string[] {
   const parts = [assumedNote(marks), lightNote(marks)];
   if (marks.some((m) => m.kind === "buoy")) {
     parts.push(
@@ -1106,7 +1108,7 @@ function marksCaveat(marks: Mark[]): string {
         "this tool's: issue #42.",
     );
   }
-  return parts.filter((p) => p !== "").join(" ");
+  return parts.filter((part) => part !== "");
 }
 
 const SHAPE_CLAUSE =
@@ -1195,6 +1197,20 @@ function findingList(findings: Finding[], scenario: Scenario): string {
 /** A line under a table saying what the figures in it are, and are not. */
 function note(text: string): string {
   return `<p style="color:var(--muted)">${escapeHtml(text)}</p>`;
+}
+
+/**
+ * Several notes under one table, each as its own paragraph.
+ *
+ * The sea marks section has four things to say - what was chosen here, what the drawn rhythm
+ * is, how a buoy rides, how a beacon stands - and run together they are a wall nobody reads
+ * to the end of. A caveat that is not read is not a caveat.
+ */
+function notes(texts: string[]): string {
+  return texts
+    .filter((text) => text !== "")
+    .map((text) => note(text))
+    .join("");
 }
 
 export function section(title: string, body: string): string {

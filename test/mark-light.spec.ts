@@ -173,6 +173,53 @@ describe("lightOf", () => {
     }
   });
 
+  /**
+   * The class is a ratio, not a label. "A light in which the total duration of light in a
+   * period is longer than the total duration of darkness" IS an occulting light, so timings
+   * that get it backwards show an occulting light under a flashing character.
+   */
+  it("refuses timings that divide light and darkness unlike their own class", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 4s",
+          phases: [{ seconds: 3.5, colour: "red" }, { seconds: 0.5 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings divide light and darkness unlike the class of light they are on",
+      );
+    }
+  });
+
+  /**
+   * And a colour the character names that never appears: an alternating light stated as blue,
+   * dark, blue, dark passes every count and does not alternate - which is the one thing that
+   * makes it the class it says it is.
+   */
+  it("refuses timings that leave out one of the character's colours", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "OcAl BuY 3s",
+          phases: [
+            { seconds: 1, colour: "blue" },
+            { seconds: 0.5 },
+            { seconds: 1, colour: "blue" },
+            { seconds: 0.5 },
+          ],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe("the stated timings never show one of the character's colours");
+    }
+  });
+
   /** An alternating light is the exception, and the reason the rule is about COLOUR. */
   it("takes an alternating light's two appearances with no darkness between them", () => {
     const reading = lightOf(

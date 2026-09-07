@@ -31,6 +31,8 @@ export type Unlit =
   | "the stated timings do not show the character's flashes"
   | "the stated timings show a colour the character does not"
   | "the stated timings put two phases of one colour side by side"
+  | "the stated timings never show one of the character's colours"
+  | "the stated timings divide light and darkness unlike the class of light they are on"
   | Unreadable;
 
 export type LightReading =
@@ -97,8 +99,46 @@ function disagreement(character: LightCharacter, stated: Phase[]): Unlit | null 
     wrongLength(character, stated) ??
     wrongCount(drawn, stated) ??
     wrongColour(drawn, stated) ??
+    wrongBalance(character, stated) ??
     runTogether(stated)
   );
+}
+
+/**
+ * Which classes are mostly lit, which are mostly dark, and which are neither.
+ *
+ * This is the definition of the class rather than a property of it (E-110 Table 2): "a light
+ * in which the total duration of light in a period is longer than the total duration of
+ * darkness" IS an occulting light, and the reverse is a flashing one. Stated timings that get
+ * it backwards show an occulting light under a flashing character - `Fl R 4s` with 3.5 s of
+ * red and half a second of darkness is a different class of light on the same page.
+ *
+ * Morse is absent on purpose: a long letter can be lit for most of its period, and E-110 puts
+ * no ratio on the class. So is F, which is all light, and Al, which is all light in two
+ * colours - the alternation rule catches those instead.
+ */
+const BALANCE: Partial<Record<LightCharacter["klass"], "lit" | "dark" | "equal">> = {
+  Oc: "lit",
+  OcAl: "lit",
+  Iso: "equal",
+  Fl: "dark",
+  LFl: "dark",
+  Q: "dark",
+  VQ: "dark",
+  UQ: "dark",
+};
+
+function wrongBalance(character: LightCharacter, stated: Phase[]): Unlit | null {
+  const wanted = BALANCE[character.klass];
+  if (wanted === undefined) return null;
+
+  const lit = stated.reduce((t, p) => t + (p.colour === null ? 0 : p.seconds), 0);
+  const dark = stated.reduce((t, p) => t + (p.colour === null ? p.seconds : 0), 0);
+  const held =
+    wanted === "equal" ? Math.abs(lit - dark) < 1e-9 : wanted === "lit" ? lit > dark : lit < dark;
+  return held
+    ? null
+    : "the stated timings divide light and darkness unlike the class of light they are on";
 }
 
 function wrongLength(character: LightCharacter, stated: Phase[]): Unlit | null {
@@ -117,11 +157,23 @@ function wrongCount(drawn: Phase[], stated: Phase[]): Unlit | null {
     : "the stated timings do not show the character's flashes";
 }
 
+/**
+ * The colours, both ways round.
+ *
+ * A colour the character does not name is the obvious half. The other half is a colour it
+ * names that never appears: `OcAl BuY 3s` stated as blue, dark, blue, dark passes every count
+ * and shows no yellow at all - an alternating light that does not alternate, which is the
+ * class the character came from.
+ */
 function wrongColour(drawn: Phase[], stated: Phase[]): Unlit | null {
-  const allowed = new Set<Phase["colour"]>(drawn.map((phase) => phase.colour));
-  return stated.every((phase) => allowed.has(phase.colour))
+  const wanted = new Set<Phase["colour"]>(drawn.map((phase) => phase.colour));
+  const shown = new Set<Phase["colour"]>(stated.map((phase) => phase.colour));
+  if (![...shown].every((colour) => wanted.has(colour))) {
+    return "the stated timings show a colour the character does not";
+  }
+  return [...wanted].every((colour) => shown.has(colour))
     ? null
-    : "the stated timings show a colour the character does not";
+    : "the stated timings never show one of the character's colours";
 }
 
 /**

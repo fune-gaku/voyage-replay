@@ -191,6 +191,51 @@ describe("reading a Light List abbreviation", () => {
     });
   });
 
+  /**
+   * A part of the abbreviation that its class does not take would otherwise be printed on the
+   * page and dropped from the picture. `Iso(3) W 4s` shows a group and draws an isophase
+   * light; `Fl WR 4s` names two colours and shows the first.
+   */
+  it("refuses what a class does not carry, rather than printing it and dropping it", () => {
+    expect(parseCharacter("Iso(3) W 4s")).toEqual({
+      read: false,
+      because: "a group on a class that has none",
+    });
+    expect(parseCharacter("F(2) W 4s")).toEqual({
+      read: false,
+      because: "a group on a class that has none",
+    });
+    expect(parseCharacter("Fl(2)+LFl R 10s")).toEqual({
+      read: false,
+      because: "a long flash on a class that does not take one",
+    });
+    expect(parseCharacter("Fl WR 4s")).toEqual({
+      read: false,
+      because: "two colours on a light that does not alternate",
+    });
+  });
+
+  /**
+   * Below its own minimum a light is a different class: "Fl 1s" is sixty flashes a minute,
+   * which is a quick light. E-110 Table 2 gives 2 s for an isophase, single-occulting or
+   * single-flashing light, and a long-flashing light needs darkness of three times a flash of
+   * not less than two seconds.
+   *
+   * **The maxima of Table 1 are not enforced**, and that is deliberate: they tell an
+   * authority what to build, and this tool reconstructs lights that exist.
+   */
+  it("refuses a period below what its class can be shown in, and allows a long one", () => {
+    for (const text of ["Fl W 1s", "Iso W 1s", "Oc W 1.5s", "LFl W 7s"]) {
+      expect(parseCharacter(text), text).toEqual({
+        read: false,
+        because: "a period too short for that class of light",
+      });
+    }
+    // Longer than IALA would recommend for the class, and a fact if a source says it.
+    expect(parseCharacter("Fl W 40s").read).toBe(true);
+    expect(parseCharacter("Iso W 20s").read).toBe(true);
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
