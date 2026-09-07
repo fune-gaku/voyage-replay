@@ -68,6 +68,18 @@ const CONVERGENCE_LIMIT_OVER_PEAK = 40;
 const SPECTRUM_STEPS = 4000;
 
 /**
+ * Steps for the correlation integral, which is run twenty times over by the bisection.
+ *
+ * Coarser than the moments and deliberately so: the moments set the periods and the
+ * wavenumber, where the fourth power of frequency makes the tail worth resolving, while the
+ * correlation is a smooth cosine transform whose answer is a length wanted to a per cent.
+ * At the moments' resolution one `seawayOf` costs 14 ms and a scenario builds several -
+ * fifty times more work than the figure justifies. The published ratio it is held against,
+ * 0.116 of a wavelength, is unchanged by the coarser grid.
+ */
+const CORRELATION_INTEGRAL_STEPS = 400;
+
+/**
  * How much of the surface's shape has to survive for it still to count as the same wave.
  *
  * `visibility.ts` needs a distance over which a floating vessel and the water under her move
@@ -238,9 +250,13 @@ function roughestHeightMetres(
   seaState: number | null | undefined,
 ): number {
   if (waves?.significantHeightMetres !== undefined) return waves.significantHeightMetres;
-  const band =
-    seaState === null || seaState === undefined ? undefined : SEA_STATE_HEIGHT_METRES[seaState];
-  return band?.[1] ?? 0;
+  if (seaState === null || seaState === undefined) return 0;
+  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  if (!band) return 0;
+  // State 9 is "over 14 m" and the table's 14 is a sentinel, not a ceiling. Returning
+  // infinity is not a trick: the roughest sea the file allows really is unbounded, and no
+  // finite wind can account for it - which is exactly what the caller has to conclude.
+  return seaState === SEA_STATE_HEIGHT_METRES.length - 1 ? Infinity : band[1];
 }
 
 /**
@@ -289,8 +305,8 @@ function directionFor(
  * Where it could not, the height route takes over and the page says the height was what it
  * came from.
  *
- * The height asked about is the ROUGHEST the file allows, because the one period that comes
- * out is applied to both ends of a class. `seaExceedsWind` asks about the calm end instead,
+ * The height asked about is the ROUGHEST the file allows - which for sea state 9 is no
+ * height at all, since that class has no ceiling and no finite wind can answer for it. `seaExceedsWind` asks about the calm end instead,
  * and the two are answering different questions: a warning should be hard to raise, and a
  * derivation has to hold everywhere it is used.
  */
@@ -308,9 +324,16 @@ function periodFor(
   return { seconds: undefined, from: "height" };
 }
 
-/** The comparison `seaExceedsWind` reports, asked before there is a `SeaEstimate` to report on. */
+/**
+ * Whether this wind can account for a sea of that height, asked before there is a
+ * `SeaEstimate` to ask it of.
+ *
+ * Only ever reached with a definite speed - a Beaufort force never supplies a period - so
+ * there is no open-ended wind to handle here. An open-ended SEA is handled, and by
+ * arithmetic rather than a branch: its height comes through as infinity and nothing finite
+ * clears it.
+ */
 function windCouldRaise(wind: WindEstimate, heightMetres: number): boolean {
-  if (wind.fastestIsOpen) return true;
   return fullyDevelopedHeightMetres(wind.fastestKnots) * WIND_DISAGREEMENT_MARGIN >= heightMetres;
 }
 
@@ -387,21 +410,38 @@ export function assumedPeakPeriodSeconds(significantHeightMetres: number): numbe
  * evenly spaced points either miss the peak or waste thousands on the tail.
  */
 function moment(peakRadiansPerSecond: number, order: number, from: number, to: number): number {
-  return weightedMoment(peakRadiansPerSecond, (w) => w ** order, from, to);
+  return weightedMoment(peakRadiansPerSecond, (w) => w ** order, {
+    from,
+    to,
+    steps: SPECTRUM_STEPS,
+  });
+}
+
+/**
+ * The band an integral is taken over and how finely.
+ *
+ * Named because the three travel together and because `max-params` said so - which is the
+ * rule doing its job: the alternative was a fifth loose argument nobody could read at the
+ * call site.
+ */
+interface Band {
+  from: number;
+  to: number;
+  steps: number;
 }
 
 /** The same integral with an arbitrary weight, which the correlation needs a cosine for. */
 function weightedMoment(
   peakRadiansPerSecond: number,
   weight: (w: number) => number,
-  from: number,
-  to: number,
+  band: Band,
 ): number {
-  const ratio = (to / from) ** (1 / SPECTRUM_STEPS);
+  const { from, to, steps } = band;
+  const ratio = (to / from) ** (1 / steps);
   let total = 0;
   let w = from;
-  for (let i = 0; i <= SPECTRUM_STEPS; i += 1) {
-    const ends = i === 0 || i === SPECTRUM_STEPS ? 0.5 : 1;
+  for (let i = 0; i <= steps; i += 1) {
+    const ends = i === 0 || i === steps ? 0.5 : 1;
     // d(omega) = omega * d(ln omega), and ln(ratio) is that constant step.
     total += ends * weight(w) * density(w, peakRadiansPerSecond) * w * Math.log(ratio);
     w *= ratio;
@@ -458,7 +498,8 @@ function correlationAt(peakPeriodSeconds: number, separationMetres: number): num
   const to = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
   const cosine = (w: number): number =>
     Math.cos(((w * w) / GRAVITY_METRES_PER_SECOND_SQUARED) * separationMetres);
-  return weightedMoment(peak, cosine, from, to) / moment(peak, 0, from, to);
+  const band = { from, to, steps: CORRELATION_INTEGRAL_STEPS };
+  return weightedMoment(peak, cosine, band) / weightedMoment(peak, () => 1, band);
 }
 
 /**

@@ -278,6 +278,12 @@ clamp and returns half a second: a two-metre sea 0.4 m from crest to crest, draw
 panel reading "from the stated wind". So the wind supplies a period only where it passes the
 same comparison the disagreement note reports, and the height route takes over otherwise.
 
+**Sea state 9 has no ceiling, so no finite wind can supply its period.** The table's 14 m is a
+sentinel and not a bound, and a derivation that has to hold across a class cannot hold across
+an unbounded one. That is the third time an open end has been read as a bound in this
+repository — the panel's own sea state 9, Beaufort force 12 in the wind's display, and this —
+so anything with a class in it should be asked, once, whether its top is a number or a floor.
+
 **A file may state both a speed and a force, and they may not be the same wind.** The speed is
 used, being the narrower statement, but eighteen knots beside force 9 means one of them is
 wrong and the page says so rather than choosing in silence. Which is right is not something

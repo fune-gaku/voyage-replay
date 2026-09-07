@@ -763,8 +763,9 @@ describe("a wind that could not have raised the sea it is stated beside", () => 
    * passed and labelled a 2.5 m sea's period "from the stated wind".
    */
   it("only takes a period from a wind that could raise the roughest sea allowed", () => {
-    for (const state of [1, 3, 4, 6]) {
-      for (const knots of [0, 5, 10, 14, 20, 30, 45]) {
+    // Every state, including 9 - which is open above, so no finite wind can answer for it.
+    for (let state = 0; state < SEA_STATE_HEIGHT_METRES.length; state += 1) {
+      for (const knots of [0, 5, 14, 40, 90, 150]) {
         const environment = {
           seaState: state,
           wind: { speedKnots: knots, derivation: "measured" as const },
@@ -778,7 +779,10 @@ describe("a wind that could not have raised the sea it is stated beside", () => 
         ).toBeLessThanOrEqual(raised + 1e-9);
       }
     }
-  });
+    // Slow on purpose, and given room rather than thinned: each point builds two spectra,
+    // and each spectrum is twenty-odd four-thousand-step integrals. Cutting the sweep to
+    // fit five seconds would drop states, and it is the whole scale this property is about.
+  }, 30_000);
 
   /**
    * The case that found it. Fourteen knots raises 1.44 m with the margin, which clears the
@@ -790,6 +794,22 @@ describe("a wind that could not have raised the sea it is stated beside", () => 
       wind: { speedKnots: 14, derivation: "measured" },
     });
     expect(estimate?.periodFrom).toBe("height");
+  });
+
+  /**
+   * The class with no ceiling. The table's 14 is a sentinel, so a finite wind that clears it
+   * still cannot answer for the sea the class allows - the third time an open end has been
+   * read as a bound in this repository, after sea state 9 in the panels and Beaufort 12 in
+   * the wind's own display.
+   */
+  it("never takes a period from a wind for a sea state that has no ceiling", () => {
+    for (const knots of [30, 90, 150]) {
+      const estimate = seawayFrom({
+        seaState: 9,
+        wind: { speedKnots: knots, derivation: "measured" },
+      });
+      expect(estimate?.periodFrom, `${knots} kn`).toBe("height");
+    }
   });
 
   it("does not put a half-second period on the rough end of a nearly calm state", () => {
