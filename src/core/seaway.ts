@@ -196,8 +196,11 @@ export const SEA_STATE_HEIGHT_METRES: readonly (readonly [number, number])[] = [
 export function seawayFrom(environment: Environment | undefined): SeaEstimate | null {
   const wind = windFrom(environment);
   const waves = environment?.waves;
-  const period = periodFor(waves, wind);
   const direction = directionFor(waves, wind);
+  // The height first, because whether the wind can supply a period depends on whether it
+  // could have raised this sea - and the calm end is the one that has to be beyond it.
+  const calmest = calmestHeightMetres(waves, environment?.seaState);
+  const period = periodFor(waves, wind, calmest);
 
   if (waves?.significantHeightMetres !== undefined) {
     const seaway = seawayOf(waves.significantHeightMetres, period.seconds);
@@ -212,6 +215,17 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
     };
   }
   return fromSeaState(environment?.seaState, period, direction);
+}
+
+/** The gentlest sea the file allows, which is what the wind has to be able to account for. */
+function calmestHeightMetres(
+  waves: Environment["waves"],
+  seaState: number | null | undefined,
+): number {
+  if (waves?.significantHeightMetres !== undefined) return waves.significantHeightMetres;
+  const band =
+    seaState === null || seaState === undefined ? undefined : SEA_STATE_HEIGHT_METRES[seaState];
+  return band?.[0] ?? 0;
 }
 
 /**
@@ -247,18 +261,37 @@ function directionFor(
  *
  * The round trip disappears; **the bias does not**. Both routes assume a fully developed
  * sea, so both run long in enclosed water.
+ *
+ * ## And only where the wind could have raised the sea
+ *
+ * A stated calm with a stated two-metre swell is a valid file and a common situation - the
+ * swell is another system's, running in from somewhere the wind here says nothing about.
+ * Taking the period from that wind gives 0.5 seconds, because the clamp catches it, which
+ * is a two-metre sea 0.4 m from crest to crest: absurd geometry under a panel reading
+ * "from the stated wind".
+ *
+ * So the wind supplies a period only when it could have raised the sea in the first place,
+ * which is the same comparison `seaExceedsWind` reports. Where it could not, the height
+ * route takes over and the page says the height was what it came from.
  */
 function periodFor(
   waves: Environment["waves"],
   wind: WindEstimate | null,
+  heightMetres: number,
 ): { seconds: number | undefined; from: SeaEstimate["periodFrom"] } {
   if (waves?.peakPeriodSeconds !== undefined) {
     return { seconds: waves.peakPeriodSeconds, from: "stated" };
   }
-  if (wind?.source === "speed") {
+  if (wind?.source === "speed" && windCouldRaise(wind, heightMetres)) {
     return { seconds: periodFromWindSeconds(wind.fastestKnots), from: "wind" };
   }
   return { seconds: undefined, from: "height" };
+}
+
+/** The comparison `seaExceedsWind` reports, asked before there is a `SeaEstimate` to report on. */
+function windCouldRaise(wind: WindEstimate, heightMetres: number): boolean {
+  if (wind.fastestIsOpen) return true;
+  return fullyDevelopedHeightMetres(wind.fastestKnots) * WIND_DISAGREEMENT_MARGIN >= heightMetres;
 }
 
 function fromSeaState(
@@ -820,6 +853,16 @@ export interface WindEstimate {
   derivation: Derivation;
   /** Which figure the speed came out of, or that there was none. */
   source: "speed" | "force" | "direction-only";
+  /**
+   * Where a file states BOTH a speed and a force, whether they are the same wind. Null
+   * where it states only one, which is the usual case.
+   *
+   * The speed is used either way - it is the narrower statement - but a file that says 18
+   * knots and force 9 in the same breath has one of them wrong, and dropping the force in
+   * silence takes the disagreement out of the reader's hands. Nothing here decides which is
+   * right; it only declines to hide that there is a question.
+   */
+  statedForceAgrees: boolean | null;
 }
 
 /**
@@ -843,15 +886,24 @@ export function windFrom(environment: Environment | undefined): WindEstimate | n
       fastestKnots: wind.speedKnots,
       fastestIsOpen: false,
       source: "speed",
+      statedForceAgrees: forceAgrees(wind.speedKnots, wind.beaufortForce),
     };
   }
-  return { ...stated, ...speedOfForce(wind.beaufortForce) };
+  return { ...stated, ...speedOfForce(wind.beaufortForce), statedForceAgrees: null };
+}
+
+/** Whether a stated speed falls inside a stated force's class. Null where one is missing. */
+function forceAgrees(speedKnots: number, force: number | undefined): boolean | null {
+  const band = force === undefined ? undefined : BEAUFORT_KNOTS[force];
+  if (!band) return null;
+  const open = force === BEAUFORT_KNOTS.length - 1;
+  return speedKnots >= band[0] && (open || speedKnots <= band[1]);
 }
 
 /** A force is a class, so it comes back as one. No force at all comes back as no speed. */
 function speedOfForce(
   force: number | undefined,
-): Omit<WindEstimate, "fromDegreesTrue" | "derivation"> {
+): Omit<WindEstimate, "fromDegreesTrue" | "derivation" | "statedForceAgrees"> {
   const band = force === undefined ? undefined : BEAUFORT_KNOTS[force];
   if (!band) {
     return { slowestKnots: 0, fastestKnots: 0, fastestIsOpen: false, source: "direction-only" };

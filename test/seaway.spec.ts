@@ -594,8 +594,30 @@ describe("the wind, which is the figure a deck log always has", () => {
     });
   });
 
-  it("prefers the speed where a file gives both, being the narrower statement", () => {
-    expect(windFrom(windy({ speedKnots: 18, beaufortForce: 9 }))?.source).toBe("speed");
+  /**
+   * The speed is used - it is the narrower statement - but eighteen knots and force 9 in one
+   * file means one of them is wrong, and dropping the force in silence takes that out of the
+   * reader's hands. This test used to fix the silence in place.
+   */
+  it("prefers the speed where a file gives both, and says when the two disagree", () => {
+    const disagreeing = windFrom(windy({ speedKnots: 18, beaufortForce: 9 }));
+    expect(disagreeing?.source).toBe("speed");
+    expect(disagreeing?.fastestKnots).toBe(18);
+    expect(disagreeing?.statedForceAgrees).toBe(false);
+
+    // Eighteen knots is inside force 5, which runs 17 to 21.
+    expect(windFrom(windy({ speedKnots: 18, beaufortForce: 5 }))?.statedForceAgrees).toBe(true);
+  });
+
+  it("has nothing to say about agreement where only one of the two is stated", () => {
+    expect(windFrom(windy({ speedKnots: 18 }))?.statedForceAgrees).toBeNull();
+    expect(windFrom(windy({ beaufortForce: 5 }))?.statedForceAgrees).toBeNull();
+    expect(windFrom(windy({ fromDegreesTrue: 90 }))?.statedForceAgrees).toBeNull();
+  });
+
+  it("counts force 12 as agreeing with any speed above its floor, having no ceiling", () => {
+    expect(windFrom(windy({ speedKnots: 90, beaufortForce: 12 }))?.statedForceAgrees).toBe(true);
+    expect(windFrom(windy({ speedKnots: 30, beaufortForce: 12 }))?.statedForceAgrees).toBe(false);
   });
 
   it("carries a direction with no speed rather than inventing one", () => {
@@ -694,5 +716,57 @@ describe("what the wind settles about the sea, and what it does not", () => {
 
     const noSea = { wind: { speedKnots: 20, derivation: "measured" as const } };
     expect(seaExceedsWind(seawayFrom(noSea), windFrom(noSea))).toBeNull();
+  });
+});
+
+describe("a wind that could not have raised the sea it is stated beside", () => {
+  /**
+   * A calm and a two-metre swell is a valid file and a common situation: the swell belongs
+   * to another weather system. Taking the period from that wind ran the clamp and produced
+   * 0.5 seconds - a two-metre sea 0.4 m from crest to crest - under a panel reading "from
+   * the stated wind". Absurd geometry behind a plausible label, which is the failure this
+   * project exists to catch.
+   */
+  it("does not take a period from a calm", () => {
+    const calm = seawayFrom({
+      wind: { speedKnots: 0, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    expect(calm?.periodFrom).toBe("height");
+    expect(calm?.rough.peakPeriodSeconds).toBeGreaterThan(4);
+    expect(calm?.rough.peakWavelengthMetres).toBeGreaterThan(20);
+  });
+
+  it("does not take one from a breeze too light for the stated sea either", () => {
+    const light = seawayFrom({
+      wind: { speedKnots: 6, derivation: "measured" },
+      waves: { significantHeightMetres: 3, derivation: "measured" },
+    });
+    expect(light?.periodFrom).toBe("height");
+  });
+
+  it("still takes one where the wind can account for the sea", () => {
+    const consistent = seawayFrom({
+      wind: { speedKnots: 25, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    expect(consistent?.periodFrom).toBe("wind");
+  });
+
+  /**
+   * The same comparison the disagreement note reports, asked one step earlier. If the two
+   * ever fell out of step, a page could report a sea too big for its wind while having
+   * taken that sea's period from it.
+   */
+  it("declines the period exactly where it reports the disagreement", () => {
+    for (const knots of [0, 3, 6, 10, 14, 20, 30]) {
+      const environment = {
+        wind: { speedKnots: knots, derivation: "measured" as const },
+        waves: { significantHeightMetres: 2, derivation: "measured" as const },
+      };
+      const estimate = seawayFrom(environment);
+      const exceeds = seaExceedsWind(estimate, windFrom(environment));
+      expect(estimate?.periodFrom, `${knots} kn`).toBe(exceeds === true ? "height" : "wind");
+    }
   });
 });

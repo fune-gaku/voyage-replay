@@ -264,3 +264,15 @@ number — anything displaying it has to test for openness before testing them f
 The period now runs forwards from a wind where one is stated, rather than backwards out of a
 height. **The round trip disappears; the bias does not** — both routes assume a sea that has
 stopped growing, so both run long in enclosed water.
+
+**A wind cannot supply a period for a sea it could not have raised.** A stated calm beside a
+stated two-metre swell is a valid file and an ordinary situation — the swell belongs to
+another weather system. Running Pierson-Moskowitz forwards from that wind hits the period
+clamp and returns half a second: a two-metre sea 0.4 m from crest to crest, drawn under a
+panel reading "from the stated wind". So the wind supplies a period only where it passes the
+same comparison the disagreement note reports, and the height route takes over otherwise.
+
+**A file may state both a speed and a force, and they may not be the same wind.** The speed is
+used, being the narrower statement, but eighteen knots beside force 9 means one of them is
+wrong and the page says so rather than choosing in silence. Which is right is not something
+this tool can settle — but the sea drawn from one is not the sea drawn from the other.

@@ -910,3 +910,36 @@ describe("how the disagreement quotes the wind it is comparing against", () => {
     );
   });
 });
+
+describe("a file that states a speed and a force that are not the same wind", () => {
+  /**
+   * Eighteen knots and force 9 in one file means one of them is wrong. The speed is used,
+   * being the narrower statement - but using it in silence leaves a reader with no way to
+   * know the file disagreed with itself, and the sea drawn from one is not the sea drawn
+   * from the other.
+   */
+  it("says so, and does not pretend to know which is right", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { speedKnots: 18, beaufortForce: 9, derivation: "measured" },
+      seaState: 4,
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the two are not the same wind");
+    expect(html).toContain("not something this tool can decide");
+    expect(html).toContain("<td>18 kn</td>");
+  });
+
+  it("stays quiet where the two agree, and where only one is stated", () => {
+    for (const wind of [
+      { speedKnots: 18, beaufortForce: 5 },
+      { speedKnots: 18 },
+      { beaufortForce: 5 },
+    ]) {
+      const subject = scenario();
+      subject.environment = { wind: { derivation: "measured" as const, ...wind }, seaState: 4 };
+      expect(panelsFor(subject)).not.toContain("not the same wind");
+    }
+  });
+});

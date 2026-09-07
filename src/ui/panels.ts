@@ -484,14 +484,33 @@ function seaSection(scenario: Scenario): string {
 function windRows(conditions: Conditions): string {
   const { wind } = conditions;
   if (!wind) return "";
-  return keyValueTable([
-    [
-      "Wind from",
-      wind.fromDegreesTrue === null ? "not stated" : `${wind.fromDegreesTrue} deg true`,
-    ],
-    ["Wind speed", windSpeed(wind)],
-    ["Wind derivation", wind.derivation],
-  ]);
+  return (
+    keyValueTable([
+      [
+        "Wind from",
+        wind.fromDegreesTrue === null ? "not stated" : `${wind.fromDegreesTrue} deg true`,
+      ],
+      ["Wind speed", windSpeed(wind)],
+      ["Wind derivation", wind.derivation],
+    ]) + forceNote(wind)
+  );
+}
+
+/**
+ * Where a file states a speed AND a force that are not the same wind.
+ *
+ * The speed is what gets used, being the narrower statement - but eighteen knots and force
+ * 9 in one file means one of them is wrong, and using one in silence would leave a reader
+ * with no way to know the file disagreed with itself. Nothing here decides which is right.
+ */
+function forceNote(wind: WindEstimate): string {
+  if (wind.statedForceAgrees !== false) return "";
+  return note(
+    `The file also states a Beaufort force, and the two are not the same wind: ` +
+      `${wind.fastestKnots} kn does not fall in that force's class. The speed is used, ` +
+      "being the narrower statement, and which of the two is right is not something this " +
+      "tool can decide - but the sea drawn from one would not be the sea drawn from the other.",
+  );
 }
 
 /**
