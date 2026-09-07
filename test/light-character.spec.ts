@@ -312,6 +312,21 @@ describe("reading a Light List abbreviation", () => {
     expect(parseCharacter("Q(3) W 10s").read).toBe(true);
   });
 
+  /**
+   * A Morse light's bracket holds letters written together. Split on `+` like a group of
+   * flashes, `Mo(A+B)` would become the letters AB, print back as `Mo(AB)`, and be drawn as
+   * one run of elements with no letter gap in it - which is neither A nor B but the code for
+   * something else entirely.
+   */
+  it("reads two letters written together, and refuses a separator between them", () => {
+    expect(characterOf("Mo(AB) W 14s").morse).toBe("AB");
+    expect(formatCharacter(characterOf("Mo(AB) W 14s"))).toBe("Mo(AB) W 14s");
+    expect(parseCharacter("Mo(A+B) W 14s")).toEqual({
+      read: false,
+      because: "a letter that is not in the Morse code",
+    });
+  });
+
   it("writes back what it read", () => {
     for (const text of ["Fl(2+1) R 10s", "Q(6)+LFl 15s", "Iso W 4s", "Mo(A) W 7s", "VQ"]) {
       expect(formatCharacter(characterOf(text))).toBe(text.replace(" + ", "+"));
@@ -406,6 +421,18 @@ describe("the sequences E-110 prints as its own examples", () => {
     ]);
     expect(flashes("Oc W 4s")).toEqual([3]);
     expect(eclipses("Oc W 4s")).toEqual([1]);
+  });
+
+  /**
+   * Three dots of darkness between letters against one between elements - the Morse code's
+   * own spacing (ITU-R M.1677). Level them and A and B run together into a third code.
+   */
+  it("keeps two letters apart by three times the gap inside one", () => {
+    const dark = eclipses("Mo(AB) W 14s");
+    // A is dot-dash, B is dash-dot-dot-dot: the gap after A's dash is the third eclipse.
+    expect(dark[1]).toBeCloseTo(1.5, 9);
+    expect(dark[0]).toBeCloseTo(0.5, 9);
+    expect(cycleSeconds(sequence("Mo(AB) W 14s"))).toBeCloseTo(14, 9);
   });
 
   it("gives a Morse A a dot, a dash and four and a half seconds of darkness", () => {

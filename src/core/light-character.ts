@@ -405,20 +405,40 @@ function takeGroups(
 
   const close = rest.indexOf(")");
   if (close < 0) return wrong;
-  const parts = rest.slice(1, close).split("+");
-  const counts = parts.map((part) => (klass === "Mo" ? letterCode(part) : countOf(part)));
+  const inside = rest.slice(1, close);
+  if (klass === "Mo") return morseLetters(inside, close + 1, wrong);
+
+  const counts = inside.split("+").map(countOf);
   if (counts.some((count) => count === null)) return wrong;
   return { counts: counts as number[], consumed: close + 1 };
+}
+
+/**
+ * A Morse light's bracket, which holds letters written together: `Mo(A)`, `Mo(AB)`.
+ *
+ * Not split on `+`, which is what a group of flashes uses. Read that way `Mo(A+B)` would
+ * become the letters AB, print back as `Mo(AB)`, and be drawn as one run of elements with no
+ * letter gap in it - which is neither A nor B but the code for something else. E-110 Table 2
+ * class 8 allows "a character or characters", so two letters are read; a separator that is
+ * not part of the vocabulary is refused instead of being dropped.
+ */
+function morseLetters(
+  inside: string,
+  consumed: number,
+  wrong: Unreadable,
+): { counts: number[]; consumed: number } | Unreadable {
+  const codes: number[] = [];
+  for (let i = 0; i < inside.length; i += 1) {
+    const letter = inside.charAt(i);
+    if (MORSE[letter] === undefined) return wrong;
+    codes.push(letter.charCodeAt(0));
+  }
+  return { counts: codes, consumed };
 }
 
 /** A group of none is not a group; every other class counts flashes or eclipses. */
 function countOf(part: string): number | null {
   return /^\d+$/.test(part) && Number(part) > 0 ? Number(part) : null;
-}
-
-/** A single letter the Morse code has. */
-function letterCode(part: string): number | null {
-  return MORSE[part] === undefined ? null : part.charCodeAt(0);
 }
 
 function takeColours(part: string): LightColour[] | null {
@@ -673,6 +693,14 @@ function morse(character: LightCharacter, colour: LightColour): Phase[] {
       const dash = element === "-";
       phases.push({ seconds: dash ? dot * 3 : dot, colour, role: dash ? "dash" : "dot" });
       phases.push({ seconds: dot, colour: null });
+    }
+    // Three dots of darkness between letters against one between elements - the Morse code's
+    // own spacing (ITU-R M.1677). Level them and two letters run together into a third,
+    // longer code that means something else.
+    const gap = phases.at(-1);
+    if (gap && i < character.morse.length - 1) {
+      gap.seconds = dot * 3;
+      gap.role = "separator";
     }
   }
   return closeThePeriod(phases, character.periodSeconds, dot);
