@@ -195,7 +195,7 @@ export function buildScene(
   extentMetres: number,
   ground?: Ground,
 ): SceneParts {
-  const night = isNight(environment);
+  const night = isNight(environment?.lightCondition);
   const palette = night ? NIGHT : DAY;
 
   const scene = new Scene();
@@ -405,13 +405,16 @@ function standAt(parts: Switchable, eye: LocalPosition | null, heading: number):
   parts.terrain?.follow(eye, heading);
 }
 
-/** Twilight is drawn as night, and so is an unstated condition. */
-function isNight(environment: Environment | undefined): boolean {
-  return (
-    environment?.lightCondition === "night" ||
-    environment?.lightCondition === "twilight" ||
-    environment?.lightCondition === undefined
-  );
+/**
+ * Twilight is drawn as night, and so is an unstated condition.
+ *
+ * Exported because `ui/panels.ts` has to describe what was actually drawn, and asking this
+ * is the only way it can be sure it is describing the same picture. Reimplementing the rule
+ * there would be two answers to one question - the fault `isPlacedAt` and `placementOf`
+ * were split to avoid - and the page would go on declaring a fine day over a night.
+ */
+export function isNight(stated: Environment["lightCondition"]): boolean {
+  return stated === "night" || stated === "twilight" || stated === undefined;
 }
 
 /**

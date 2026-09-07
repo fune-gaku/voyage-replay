@@ -14,6 +14,7 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { isNight } from "../render/scene.js";
 import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
@@ -92,6 +93,31 @@ function sky(scenario: Scenario): string {
   );
 }
 
+/**
+ * What sky the view put over this scenario, which is a claim of its own.
+ *
+ * A day is drawn clear: the light then comes mostly from one direction, so a sea has a lit
+ * face and a shaded one and a swell has shape. An overcast sky lights both alike and
+ * flattens it. Cloud is what decides, and no report this project has met states it.
+ *
+ * A night is not drawn clear or cloudy - it is drawn dark, and the dark is the evidence -
+ * so the sentence belongs only over a day. It asks the renderer which it drew rather than
+ * working it out again, because two answers to that question is how a page ends up
+ * declaring a fine day over a night.
+ */
+function drawnSky(conditions: Conditions): string {
+  if (isNight(conditions.statedLight)) {
+    return (
+      "The view draws this as night, as it does an unstated condition and a stated " +
+      "twilight; from a wheelhouse the dark is the evidence. "
+    );
+  }
+  return (
+    "The view draws a fine day, because a sky has to be drawn and cloud is the one thing " +
+    "that would decide it - which nothing states. "
+  );
+}
+
 function visibilityText({ visibilityMetres }: Conditions): string {
   if (visibilityMetres === null) return "not stated";
   return `${visibilityMetres} m (${(visibilityMetres / 1852).toFixed(1)} NM)`;
@@ -111,11 +137,7 @@ function skyCaveat(conditions: Conditions): string {
       ? ` The file says "${String(conditions.statedLight)}", which the sun's altitude does not support - check the date, the time zone and the position.`
       : "";
   return (
-    // The view draws a clear sky, which is a claim of its own now that the day palette is a
-    // fine one: the light comes mostly from one direction, so a sea has shape. An overcast
-    // sky would flatten it. Nothing in any report this project has met settles which.
-    "The view draws a fine day, because a sky has to be drawn and cloud is the one thing " +
-    "that would decide it - which nothing states. " +
+    drawnSky(conditions) +
     "Computed from the time and the origin, to about a hundredth of a degree for the sun " +
     "and a third of a degree for the moon. How much light actually reached the sea also " +
     "depends on cloud, which the source does not state." +

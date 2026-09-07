@@ -615,10 +615,27 @@ describe("what the picture itself is claiming", () => {
    * The day palette is a clear sky, which lights a wave's face and its back differently and
    * so gives a sea shape. An overcast one flattens it. Cloud decides, and no report states
    * it - so the picture is making the choice and the page has to own it.
+   *
+   * Over a NIGHT it must not say so at all. The sentence was unconditional when it went in
+   * and declared a fine day over the reference case's darkness, with a test pinning it
+   * there: the page and the picture flatly contradicting each other, which is the fault the
+   * sentence was added to fix.
    */
-  it("says the view draws a fine day, since nothing in the source settles the cloud", () => {
-    const html = panelsFor(scenario());
-    expect(html).toContain("The view draws a fine day");
-    expect(html).toContain("cloud is the one thing that would decide it");
+  it("says the view draws a fine day, but only where it draws a day", () => {
+    const day = scenario();
+    day.environment = { lightCondition: "day" };
+    expect(panelsFor(day)).toContain("The view draws a fine day");
+    expect(panelsFor(day)).toContain("cloud is the one thing that would decide it");
+
+    for (const environment of [
+      { lightCondition: "night" } as const,
+      { lightCondition: "twilight" } as const,
+      {},
+    ]) {
+      const subject = scenario();
+      subject.environment = environment;
+      expect(panelsFor(subject)).not.toContain("fine day");
+      expect(panelsFor(subject)).toContain("draws this as night");
+    }
   });
 });
