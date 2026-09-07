@@ -284,6 +284,15 @@ an unbounded one. That is the third time an open end has been read as a bound in
 repository — the panel's own sea state 9, Beaufort force 12 in the wind's display, and this —
 so anything with a class in it should be asked, once, whether its top is a number or a floor.
 
+**A sea of no height has no period, and saying so takes three layers.** Sea state 0 is a flat
+calm. Beside a calm wind it cleared "could this wind raise it" on nought against nought, took
+the relation's own zero, and had it clamped straight back to the spectrum's floor — so the page
+read "0.5 s (from the stated wind)" over water with no waves in it. Fixing the relation moved
+the lie one step down; fixing the guard moved it into the clamp. It stops where a
+`SeaEstimate` can say the period came from *nowhere*, and the page prints that instead of a
+figure. The `Seaway` still carries numbers for period and direction, because its fields are
+numbers — which is precisely why nothing may print them without asking first.
+
 **Two Beaufort classes have an end that is not a number.** Force 12 is 64 knots and up, so its
 top is a floor. Force 0 is "less than 1 knot" and not "nought to one" — a knot is already
 force 1 — so its top is a limit the class stops short of. Both have been read as plain numbers

@@ -166,10 +166,15 @@ export interface SeaEstimate {
   /** Sea state 9 is "over 14 m": `rough` is then a floor and not a bound. */
   roughEndIsOpen: boolean;
   /**
-   * Where the peak period came from: the file, the stated wind, or backwards out of the
-   * height. Not a boolean, because there are three answers and a page has to name which.
+   * Where the peak period came from: the file, the stated wind, backwards out of the
+   * height - or nowhere, because a sea of no height has no period to have come from.
+   *
+   * Not a boolean, because there are four answers and a page has to name which. "none" is
+   * the one that matters most: `Seaway` still carries a number there, since its type is a
+   * number and the spectrum clamps whatever it is handed, and that number is a fiction.
+   * Anything printing a period has to ask this first.
    */
-  periodFrom: "stated" | "wind" | "height";
+  periodFrom: "stated" | "wind" | "height" | "none";
   /** Likewise for the direction: the file, the stated wind, or a bearing this tool chose. */
   directionFrom: "stated" | "wind" | "assumed";
   /**
@@ -339,6 +344,12 @@ function periodFor(
   wind: WindEstimate | null,
   heightMetres: number,
 ): { seconds: number | undefined; from: SeaEstimate["periodFrom"] } {
+  // A sea of no height has no period, and every route into one is a fiction. A flat calm
+  // beside a calm wind cleared the "could this wind raise it" test on nought against nought,
+  // took the relation's own zero, and had it clamped straight back to the spectrum's floor -
+  // so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
+  // the relation alone moved the lie one step down; this is where it has to stop.
+  if (heightMetres <= 0) return { seconds: undefined, from: "none" };
   if (waves?.peakPeriodSeconds !== undefined) {
     return { seconds: waves.peakPeriodSeconds, from: "stated" };
   }

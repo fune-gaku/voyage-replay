@@ -462,13 +462,17 @@ function seaSection(scenario: Scenario): string {
     ["Significant height", heightRange(sea)],
     [
       "Peak period",
-      `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
+      sea.periodFrom === "none"
+        ? "no waves to have one"
+        : `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
     ],
     [
       "Coming from",
-      sea.fromDegreesTrue === null
-        ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
-        : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
+      sea.periodFrom === "none"
+        ? "no waves to come from anywhere"
+        : sea.fromDegreesTrue === null
+          ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
+          : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
     ],
     ["Derivation", sea.derivation],
   ];
@@ -583,6 +587,7 @@ const PERIOD_SOURCE: Record<SeaEstimate["periodFrom"], string> = {
   stated: "stated",
   wind: "from the stated wind",
   height: "assumed from the height",
+  none: "none",
 };
 
 const DIRECTION_SOURCE: Record<SeaEstimate["directionFrom"], string> = {
@@ -768,6 +773,13 @@ function heightSentence(sea: SeaEstimate): string {
 
 /** Only where the file left the period out, since then it is this project's guess and not hers. */
 function periodSentence(sea: SeaEstimate): string {
+  if (sea.periodFrom === "none") {
+    return (
+      " The file states a flat sea, so there is no period and no direction to give: a " +
+      "`Seaway` still carries figures for both because its fields are numbers, and those " +
+      "figures are not reported here because they mean nothing."
+    );
+  }
   if (sea.periodFrom === "stated") return "";
   const source =
     sea.periodFrom === "wind"

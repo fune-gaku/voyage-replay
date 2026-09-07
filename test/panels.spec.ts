@@ -946,3 +946,29 @@ describe("a file that states a speed and a force that are not the same wind", ()
     }
   });
 });
+
+describe("a flat sea, which has no period and no direction", () => {
+  /**
+   * Sea state 0 with a calm wind printed "0.5 s (from the stated wind)" - the spectrum's
+   * lower clamp, presented as a measurement of water with no waves in it. The figures still
+   * exist on the `Seaway`, because its fields are numbers; the page must not present them.
+   */
+  it("reports no period and no direction rather than the spectrum's floor", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0, wind: { speedKnots: 0, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves to have one");
+    expect(html).toContain("no waves to come from anywhere");
+    expect(html).toContain("there is no period and no direction to give");
+    expect(html).not.toContain("0.5 s");
+    expect(html).not.toContain("from the stated wind");
+  });
+
+  it("still gives a period for the faintest sea that has one", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 1 };
+    const html = panelsFor(subject);
+    expect(html).not.toContain("no waves to have one");
+  });
+});

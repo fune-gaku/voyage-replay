@@ -935,3 +935,45 @@ describe("what a calm is worth as a period", () => {
     expect(periodFromWindSeconds(40) / periodFromWindSeconds(20)).toBeCloseTo(2, 9);
   });
 });
+
+describe("a sea with no height in it", () => {
+  /**
+   * The reachable corner that survived two fixes. Sea state 0 has a roughest height of
+   * nought, a calm wind clears "could this raise it" on nought against nought, the relation
+   * hands back its own zero - and `seawayOf` clamps that straight to the spectrum's floor,
+   * so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
+   * the relation moved the lie one step down rather than removing it.
+   */
+  it("has no period from any source, however the file states it", () => {
+    for (const environment of [
+      { seaState: 0, wind: { speedKnots: 0, derivation: "measured" as const } },
+      { seaState: 0, wind: { speedKnots: 30, derivation: "measured" as const } },
+      { seaState: 0 },
+      { waves: { significantHeightMetres: 0, derivation: "measured" as const } },
+      {
+        waves: {
+          significantHeightMetres: 0,
+          peakPeriodSeconds: 8,
+          derivation: "measured" as const,
+        },
+      },
+    ]) {
+      expect(seawayFrom(environment)?.periodFrom, JSON.stringify(environment)).toBe("none");
+    }
+  });
+
+  it("still has a period on its Seaway, which is why nothing may print it unasked", () => {
+    const flat = seawayFrom({ seaState: 0 });
+    // The field is a number and the spectrum clamps whatever it is given, so a figure exists.
+    expect(flat?.rough.peakPeriodSeconds).toBeGreaterThan(0);
+    // It means nothing, which is what `periodFrom` is for.
+    expect(flat?.periodFrom).toBe("none");
+  });
+
+  it("keeps a period for the faintest sea that has any height at all", () => {
+    expect(seawayFrom({ seaState: 1 })?.periodFrom).toBe("height");
+    expect(
+      seawayFrom({ waves: { significantHeightMetres: 0.05, derivation: "measured" } })?.periodFrom,
+    ).toBe("height");
+  });
+});
