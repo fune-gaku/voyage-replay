@@ -25,12 +25,27 @@ import {
 } from "three";
 
 import type { LocalPosition } from "../core/geodesy.js";
+import {
+  ASSUMED_DIRECTION_DEGREES_TRUE,
+  seawayFrom,
+  surfaceAt,
+  waveComponents,
+  type SurfacePoint,
+  type WaveComponent,
+} from "../core/seaway.js";
 import type { Environment } from "../core/types.js";
 import { sampleAt, type PreparedPoint, type PreparedTrack } from "../core/track.js";
 import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
+import {
+  applyWaves,
+  displacedFraction,
+  makeWaveUniforms,
+  setWaves,
+  type WaveUniforms,
+} from "./waves.js";
 import { buildWater } from "./water.js";
 import type { LatLon } from "../core/types.js";
 
@@ -92,6 +107,28 @@ export interface SceneParts {
    * land is fetched ahead of THIS bow. See `render/curvature.ts`.
    */
   setEye(eye: LocalPosition | null, headingDegreesTrue: number): void;
+  /**
+   * How far into the scenario playback has got, in seconds from its start.
+   *
+   * Seconds from the START rather than the epoch, and that is not tidiness: a uniform is a
+   * float, an epoch second is past 1.7e9, and at that size a float's steps are longer than
+   * a wave period. The sea would advance in jumps of a minute or stop altogether.
+   *
+   * The sea therefore runs on the SCENARIO's clock, so it is time-lapsed along with
+   * everything else. A sea moving at its own rate while the ships run at sixty times theirs
+   * would be the only thing in the frame telling the truth about time, which reads as a
+   * still sea rather than as honesty.
+   */
+  setSeaClock(secondsFromStart: number): void;
+  /**
+   * The sea under a point, as the water is DRAWN there.
+   *
+   * Anything that floats has to ask this rather than the sea itself. The water's geometry
+   * fades to flat past a few hundred metres - the disc runs out of vertices, not the sea
+   * out of waves - and a buoy riding the true field over visibly still water would be a
+   * buoy hovering. One function, so the two cannot come apart.
+   */
+  drawnSurfaceAt(position: LocalPosition, secondsFromStart: number): SurfacePoint;
 }
 
 /**
@@ -108,9 +145,28 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 5000
  * `land` is the terrain's own colour, and at night it is nearly black on purpose: from a
  * wheelhouse a coast at ten miles IS a shape slightly darker than the sky, and painting it
  * any lighter would be inventing a moon. Only the skyline is meant to be readable.
+ *
+ * ## The day palette is a fine day, and that is a claim
+ *
+ * It was an overcast one before - a grey-blue sky with almost all of the light arriving as
+ * ambient - which is no less of a claim and a worse one for looking at a sea: with the
+ * light coming from everywhere, a wave face and its back are lit alike and the swell goes
+ * flat. A clear sky puts most of the light in one direction, so the sea has a lit side and
+ * a shaded one, and the water hands back a blue rather than a grey.
+ *
+ * **Neither is in the source.** Cloud is what decides this and no report this project has
+ * met states it - the same gap `ui/panels.ts` already declares about how much moonlight
+ * reached the sea. Saying which one is drawn belongs in the format (`environment` has no
+ * cloud field yet) rather than in a constant; until it does, this is the honest default,
+ * because a fine day is the condition a reader assumes when nothing says otherwise.
+ *
+ * The sun's DIRECTION is still arbitrary, and deliberately left so. It is computable from
+ * the time and the place - `core/conditions.ts` already computes it - and pointing it
+ * somewhere that flatters the picture instead would be the kind of thing this project
+ * spends its time undoing. Issue #15.
  */
 const NIGHT = { sky: 0x05080e, water: 0x0a121d, land: 0x03050a, ambient: 0.28 };
-const DAY = { sky: 0x9fb8cf, water: 0x2b4a63, land: 0x6b7a5e, ambient: 0.95 };
+const DAY = { sky: 0x74a5dc, water: 0x1d4360, land: 0x6b7a5e, ambient: 0.55 };
 
 /**
  * What the tiles are multiplied by - and it does NOT follow the light condition.
@@ -139,7 +195,7 @@ export function buildScene(
   extentMetres: number,
   ground?: Ground,
 ): SceneParts {
-  const night = isNight(environment);
+  const night = isNight(environment?.lightCondition);
   const palette = night ? NIGHT : DAY;
 
   const scene = new Scene();
@@ -148,11 +204,8 @@ export function buildScene(
   scene.fog = fog;
 
   const curvature = makeCurvatureUniforms();
-  const water = addWater(scene, palette, curvature);
-  const terrain = addTerrain(scene, palette, curvature, ground);
-  const basemap = ground ? buildBasemap(ground.origin, MAP_TINT, ground.onFirstTile) : null;
-  if (basemap) scene.add(basemap.group);
-
+  const water = addWater(scene, palette, curvature, environment);
+  const { terrain, basemap } = addGround(scene, palette, curvature, ground);
   const setLighting = addLighting(scene, palette, night);
 
   // Before the grid, so the scene's children keep the order they had when this was one
@@ -161,21 +214,83 @@ export function buildScene(
   actors.name = "actors";
   scene.add(actors);
 
-  const parts = { basemap, terrain, water, fog, curvature, grid: addGrid(scene) };
+  const parts = {
+    basemap,
+    terrain,
+    water: water.mesh,
+    fog,
+    curvature,
+    waves: water.waves,
+    sea: water.sea,
+    grid: addGrid(scene),
+  };
   return { scene, actors, ...viewControls(scene, parts, setLighting, extentMetres) };
 }
 
-/** The sea, which both views stand on and only one of them lets bend. */
-function addWater(scene: Scene, palette: Palette, curvature: CurvatureUniforms): Mesh {
+/**
+ * The sea, which both views stand on, only one of them lets bend, and only one has waves.
+ *
+ * The roughest sea the source allows is the one drawn. Not the calm end and not a midpoint:
+ * among the seas a class permits, the calmer the picture the stronger its claim about what
+ * the watchkeeper could see - which is the same argument that made a FLAT sea the strongest
+ * claim of all and is the reason any of this exists. The panels carry the whole interval.
+ *
+ * **Sea state 9 is the exception, and it goes the wrong way.** Its class is "over 14 m"
+ * with nothing above, so `rough` is the FLOOR - the calmest sea the class allows, and
+ * therefore the strongest claim available - and drawing it is the one case where this
+ * picture understates. Nothing here can fix that, since the class states no upper bound to
+ * draw; `ui/panels.ts` says outright which end was drawn and what it implies.
+ *
+ * **Roughness drops a long way where there are waves, and that is what makes them visible
+ * at all.** Daylight sea texture is specular: what the eye reads as waves is the sky and
+ * the sun reflected at angles that change across a crest. At the flat sea's roughness the
+ * shading is almost pure ambient diffuse, a perturbed normal moves it by a few per cent,
+ * and a correct wave field renders as a flat sheet - measured before this was changed.
+ */
+function addWater(
+  scene: Scene,
+  palette: Palette,
+  curvature: CurvatureUniforms,
+  environment: Environment | undefined,
+): { mesh: Mesh; waves: WaveUniforms; sea: WaveComponent[] } {
+  const sea = seawayFrom(environment);
   const material = new MeshStandardMaterial({
     color: palette.water,
-    roughness: 0.95,
+    roughness: sea ? 0.34 : 0.95,
     metalness: 0.1,
   });
   applyCurvature(material, curvature);
-  const water = buildWater(material);
-  scene.add(water);
-  return water;
+
+  const waves = makeWaveUniforms();
+  waves.uSkyColour.value.setHex(palette.sky);
+  applyWaves(material, waves);
+  // Where the source states no direction the sea still has to run somewhere, so it runs the
+  // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
+  // bearing plainly readable off the picture, which is exactly why it cannot go undeclared.
+  const components = sea
+    ? waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE)
+    : [];
+  setWaves(waves, components);
+
+  const mesh = buildWater(material);
+  scene.add(mesh);
+  return { mesh, waves, sea: components };
+}
+
+/**
+ * The two layers that need to know where in the world this is, which is the one thing they
+ * have in common: neither exists without a `Ground`, and each answers for its own credit.
+ */
+function addGround(
+  scene: Scene,
+  palette: Palette,
+  curvature: CurvatureUniforms,
+  ground: Ground | undefined,
+): { terrain: Terrain | null; basemap: Basemap | null } {
+  const terrain = addTerrain(scene, palette, curvature, ground);
+  const basemap = ground ? buildBasemap(ground.origin, MAP_TINT, ground.onFirstTile) : null;
+  if (basemap) scene.add(basemap.group);
+  return { terrain, basemap };
 }
 
 /** The land, if this scene knows where in the world it is. Hidden until a bridge asks. */
@@ -201,6 +316,8 @@ interface Switchable {
   water: Mesh;
   fog: Fog;
   curvature: CurvatureUniforms;
+  waves: WaveUniforms;
+  sea: WaveComponent[];
   grid: GridControl;
 }
 
@@ -210,7 +327,7 @@ function viewControls(
   parts: Switchable,
   setLighting: (on: boolean) => void,
   extentMetres: number,
-): Pick<SceneParts, "setView" | "setDiagramView" | "setEye"> {
+): Pick<SceneParts, "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "drawnSurfaceAt"> {
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -230,6 +347,11 @@ function viewControls(
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
+    setSeaClock: (secondsFromStart: number): void => {
+      parts.waves.uWaveTime.value = secondsFromStart;
+    },
+    drawnSurfaceAt: (position: LocalPosition, secondsFromStart: number): SurfacePoint =>
+      drawnSurface(parts, position, secondsFromStart),
   };
 }
 
@@ -240,6 +362,9 @@ function setDiagram(
   on: boolean,
 ): void {
   setLighting(on);
+  // A chart has never had waves drawn on it - the same decision this function already makes
+  // about the lighting, the map's tint and the grid.
+  parts.waves.uWaveScale.value = on ? 0 : 1;
   if (parts.basemap) parts.basemap.group.visible = on;
   parts.grid.setVisible(on);
   // Fog is weather seen from a bridge; a chart is not drawn through it. Leaving it on
@@ -247,6 +372,30 @@ function setDiagram(
   // few hundred metres across renders as a sheet of empty sky, and any view taken far
   // enough out does the same whatever the scenario.
   scene.fog = on ? null : parts.fog;
+}
+
+/**
+ * The sea under a point, damped by the same fade the shader uses and switched off wherever
+ * the shader's is - so a chart, which has no waves, floats nothing.
+ */
+function drawnSurface(
+  parts: Switchable,
+  position: LocalPosition,
+  secondsFromStart: number,
+): SurfacePoint {
+  const eye = parts.curvature.uEye.value;
+  const away = Math.hypot(position.east - eye.x, -position.north - eye.z);
+  const fade = parts.waves.uWaveScale.value * displacedFraction(away);
+  const point = surfaceAt(
+    parts.sea,
+    { eastMetres: position.east, northMetres: position.north },
+    secondsFromStart,
+  );
+  return {
+    heightMetres: point.heightMetres * fade,
+    slopeEast: point.slopeEast * fade,
+    slopeNorth: point.slopeNorth * fade,
+  };
 }
 
 /** Everything that answers to where the watchkeeper is standing. */
@@ -262,13 +411,16 @@ function standAt(parts: Switchable, eye: LocalPosition | null, heading: number):
   parts.terrain?.follow(eye, heading);
 }
 
-/** Twilight is drawn as night, and so is an unstated condition. */
-function isNight(environment: Environment | undefined): boolean {
-  return (
-    environment?.lightCondition === "night" ||
-    environment?.lightCondition === "twilight" ||
-    environment?.lightCondition === undefined
-  );
+/**
+ * Twilight is drawn as night, and so is an unstated condition.
+ *
+ * Exported because `ui/panels.ts` has to describe what was actually drawn, and asking this
+ * is the only way it can be sure it is describing the same picture. Reimplementing the rule
+ * there would be two answers to one question - the fault `isPlacedAt` and `placementOf`
+ * were split to avoid - and the page would go on declaring a fine day over a night.
+ */
+export function isNight(stated: Environment["lightCondition"]): boolean {
+  return stated === "night" || stated === "twilight" || stated === undefined;
 }
 
 /**
@@ -291,14 +443,17 @@ function buildFog(
 /** Adds the two lights and hands back the switch described on `setDiagramLighting`. */
 function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boolean) => void {
   const ambient = new AmbientLight(0xffffff, palette.ambient);
-  const key = new DirectionalLight(0xffffff, night ? 0.25 : 1.1);
+  // A clear day is directional: most of the light from one place, little of it diffuse. The
+  // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
+  // which is not warm, and tinting it would be inventing a sunset.
+  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, night ? 0.25 : 1.75);
   key.position.set(1, 2, 1);
   scene.add(ambient);
   scene.add(key);
 
   return (on: boolean): void => {
     ambient.intensity = on ? Math.max(palette.ambient, 1.35) : palette.ambient;
-    key.intensity = on ? 0.8 : night ? 0.25 : 1.1;
+    key.intensity = on ? 0.8 : night ? 0.25 : 1.75;
   };
 }
 

@@ -1,5 +1,13 @@
 import { Box3, LineDashedMaterial } from "three";
-import type { AmbientLight, Color, Fog, GridHelper, Line, LineBasicMaterial } from "three";
+import type {
+  AmbientLight,
+  Color,
+  DirectionalLight,
+  Fog,
+  GridHelper,
+  Line,
+  LineBasicMaterial,
+} from "three";
 import { describe, expect, it } from "vitest";
 
 import { prepareTrack, sampleAt } from "../src/core/track.js";
@@ -317,5 +325,40 @@ describe("buildTrackLine", () => {
 
     // Four segments between five points, each drawn exactly once.
     expect(segments).toBe(4);
+  });
+});
+
+describe("what a fine day and a night are made of", () => {
+  /**
+   * The day palette is a clear day: most of the light arrives from one direction, so a
+   * wave's face and its back are lit differently and a swell has shape. An overcast one -
+   * which is what this was - lights them alike and flattens any sea. Neither is in the
+   * source, which is why the choice is written down rather than assumed.
+   */
+  it("puts most of a day's light in one direction, and most of a night's nowhere", () => {
+    const ambientOf = (scene: { children: { type: string }[] }): number =>
+      (scene.children.find((c) => c.type === "AmbientLight") as AmbientLight).intensity;
+    const keyOf = (scene: { children: { type: string }[] }): number =>
+      (scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight).intensity;
+
+    const day = buildScene({ lightCondition: "day" }, 1000).scene;
+    expect(keyOf(day)).toBeGreaterThan(ambientOf(day) * 2);
+
+    const night = buildScene({ lightCondition: "night" }, 1000).scene;
+    expect(keyOf(night)).toBeLessThan(ambientOf(night));
+  });
+
+  /**
+   * Warmth is the sun's. A night has a moon at most, which is not warm, and tinting its
+   * light would be drawing a sunset over a collision that happened in the dark.
+   */
+  it("leaves a night's light white and gives only the day's any warmth", () => {
+    const keyColour = (condition: "day" | "night"): { r: number; b: number } => {
+      const scene = buildScene({ lightCondition: condition }, 1000).scene;
+      const key = scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+      return { r: key.color.r, b: key.color.b };
+    };
+    expect(keyColour("day").r).toBeGreaterThan(keyColour("day").b);
+    expect(keyColour("night").r).toBe(keyColour("night").b);
   });
 });

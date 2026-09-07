@@ -14,7 +14,9 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
-import { meanOfHighest, type SeaEstimate } from "../core/seaway.js";
+import { ASSUMED_MARK } from "../render/mark.js";
+import { isNight } from "../render/scene.js";
+import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
 import {
@@ -23,7 +25,7 @@ import {
   type PreparedTrack,
   type SampledState,
 } from "../core/track.js";
-import type { Actor, Scenario, Vessel } from "../core/types.js";
+import type { Actor, Mark, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -38,7 +40,9 @@ export function renderPanels(scenario: Scenario, prepared: Prepared[]): string {
     section("Actors", actorTable(prepared)),
     section("Closest approach", approach(prepared, scenario)),
     section("What each ship showed the other", aspects(prepared, scenario)),
+    section("The sea", seaSection(scenario)),
     section("Whether the sea was in the way", occlusion(prepared, scenario)),
+    ...marksSection(scenario),
     section(`Plausibility screening (${findings.length})`, findingList(findings, scenario)),
   ].join("");
 }
@@ -91,6 +95,52 @@ function sky(scenario: Scenario): string {
   );
 }
 
+/**
+ * What sky the view put over this scenario, which is a claim of its own.
+ *
+ * A day is drawn clear: the light then comes mostly from one direction, so a sea has a lit
+ * face and a shaded one and a swell has shape. An overcast sky lights both alike and
+ * flattens it. Cloud is what decides, and no report this project has met states it.
+ *
+ * A night is not drawn clear or cloudy - it is drawn dark, and the dark is the evidence -
+ * so the sentence belongs only over a day. It asks the renderer which it drew rather than
+ * working it out again, because two answers to that question is how a page ends up
+ * declaring a fine day over a night.
+ */
+function drawnSky(conditions: Conditions): string {
+  if (isNight(conditions.statedLight)) {
+    return (
+      "The view draws this as night, as it does an unstated condition and a stated " +
+      "twilight; from a wheelhouse the dark is the evidence. "
+    );
+  }
+  if (conditions.statedLight === "restricted-visibility") return restrictedSky(conditions);
+  return (
+    "The view draws a fine day, because a sky has to be drawn and cloud is the one thing " +
+    "that would decide it - which nothing states. "
+  );
+}
+
+/**
+ * Restricted visibility is a statement about the air, not about the sun.
+ *
+ * `lightCondition` mixes two axes and this is the value that shows it: a fog at noon and a
+ * fog at midnight are both "restricted-visibility", and the enum cannot tell them apart. The
+ * view has to pick, and it picks a day - so a scenario that was foggy in the dark is drawn
+ * wrongly, and this is the sentence that says so rather than letting the picture pass.
+ */
+function restrictedSky({ visibilityMetres }: Conditions): string {
+  const fog =
+    visibilityMetres === null
+      ? "no distance is given, so no fog is drawn - only the word"
+      : `fog is drawn out to the stated ${visibilityMetres} m`;
+  return (
+    `The file says restricted visibility, which is a statement about the air and not about ` +
+    `the sun. The view therefore draws this as a day, and ${fog}. A fog in the dark carries ` +
+    "the same word and would be drawn wrongly here; the field cannot tell the two apart. "
+  );
+}
+
 function visibilityText({ visibilityMetres }: Conditions): string {
   if (visibilityMetres === null) return "not stated";
   return `${visibilityMetres} m (${(visibilityMetres / 1852).toFixed(1)} NM)`;
@@ -110,6 +160,7 @@ function skyCaveat(conditions: Conditions): string {
       ? ` The file says "${String(conditions.statedLight)}", which the sun's altitude does not support - check the date, the time zone and the position.`
       : "";
   return (
+    drawnSky(conditions) +
     "Computed from the time and the origin, to about a hundredth of a degree for the sun " +
     "and a third of a degree for the moon. How much light actually reached the sea also " +
     "depends on cloud, which the source does not state." +
@@ -381,6 +432,53 @@ interface Sighting {
 }
 
 /**
+ * What the sea was, and how much of that anybody wrote down.
+ *
+ * Its own section rather than a paragraph under the occlusion table, and that is a
+ * correction: the table needs two ships and the sea does not. A scenario with one ship and
+ * a stated sea drew three metres of it, with a readable height and a readable direction,
+ * and said nothing whatever about them - the picture asserting a sea the page never
+ * mentioned, which is the fault every other line here exists to prevent.
+ *
+ * Printed even when there is no sea to describe, because "nothing was stated" is the part a
+ * reader most needs and the flat water in the view is the strongest claim available.
+ */
+function seaSection(scenario: Scenario): string {
+  const at = Date.parse(scenario.meta.occurredAt) / 1000;
+  const { sea } = conditionsAt(scenario.origin, scenario.environment, at);
+  if (!sea) return `<p>${escapeHtml(NO_SEA)}</p>`;
+
+  const rows: [string, string][] = [
+    ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
+    ["Significant height", heightRange(sea)],
+    [
+      "Peak period",
+      `${sea.rough.peakPeriodSeconds.toFixed(1)} s${sea.periodAssumed ? " (assumed)" : ""}`,
+    ],
+    [
+      "Coming from",
+      sea.fromDegreesTrue === null
+        ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
+        : `${sea.fromDegreesTrue.toFixed(0)} deg true`,
+    ],
+    ["Derivation", sea.derivation],
+  ];
+  return keyValueTable(rows) + note(seaCaveat(sea));
+}
+
+function heightRange(sea: SeaEstimate): string {
+  const { calm, rough } = sea;
+  if (sea.source === "stated") return `${calm.significantHeightMetres} m`;
+  if (sea.roughEndIsOpen) return `${rough.significantHeightMetres} m or more`;
+  return `${calm.significantHeightMetres} to ${rough.significantHeightMetres} m`;
+}
+
+const NO_SEA =
+  "The file states no sea, and the view therefore draws flat water - which is not a " +
+  "neutral picture but the strongest claim available, that everything was in sight the " +
+  "whole time. An unstated sea is not a calm one.";
+
+/**
  * How much of the time a crest stood between the two.
  *
  * Two halves with quite different standing, and the table keeps them apart. The crest
@@ -499,22 +597,18 @@ function occlusionCaveat(sighting: Sighting, sea: SeaEstimate | null): string {
     `${sighting.observer.actor.id}'s eye and ${top.toFixed(1)} m for the top of ` +
     `${sighting.target.actor.id}'s superstructure - issue #8. Her lights stand higher than ` +
     `that and are correspondingly harder to hide, which this table does not answer for. ` +
-    seaCaveat(sea)
+    // The biases belong to figures, and where no sea is stated there are none: a caveat
+    // qualifying an empty column reads as though something had been computed.
+    (sea
+      ? "The sea these figures were run against is described in its own section above. " +
+        "They count crossings independently, which runs high, and treat the sea as long " +
+        "crested along one line, which runs low."
+      : "The last column is empty rather than zero, for the reason given under The sea.")
   );
 }
 
-function seaCaveat(sea: SeaEstimate | null): string {
-  if (!sea) {
-    return (
-      "The file states no sea, so the last column is empty rather than zero: an unstated " +
-      "sea is not a calm one, and the view's flat water is the strongest claim available."
-    );
-  }
-  return (
-    `${heightSentence(sea)}${periodSentence(sea)} ${tailNote(sea)} The figures count crossings ` +
-    "independently, which runs high, and treat the sea as long crested along one line, which " +
-    "runs low."
-  );
+function seaCaveat(sea: SeaEstimate): string {
+  return `${heightSentence(sea)}${periodSentence(sea)}${directionSentence(sea)} ${tailNote(sea)}`;
 }
 
 /**
@@ -534,14 +628,23 @@ function heightSentence(sea: SeaEstimate): string {
     return `The file states a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
   }
   if (sea.roughEndIsOpen) {
+    // The one class where the drawn sea is the CALMEST the source allows rather than the
+    // roughest, because the class has no roughest. That is the weaker picture and so the
+    // stronger claim, which is the opposite of every other row and has to be said outright.
     return (
       `Sea state gives a significant height of ${rough.significantHeightMetres} m or more ` +
-      `(${derivation}), with nothing above it, so the last column is a floor and not a range.`
+      `(${derivation}), with nothing above it, so the last column is a floor and not a range. ` +
+      `The view draws ${rough.significantHeightMetres} m, which here is the least the class ` +
+      "allows rather than the most - the sea shown is the calmest that fits, and a calmer " +
+      "picture is the stronger claim about what could be seen."
     );
   }
   return (
     `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
-    `${rough.significantHeightMetres} m (${derivation}).`
+    `${rough.significantHeightMetres} m (${derivation}), and the view draws the rougher end ` +
+    "of that - among the seas a class permits, the calmer the picture the stronger its " +
+    "claim about what could be seen. Do not measure a wave height off the picture: it is " +
+    "one end of the range above, not a figure."
   );
 }
 
@@ -554,6 +657,27 @@ function periodSentence(sea: SeaEstimate): string {
   );
 }
 
+/**
+ * Which way the sea runs, and whether anybody said so.
+ *
+ * A sea state carries no direction, so most scenarios reach the renderer without one - and
+ * the renderer still has to draw the water running somewhere. The waves are drawn from a
+ * single direction with a narrow spread, which means a reader can take a bearing off the
+ * picture, which means an undeclared one is the picture asserting a figure the file does
+ * not contain. A wind would settle it properly; the format has no field for one.
+ */
+function directionSentence(sea: SeaEstimate): string {
+  if (sea.fromDegreesTrue !== null) {
+    return ` The file puts the sea as coming from ${sea.fromDegreesTrue.toFixed(0)} degrees true.`;
+  }
+  return (
+    ` Nothing states which way the sea runs - a sea state does not carry a direction - so ` +
+    `the view draws it from ${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} degrees true, which ` +
+    "is a bearing this tool chose and not one the source gives. Do not read a wave direction " +
+    "off the picture unless this line says the file supplied it."
+  );
+}
+
 /** Why the rough end is not the height of the waves. */
 function tailNote(sea: SeaEstimate): string {
   const hs = sea.rough.significantHeightMetres;
@@ -561,6 +685,61 @@ function tailNote(sea: SeaEstimate): string {
     `Significant height is the mean of the highest third: at the rough end the highest tenth ` +
     `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
     `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
+  );
+}
+
+/**
+ * The buoys, and how much of each one is somebody's word.
+ *
+ * A mark's position is the whole of what a report usually gives, and it is the part that
+ * matters - which side of it she passed. Its shape and its height are what the renderer
+ * needs to draw one, they are almost never written down, and on screen an assumed pillar of
+ * an assumed height is indistinguishable from a measured one. A can is port hand and a cone
+ * starboard, so a shape this tool chose is a statement this tool made.
+ *
+ * Absent entirely when a scenario carries no marks, rather than an empty table: a section
+ * headed "Sea marks" over nothing invites the reading that there were none.
+ */
+function marksSection(scenario: Scenario): string[] {
+  const marks = scenario.marks ?? [];
+  if (marks.length === 0) return [];
+  const head = ["id", "name", "position", "shape", "colour", "height"];
+  const rows = marks.map((mark) => [
+    mark.id,
+    mark.name ?? "-",
+    `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
+    stated(mark.shape, ASSUMED_MARK.shape),
+    stated(mark.colour, ASSUMED_MARK.colour),
+    mark.heightMetres === undefined
+      ? `assumed ${ASSUMED_MARK.heightMetres} m`
+      : `${mark.heightMetres} m`,
+  ]);
+  return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
+}
+
+/**
+ * What the file said, or what was drawn in its place - never the two looking alike.
+ *
+ * The fallbacks come from `render/mark.ts` rather than being written out again here. Two
+ * copies drift, and when they do the page names a shape the picture is not drawing, which
+ * is the exact thing this column exists to prevent.
+ */
+function stated(value: string | undefined, fallback: string): string {
+  return value ?? `assumed ${fallback}`;
+}
+
+function marksCaveat(marks: Mark[]): string {
+  const assumed = marks.filter((m) => !m.shape || !m.colour || m.heightMetres === undefined);
+  const drawn =
+    "A mark is drawn riding the sea as the water is drawn beneath it, which past a few " +
+    "hundred metres has faded flat - so a distant buoy stops heaving because the water " +
+    "under it has, not because the sea has. It follows the surface exactly, which is right " +
+    "for something small against the wave and wrong in a short steep sea: issue #32.";
+  if (assumed.length === 0) return drawn;
+  return (
+    `${assumed.length} of ${marks.length} carry a shape, colour or height this tool chose ` +
+    "rather than the source - and a can is port hand where a cone is starboard, so a shape " +
+    `drawn here is a statement made here (issue #34). ${drawn}`
   );
 }
 

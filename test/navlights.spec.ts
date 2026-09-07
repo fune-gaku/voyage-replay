@@ -1,20 +1,25 @@
 import type { CircleGeometry, Mesh, Points } from "three";
 import { describe, expect, it } from "vitest";
 
+import { assumedHeights } from "../src/actors/vessel/heights.js";
 import { lightsForVessel } from "../src/actors/vessel/lights.js";
 import { buildNavigationLights } from "../src/render/navlights.js";
 import { BIG_SHIP, COASTER } from "./fixtures.js";
 
 const FREEBOARD = 5;
 
-function lamps(vessel = COASTER): Points[] {
-  return buildNavigationLights(vessel, FREEBOARD).group.children.filter(
+function lamps(vessel = COASTER, freeboard = FREEBOARD): Points[] {
+  return buildNavigationLights(vessel, freeboard).group.children.filter(
     (child): child is Points => child.type === "Points",
   );
 }
 
-function lampPosition(index: number, vessel = COASTER): { x: number; y: number; z: number } {
-  const attribute = lamps(vessel)[index]!.geometry.getAttribute("position");
+function lampPosition(
+  index: number,
+  vessel = COASTER,
+  freeboard = FREEBOARD,
+): { x: number; y: number; z: number } {
+  const attribute = lamps(vessel, freeboard)[index]!.geometry.getAttribute("position");
   return { x: attribute.getX(0), y: attribute.getY(0), z: attribute.getZ(0) };
 }
 
@@ -80,5 +85,24 @@ describe("buildNavigationLights", () => {
 
     expect(radius).toBeGreaterThan(COASTER.loaMetres);
     expect(radius).toBeLessThan(1852 * 6);
+  });
+});
+
+describe("where the lamps sit against the hull they are on", () => {
+  /**
+   * `ui/panels.ts` tells a reader that a ship's lights stand higher than the top of her
+   * superstructure, and that the occlusion table therefore does not answer for them. That
+   * sentence is true because of two fractions of the beam living in two different files -
+   * `actors/vessel/heights.ts` and this one - with nothing between them. Changing either
+   * makes the page state something the geometry no longer supports, silently.
+   */
+  it("puts the masthead light above the top of the superstructure", () => {
+    for (const vessel of [COASTER, BIG_SHIP]) {
+      const heights = assumedHeights(vessel);
+      const kinds = lightsForVessel(vessel).map((l) => l.kind);
+      const masthead = lampPosition(kinds.indexOf("masthead"), vessel, heights.freeboardMetres);
+
+      expect(masthead.y).toBeGreaterThan(heights.superstructureMetres);
+    }
   });
 });

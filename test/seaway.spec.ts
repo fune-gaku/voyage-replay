@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 
+import schema from "../spec/voyage.schema.json";
+
 import {
   assumedPeakPeriodSeconds,
+  HEIGHT_LIMIT_METRES,
+  PERIOD_LIMITS_SECONDS,
   exceedanceProbability,
   highestExpectedMetres,
   meanOfHighest,
   SEA_STATE_HEIGHT_METRES,
   seawayFrom,
   seawayOf,
+  SPREADING_EXPONENT,
+  surfaceAt,
+  waveComponents,
 } from "../src/core/seaway.js";
 
 /**
@@ -266,5 +273,259 @@ describe("seas the schema allows but the arithmetic cannot carry", () => {
   it("treats a NaN height or period as no sea rather than passing it on", () => {
     expect(seawayOf(NaN).significantHeightMetres).toBe(0);
     expect(Number.isFinite(seawayOf(2, NaN).peakPeriodSeconds)).toBe(true);
+  });
+});
+
+describe("a sea broken into sinusoids, for something that has to draw it", () => {
+  /**
+   * The invariant the whole design rests on: the drawn sea and the analysed sea are the
+   * same water. Amplitudes come from the spectrum and only the PHASES are random, so the
+   * sum's variance is the significant height's, the wave heights come out Rayleigh, and
+   * nothing has to be tuned to make the picture agree with the panels.
+   */
+  it("has the variance the significant height demands, and not one put in twice", () => {
+    for (const hs of [1, 3, 6]) {
+      const seaway = seawayOf(hs);
+      const variance = waveComponents(seaway).reduce(
+        (total, c) => total + c.amplitudeMetres ** 2 / 2,
+        0,
+      );
+      expect(Math.sqrt(variance)).toBeCloseTo(seaway.surfaceStdDevMetres, 6);
+      expect(Math.sqrt(variance)).toBeCloseTo(hs / 4, 6);
+    }
+  });
+
+  it("obeys the deep-water relation, so each component's speed follows its length", () => {
+    for (const component of waveComponents(seawayOf(3))) {
+      const gravity = component.angularFrequencyPerSecond ** 2 / component.wavenumberPerMetre;
+      expect(gravity).toBeCloseTo(9.80665, 4);
+    }
+  });
+
+  /**
+   * Evenly spaced components repeat exactly, with a period of `2 pi / dw`: a typical band
+   * in 32 pieces comes back round every couple of minutes, and this project's reference
+   * case would loop forty times. Sampling inside each bin breaks the commensurability.
+   */
+  it("does not put its frequencies on a regular grid, which would make the sea loop", () => {
+    const frequencies = waveComponents(seawayOf(3))
+      .map((c) => c.angularFrequencyPerSecond)
+      .sort((a, b) => a - b);
+    const gaps = frequencies.slice(1).map((w, i) => w - (frequencies[i] ?? 0));
+    const ratios = gaps.map((gap) => gap / (gaps[0] ?? 1));
+    expect(Math.max(...ratios) / Math.min(...ratios)).toBeGreaterThan(1.5);
+  });
+
+  /**
+   * A single direction draws corduroy - long unbroken crests no wind sea has - and makes
+   * occlusion far too correlated across bearing.
+   */
+  it("spreads across directions about the one the sea comes from", () => {
+    const from = 90;
+    const components = waveComponents(seawayOf(3), from);
+    const travelling = components.map((c) => (c.directionRadians * 180) / Math.PI);
+    const mean = travelling.reduce((t, d) => t + d, 0) / travelling.length;
+
+    // The waves travel towards the reciprocal of where they come from.
+    expect(mean).toBeCloseTo(from + 180, 0);
+    expect(Math.max(...travelling) - Math.min(...travelling)).toBeGreaterThan(60);
+  });
+
+  /**
+   * How wide that fan is, against the published identity rather than against a second copy
+   * of the formula: for the Longuet-Higgins form `cos^2s(theta/2)`, the mean resultant
+   * length of the directions is exactly `s / (s + 1)`.
+   *
+   * It is worth pinning because the same exponent on the wrong form - `cos^2s(theta)`,
+   * which is also a published spreading function - leaves a quarter of the weight ninety
+   * degrees off the sea's stated direction, and the picture then argues with the figure it
+   * was handed. Every component stays individually correct while it does.
+   */
+  it("has the directional spread the Longuet-Higgins form gives for its exponent", () => {
+    const from = 290;
+    const mean = ((from + 180) * Math.PI) / 180;
+    const components = waveComponents(seawayOf(3), from);
+
+    let east = 0;
+    let north = 0;
+    for (const component of components) {
+      east += Math.cos(component.directionRadians - mean);
+      north += Math.sin(component.directionRadians - mean);
+    }
+    const resultant = Math.hypot(east, north) / components.length;
+    expect(resultant).toBeCloseTo(SPREADING_EXPONENT / (SPREADING_EXPONENT + 1), 2);
+
+    // Narrow enough to still be a sea from one direction, wide enough not to be corduroy.
+    expect(resultant).toBeGreaterThan(0.5);
+    expect(resultant).toBeLessThan(0.95);
+  });
+
+  /**
+   * A reconstruction whose sea is different on every viewing is not one: a screenshot taken
+   * today has to be comparable with one taken next year.
+   */
+  it("draws the same sea every time the same scenario is opened", () => {
+    const first = waveComponents(seawayOf(3), 290);
+    const second = waveComponents(seawayOf(3), 290);
+    expect(second).toEqual(first);
+  });
+
+  it("gives different seas different phases rather than one sea moved about", () => {
+    const calm = waveComponents(seawayOf(1)).map((c) => c.phaseRadians);
+    const rough = waveComponents(seawayOf(4)).map((c) => c.phaseRadians);
+    expect(rough).not.toEqual(calm);
+  });
+
+  it("has nothing to draw in a flat calm", () => {
+    expect(waveComponents(seawayOf(0))).toEqual([]);
+  });
+});
+
+describe("the surface at a place and an instant", () => {
+  const sea = () => waveComponents(seawayOf(3, 8), 290);
+  const at = (east: number, north: number) => ({ eastMetres: east, northMetres: north });
+
+  /**
+   * The check that catches a sign error anywhere in the projection: the whole pattern is
+   * carried along the direction of travel at the phase speed, which in deep water is
+   * `g / omega`. Comparing against the same formula written twice would agree with itself;
+   * this compares the sea at one instant with the sea at another.
+   */
+  it("carries a single wave along at the deep-water phase speed", () => {
+    const [wave] = waveComponents(seawayOf(3, 8), 0);
+    if (!wave) throw new Error("a 3 m sea should have components");
+    const one = [wave];
+    const speed = 9.80665 / wave.angularFrequencyPerSecond;
+    const seconds = 3;
+    const travelled = speed * seconds;
+    const east = travelled * Math.sin(wave.directionRadians);
+    const north = travelled * Math.cos(wave.directionRadians);
+
+    for (const [e, n] of [
+      [0, 0],
+      [37, -11],
+      [-64, 25],
+    ]) {
+      const before = surfaceAt(one, at(e ?? 0, n ?? 0), 0);
+      const after = surfaceAt(one, at((e ?? 0) + east, (n ?? 0) + north), seconds);
+      expect(after.heightMetres).toBeCloseTo(before.heightMetres, 6);
+    }
+  });
+
+  /**
+   * The slope has to be the surface's own derivative or a buoy leans the wrong way while
+   * every individual number stays plausible.
+   */
+  it("has a slope that is the height's gradient, in both directions", () => {
+    const components = sea();
+    const step = 0.05;
+    for (const [east, north] of [
+      [0, 0],
+      [120, -80],
+      [-45, 210],
+    ]) {
+      const here = surfaceAt(components, at(east ?? 0, north ?? 0), 12);
+      const eastward =
+        (surfaceAt(components, at((east ?? 0) + step, north ?? 0), 12).heightMetres -
+          here.heightMetres) /
+        step;
+      const northward =
+        (surfaceAt(components, at(east ?? 0, (north ?? 0) + step), 12).heightMetres -
+          here.heightMetres) /
+        step;
+      expect(here.slopeEast).toBeCloseTo(eastward, 3);
+      expect(here.slopeNorth).toBeCloseTo(northward, 3);
+    }
+  });
+
+  /**
+   * The sea the panels reason about is Gaussian with a standard deviation of Hs/4. So is
+   * the sea that gets drawn, or the picture and the judgement are different water.
+   */
+  it("has the standard deviation the significant height demands, over the whole field", () => {
+    const components = sea();
+    let total = 0;
+    let squares = 0;
+    let count = 0;
+    for (let i = 0; i < 60; i += 1) {
+      for (let j = 0; j < 60; j += 1) {
+        const h = surfaceAt(components, at(i * 13.7, j * 11.3), i * 0.7).heightMetres;
+        total += h;
+        squares += h * h;
+        count += 1;
+      }
+    }
+    const mean = total / count;
+    expect(mean).toBeCloseTo(0, 1);
+    expect(Math.sqrt(squares / count - mean * mean)).toBeCloseTo(3 / 4, 1);
+  });
+
+  it("is flat where there is no sea", () => {
+    expect(surfaceAt([], at(10, 20), 5)).toEqual({
+      heightMetres: 0,
+      slopeEast: 0,
+      slopeNorth: 0,
+    });
+  });
+});
+
+describe("which way the sea runs", () => {
+  /**
+   * A sea state is a description of the water's appearance and carries no bearing at all.
+   * Null rather than a default, so whatever draws it has to decide what to do about not
+   * knowing - and say what it decided. The renderer draws a narrow-spread sea a reader can
+   * take a bearing off, so an undeclared direction is the picture asserting a figure the
+   * file does not contain.
+   */
+  it("has no direction at all from a sea state", () => {
+    expect(seawayFrom({ seaState: 4 })?.fromDegreesTrue).toBeNull();
+    expect(seawayFrom({ seaState: 0 })?.fromDegreesTrue).toBeNull();
+  });
+
+  it("carries a stated direction through, including due north", () => {
+    const stated = (fromDegreesTrue: number): number | null | undefined =>
+      seawayFrom({
+        waves: { significantHeightMetres: 2, fromDegreesTrue, derivation: "measured" },
+      })?.fromDegreesTrue;
+    expect(stated(290)).toBe(290);
+    expect(stated(0)).toBe(0);
+  });
+
+  it("is null where a height is stated without one, rather than quietly north", () => {
+    const estimate = seawayFrom({
+      waves: { significantHeightMetres: 2, derivation: "inferred" },
+    });
+    expect(estimate?.fromDegreesTrue).toBeNull();
+  });
+});
+
+describe("the bounds the schema states and the ones the arithmetic enforces", () => {
+  /**
+   * Two copies of the same numbers, in JSON and in TypeScript, and neither can import the
+   * other. Left to drift they disagree in the direction that matters: raise the schema's
+   * ceiling alone and a stated 35 m sea validates and is then drawn at 30, the picture
+   * quietly understating a figure the file gives - which is this project's whole subject,
+   * arriving through a bound nobody thought of as a claim.
+   */
+  it("bounds the wave height the same in both", () => {
+    const waves = schema.properties.environment.properties.waves.properties;
+    expect(waves.significantHeightMetres.maximum).toBe(HEIGHT_LIMIT_METRES);
+    expect(waves.significantHeightMetres.minimum).toBe(0);
+  });
+
+  it("bounds the period the same in both", () => {
+    const waves = schema.properties.environment.properties.waves.properties;
+    expect(waves.peakPeriodSeconds.minimum).toBe(PERIOD_LIMITS_SECONDS.least);
+    expect(waves.peakPeriodSeconds.maximum).toBe(PERIOD_LIMITS_SECONDS.most);
+  });
+
+  it("clamps to exactly the bound the schema names, not to something near it", () => {
+    expect(seawayOf(HEIGHT_LIMIT_METRES * 10).significantHeightMetres).toBe(HEIGHT_LIMIT_METRES);
+    expect(seawayOf(2, PERIOD_LIMITS_SECONDS.most * 10).peakPeriodSeconds).toBe(
+      PERIOD_LIMITS_SECONDS.most,
+    );
+    expect(seawayOf(2, PERIOD_LIMITS_SECONDS.least / 10).peakPeriodSeconds).toBe(
+      PERIOD_LIMITS_SECONDS.least,
+    );
   });
 });

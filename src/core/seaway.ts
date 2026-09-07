@@ -99,9 +99,14 @@ const CORRELATION_STEPS = 20;
  * ever measured is 19 m, in the North Atlantic in 2013; swell periods reach the low
  * twenties. A sea beyond these clamps to them and gets an absurd but finite answer, which
  * is a better failure than a blank one.
+ *
+ * **The schema states the same bounds, and they have to stay the same numbers.** Raise the
+ * schema's and leave these and a stated 35 m sea validates, then draws silently at 30 - a
+ * picture quietly understating a figure the file gives. `test/seaway.spec.ts` holds the
+ * two together, since one of them is JSON and cannot import the other.
  */
-const HEIGHT_LIMIT_METRES = 30;
-const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
+export const HEIGHT_LIMIT_METRES = 30;
+export const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
 
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
@@ -150,6 +155,12 @@ export interface SeaEstimate {
   roughEndIsOpen: boolean;
   /** The period was assumed from the height, the source having stated none. */
   periodAssumed: boolean;
+  /**
+   * Where the sea comes from, or null where the source does not say - which is every sea
+   * state, since the class carries no direction at all. Null rather than a default, so that
+   * whatever draws it has to decide what to do about not knowing and say what it decided.
+   */
+  fromDegreesTrue: number | null;
 }
 
 /**
@@ -188,6 +199,7 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
       derivation: waves.derivation,
       roughEndIsOpen: false,
       periodAssumed: waves.peakPeriodSeconds === undefined,
+      fromDegreesTrue: waves.fromDegreesTrue ?? null,
     };
   }
   return fromSeaState(environment?.seaState);
@@ -206,6 +218,9 @@ function fromSeaState(seaState: number | null | undefined): SeaEstimate | null {
     derivation: "inferred",
     roughEndIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
     periodAssumed: true,
+    // A sea state is a description of the water's appearance and says nothing about which
+    // way it is running.
+    fromDegreesTrue: null,
   };
 }
 
@@ -408,4 +423,297 @@ function erfc(x: number): number {
     t *
     (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
   return poly * Math.exp(-x * x);
+}
+
+/**
+ * How many components a drawn sea is built from.
+ *
+ * Few enough to evaluate per fragment, many enough not to read as a handful of sine waves.
+ *
+ * **`render/waves.ts` takes its shader array length from this and must go on doing so.** The
+ * amplitudes here are shared out so that ALL of them together have the variance the
+ * significant height demands; a shader that carried fewer would drop the remainder silently,
+ * and the drawn sea would be flatter than the sea the panels reason about while every number
+ * on the page stayed right. That is the one invariant this whole change rests on, undone by
+ * a constant.
+ *
+ * **The band is the same one the moments are taken over, and that is not tidiness.** The
+ * root-mean-square wavenumber - what decides how often the surface crosses a sight line in
+ * `visibility.ts` - is a property of which waves are in the sea. Draw a narrower band and
+ * the picture is a smoother sea than the one the panels are reasoning about: same
+ * significant height, fewer crossings, and the two halves of the tool quietly disagree
+ * about the same water. Short waves carry little height and most of the slope, which is
+ * exactly what makes them cheap to leave out and wrong to.
+ */
+export const DRAWN_COMPONENTS = 24;
+
+/**
+ * Directional spreading: the `s` of the Longuet-Higgins form, `D(theta) ~ cos^2s(theta/2)`,
+ * with theta measured from the mean direction over the whole circle.
+ *
+ * **The half-angle is the whole of the form and not a detail.** Written `cos^2s(theta)`
+ * instead - which is a different published spreading function - the same exponent gives a
+ * far wider fan: a quarter of the weight still at ninety degrees off the sea's stated
+ * direction, so the picture argues with the figure it was given.
+ *
+ * Six is towards the middle of what has been measured for wind sea near the spectral peak,
+ * where the range usually quoted is about five to ten. Real spreading is not one number:
+ * it is narrowest at the peak and broadens away from it in both directions, which is not
+ * modelled here.
+ *
+ * A sea drawn from a single direction is corduroy - long parallel crests no wind sea has -
+ * and it also makes occlusion far too correlated across bearing, which is why some spread
+ * is needed at all.
+ */
+export const SPREADING_EXPONENT = 6;
+
+/**
+ * Which way a sea runs when nothing says.
+ *
+ * Arbitrary, and that is the problem rather than the solution: a sea state carries no
+ * direction at all, so without this every such scenario would still have to be drawn
+ * running SOMEWHERE, and a narrow spread makes that somewhere plainly readable off the
+ * picture. There is no honest default bearing, only a declared one - `ui/panels.ts` names
+ * it beside the sea it was used for, which is the whole of what makes drawing it allowable.
+ *
+ * What would actually fix it is a wind: a wind sea runs with the wind, reports state wind
+ * far more often than they state waves, and `environment` has no field for it yet.
+ */
+export const ASSUMED_DIRECTION_DEGREES_TRUE = 0;
+
+/** One sinusoid of a drawn sea. Deep water throughout, so `omega^2 = g k`. */
+export interface WaveComponent {
+  amplitudeMetres: number;
+  wavenumberPerMetre: number;
+  angularFrequencyPerSecond: number;
+  /** Direction of TRAVEL, radians clockwise from north. */
+  directionRadians: number;
+  phaseRadians: number;
+}
+
+/**
+ * A sea as a sum of sinusoids, for something that has to draw it.
+ *
+ * **The randomness is not added; it comes out of doing this properly.** Amplitudes are the
+ * spectrum's own - `a = sqrt(2 S dw)` - and only the PHASES are random. The sum is then
+ * Gaussian by the central limit theorem, the individual wave heights come out Rayleigh, and
+ * the significant height is right by construction. Randomising amplitudes instead puts the
+ * variance in twice and Hs stops matching.
+ *
+ * Two things about how the frequencies are picked:
+ *
+ * - **Not evenly spaced.** A sum of components on a regular grid repeats exactly, with a
+ *   period of `2 pi / dw`: 32 components over a typical band come back round every two
+ *   minutes, and the reference case would loop forty times. Sampling within each bin breaks
+ *   the commensurability.
+ * - **Deterministically.** The generator is seeded from the sea itself, so a scenario opens
+ *   with the same sea every time. A reconstruction whose sea is different on every viewing
+ *   is not one.
+ */
+export function waveComponents(
+  seaway: Seaway,
+  fromDegreesTrue: number = ASSUMED_DIRECTION_DEGREES_TRUE,
+): WaveComponent[] {
+  if (seaway.significantHeightMetres <= 0) return [];
+  const peak = (2 * Math.PI) / seaway.peakPeriodSeconds;
+  const random = seededRandom(seaway);
+  const travelling = ((fromDegreesTrue + 180) * Math.PI) / 180;
+
+  // The fan of directions is filled evenly and then SHUFFLED. Handing them out in
+  // frequency order ties direction to wavelength - long waves from one bearing, short ones
+  // from another, in a monotonic sweep - which is a fan rotating with scale, and reads as
+  // wrong immediately even though every component is individually correct.
+  const angles = shuffled(
+    Array.from({ length: DRAWN_COMPONENTS }, (_, i) => spreadAngle((i + 0.5) / DRAWN_COMPONENTS)),
+    random,
+  );
+  const drawn = frequencyBins(peak).map((bin, index) => ({
+    ...bin,
+    directionRadians: travelling + (angles[index] ?? 0),
+    phaseRadians: random() * 2 * Math.PI,
+    sampled: bin.from + (bin.to - bin.from) * random(),
+  }));
+
+  return normalised(drawn, seaway.surfaceStdDevMetres, peak);
+}
+
+/**
+ * Bins of EQUAL ENERGY, not of equal width.
+ *
+ * The obvious version spaces them geometrically across the band and is badly wrong: the
+ * band runs from a sixth of the peak frequency to nearly three times it, almost all of the
+ * variance sits within a factor of two of the peak, and evenly spread components spend most
+ * of themselves on frequencies that carry nothing. Measured on a 3 m sea, that left four
+ * components holding 79 per cent of the variance and the first four holding none at all -
+ * a sea that is four sine waves, whose two largest beat against each other on a 258-second
+ * cycle. It reads as a pulse, which no sea has.
+ *
+ * Cutting the spectrum into equal shares instead puts every component where there is
+ * something to carry, so they come out at much the same amplitude and the sum reads as a
+ * continuum. It is also the standard way to sample a spectrum, for this reason.
+ */
+function frequencyBins(peak: number): { from: number; to: number }[] {
+  const lowest = peak / 6;
+  const highest = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
+  const steps = 4000;
+  const ratio = (highest / lowest) ** (1 / steps);
+
+  const cumulative: { w: number; energy: number }[] = [{ w: lowest, energy: 0 }];
+  let running = 0;
+  let w = lowest;
+  for (let i = 0; i < steps; i += 1) {
+    const next = w * ratio;
+    running += density(w, peak) * (next - w);
+    cumulative.push({ w: next, energy: running });
+    w = next;
+  }
+
+  const share = running / DRAWN_COMPONENTS;
+  const edges = [lowest];
+  let at = 0;
+  for (let i = 1; i <= DRAWN_COMPONENTS; i += 1) {
+    while (at < cumulative.length - 1 && (cumulative[at]?.energy ?? 0) < share * i) at += 1;
+    edges.push(cumulative[at]?.w ?? highest);
+  }
+  return Array.from({ length: DRAWN_COMPONENTS }, (_, i) => ({
+    from: edges[i] ?? lowest,
+    to: edges[i + 1] ?? highest,
+  }));
+}
+
+interface Drawn {
+  from: number;
+  to: number;
+  sampled: number;
+  directionRadians: number;
+  phaseRadians: number;
+}
+
+/**
+ * Amplitudes from the spectrum, then scaled so the whole sum has the variance the
+ * significant height demands. The scaling is what keeps a truncated band honest: the
+ * components left out carried some variance, and without it the drawn sea would be flatter
+ * than the sea the panels are reasoning about.
+ */
+function normalised(drawn: Drawn[], sigma: number, peak: number): WaveComponent[] {
+  const energies = drawn.map((c) => density(c.sampled, peak) * (c.to - c.from));
+  const total = energies.reduce((sum, e) => sum + e, 0);
+  return drawn.map((c, i) => {
+    const share = (energies[i] ?? 0) / total;
+    const amplitude = Math.sqrt(2 * share) * sigma;
+    return {
+      amplitudeMetres: amplitude,
+      wavenumberPerMetre: (c.sampled * c.sampled) / GRAVITY_METRES_PER_SECOND_SQUARED,
+      angularFrequencyPerSecond: c.sampled,
+      directionRadians: c.directionRadians,
+      phaseRadians: c.phaseRadians,
+    };
+  });
+}
+
+/**
+ * An offset from the mean direction, by inverting the spreading function's integral
+ * numerically over the whole circle.
+ *
+ * The whole circle rather than a quarter turn each way, because the form already goes to
+ * zero at a half turn - `cos^2s(theta/2)` is exactly nought at theta = 180 degrees - so
+ * clipping it would only distort what it already handles. It also leaves the published
+ * identity for the mean resultant length, `s / (s + 1)`, exactly true of what comes out,
+ * which is what `test/seaway.spec.ts` holds this against.
+ *
+ * Deterministic in the component's index rather than random, so the fan is filled evenly
+ * instead of clumping.
+ */
+function spreadAngle(fraction: number): number {
+  const limit = Math.PI;
+  const steps = 400;
+  let total = 0;
+  const weights: number[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const angle = -limit + (2 * limit * i) / steps;
+    const weight = Math.cos(angle / 2) ** (2 * SPREADING_EXPONENT);
+    weights.push(weight);
+    total += weight;
+  }
+  let running = 0;
+  for (let i = 0; i <= steps; i += 1) {
+    running += (weights[i] ?? 0) / total;
+    if (running >= fraction) return -limit + (2 * limit * i) / steps;
+  }
+  return limit;
+}
+
+/** Fisher-Yates, on the same seeded generator, so the shuffle is part of the same sea. */
+function shuffled(values: number[], random: () => number): number[] {
+  const out = [...values];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    const a = out[i];
+    const b = out[j];
+    if (a !== undefined && b !== undefined) {
+      out[i] = b;
+      out[j] = a;
+    }
+  }
+  return out;
+}
+
+/**
+ * Mulberry32, seeded from the sea's own figures.
+ *
+ * Any small generator would do; what matters is that it is here rather than `Math.random`,
+ * so the same scenario draws the same sea on every opening and a screenshot taken today can
+ * be compared with one taken next year.
+ */
+function seededRandom(seaway: Seaway): () => number {
+  let state = Math.floor(seaway.significantHeightMetres * 1000 + seaway.peakPeriodSeconds * 7919);
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** The surface at one place and instant: where it is, and which way it is tilted. */
+export interface SurfacePoint {
+  heightMetres: number;
+  /** Rise per metre eastward, and per metre northward. */
+  slopeEast: number;
+  slopeNorth: number;
+}
+
+/**
+ * The same sum the water's shader evaluates, on the processor.
+ *
+ * Anything that floats needs this: a buoy sitting on a sea drawn from one wave field while
+ * it rides another is a buoy hovering over the water, and the two fields have to be the
+ * same object or the picture contradicts itself - which is the whole argument of #30 and
+ * #31, one layer down.
+ *
+ * Kept beside `waveComponents` rather than in the renderer because it is the sea's own
+ * definition, and because whatever eventually answers "how did she move in it" - issue #32
+ * - has to be able to ask.
+ *
+ * The projection is `k (east sin d + north cos d)`, which is the distance along the
+ * direction the wave travels. `render/waves.ts` writes the same thing in the scene's axes,
+ * where north is -z; the two must stay in step by eye, since no test can compile GLSL.
+ */
+export function surfaceAt(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+): SurfacePoint {
+  const point = { heightMetres: 0, slopeEast: 0, slopeNorth: 0 };
+  for (const wave of components) {
+    const east = Math.sin(wave.directionRadians);
+    const north = Math.cos(wave.directionRadians);
+    const along = wave.wavenumberPerMetre * (at.eastMetres * east + at.northMetres * north);
+    const phase = along - wave.angularFrequencyPerSecond * secondsFromStart + wave.phaseRadians;
+    point.heightMetres += wave.amplitudeMetres * Math.sin(phase);
+    const slope = wave.amplitudeMetres * wave.wavenumberPerMetre * Math.cos(phase);
+    point.slopeEast += slope * east;
+    point.slopeNorth += slope * north;
+  }
+  return point;
 }

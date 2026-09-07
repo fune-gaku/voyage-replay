@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareActor } from "../src/core/track.js";
-import type { Actor, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
+import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
+import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
 
 /** The reference case's instant and place, which is what makes the sky figures checkable. */
@@ -374,7 +375,7 @@ describe("whether the sea was in the way", () => {
     expect(html).toContain("Whether the sea was in the way");
     expect(html).toContain("hidden by crests above");
     expect(html).toContain("no sea stated");
-    expect(html).toContain("an unstated sea is not a calm one");
+    expect(html).toContain("An unstated sea is not a calm one");
   });
 
   it("spreads a sea state across its class rather than printing one figure", () => {
@@ -489,5 +490,298 @@ describe("what the sea section says about where its figures came from", () => {
 
     expect(html).toContain("or more</td>");
     expect(html).toContain("the last column is a floor and not a range");
+  });
+});
+
+describe("the sea marks a scenario carries", () => {
+  const buoy = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "no-1",
+    kind: "buoy",
+    at: { lat: 33.9, lon: 131.7 },
+    ...overrides,
+  });
+
+  it("says nothing at all where a scenario carries no marks", () => {
+    expect(panelsFor(scenario())).not.toContain("Sea marks");
+  });
+
+  /**
+   * On screen a pillar this tool chose and a pillar the source stated look exactly alike,
+   * and the shape is a statement: a can is port hand where a cone is starboard. The table
+   * has to be able to tell them apart even though the picture cannot.
+   */
+  it("marks a chosen shape, colour and height as chosen", () => {
+    const subject = scenario();
+    subject.marks = [buoy()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("Sea marks (1)");
+    expect(html).toContain("assumed pillar");
+    expect(html).toContain("assumed yellow");
+    expect(html).toContain("assumed 2.4 m");
+    expect(html).toContain("a shape drawn here is a statement made here");
+  });
+
+  it("reports a stated shape, colour and height as stated", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ shape: "can", colour: "red", heightMetres: 3.1, name: "No. 2" })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>can</td>");
+    expect(html).toContain("<td>red</td>");
+    expect(html).toContain("<td>3.1 m</td>");
+    expect(html).toContain("No. 2");
+    // "assumed" appears elsewhere on the page - the hull's bridge, the occlusion heights -
+    // so the check has to be about this row rather than about the word.
+    expect(html).not.toContain("assumed pillar");
+    expect(html).not.toContain("assumed yellow");
+    expect(html).not.toContain("assumed 2.4 m");
+    expect(html).not.toContain("a statement made here");
+  });
+
+  it("gives the position, which is the part a report usually turns on", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ at: { lat: 33.90512, lon: 131.71166 } })];
+    expect(panelsFor(subject)).toContain("33.90512, 131.71166");
+  });
+
+  /**
+   * A buoy stops heaving at a few hundred metres because the water beneath it has, not
+   * because the sea has - which the picture cannot say for itself.
+   */
+  it("says the buoy rides the sea as drawn, and follows it exactly", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ shape: "spar", colour: "black", heightMetres: 2 })];
+    const html = panelsFor(subject);
+    expect(html).toContain("riding the sea as the water is drawn beneath it");
+    expect(html).toContain("issue #32");
+  });
+});
+
+describe("which way the drawn sea runs", () => {
+  /**
+   * The waves are drawn from one direction with a narrow spread, so a reader can take a
+   * bearing off the picture. Where the file gives none, the bearing is this tool's and the
+   * page has to say so - otherwise the video asserts a figure nothing in the source
+   * contains, which is the fault the whole sea section exists to avoid.
+   */
+  it("warns off the picture's bearing where the file states no direction", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("Nothing states which way the sea runs");
+    expect(html).toContain("a bearing this tool chose");
+    expect(html).toContain("Do not read a wave direction off the picture");
+  });
+
+  it("says the file supplied it where the file did", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 290, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("coming from 290 degrees true");
+    expect(html).not.toContain("a bearing this tool chose");
+  });
+
+  it("does not treat a stated due north as a missing direction", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 0, derivation: "measured" },
+    };
+    expect(panelsFor(subject)).toContain("coming from 0 degrees true");
+  });
+});
+
+describe("what the picture itself is claiming", () => {
+  /**
+   * The renderer draws one sea, not a range, and it draws the ROUGH end - among the seas a
+   * class permits, a calmer picture is a stronger claim about what could be seen. A reader
+   * measuring a wave height off the video would otherwise take that end for the figure.
+   */
+  it("says which end of a sea state's class the view actually draws", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the view draws the rougher end");
+    expect(html).toContain("Do not measure a wave height off the picture");
+  });
+
+  /**
+   * The day palette is a clear sky, which lights a wave's face and its back differently and
+   * so gives a sea shape. An overcast one flattens it. Cloud decides, and no report states
+   * it - so the picture is making the choice and the page has to own it.
+   *
+   * Over a NIGHT it must not say so at all. The sentence was unconditional when it went in
+   * and declared a fine day over the reference case's darkness, with a test pinning it
+   * there: the page and the picture flatly contradicting each other, which is the fault the
+   * sentence was added to fix.
+   */
+  it("says the view draws a fine day, but only where it draws a day", () => {
+    const day = scenario();
+    day.environment = { lightCondition: "day" };
+    expect(panelsFor(day)).toContain("The view draws a fine day");
+    expect(panelsFor(day)).toContain("cloud is the one thing that would decide it");
+
+    for (const environment of [
+      { lightCondition: "night" } as const,
+      { lightCondition: "twilight" } as const,
+      {},
+    ]) {
+      const subject = scenario();
+      subject.environment = environment;
+      expect(panelsFor(subject)).not.toContain("fine day");
+      expect(panelsFor(subject)).toContain("draws this as night");
+    }
+  });
+});
+
+describe("the one class whose picture is the calmest sea it allows", () => {
+  /**
+   * Every other sea state has the ROUGH end drawn, because among the seas a class permits a
+   * calmer picture is a stronger claim. State 9 has no rough end - it is "over 14 m" - so
+   * the sea drawn there is the calmest that fits, which is the opposite way round and the
+   * one case where the picture understates. It has to be said outright.
+   */
+  it("says state 9 is drawn at the least the class allows, not the most", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("The view draws 14 m, which here is the least the class allows");
+    expect(html).toContain("a calmer picture is the stronger claim");
+    expect(html).not.toContain("the view draws the rougher end");
+  });
+});
+
+describe("the buoy defaults the page names are the ones the view draws", () => {
+  /**
+   * Written out twice they drift, and when they do the page names a shape the picture is
+   * not drawing - a can where a pillar stands, which in the buoyage is a port-hand mark
+   * where a cardinal one is. The same fault as the masthead height, one file over.
+   */
+  it("takes the assumed shape, colour and height from the renderer's own", () => {
+    const subject = scenario();
+    subject.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
+    const html = panelsFor(subject);
+
+    expect(html).toContain(`assumed ${ASSUMED_MARK.shape}`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.colour}`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres} m`);
+  });
+
+  it("draws exactly what it named, so the two cannot come apart", () => {
+    const bare = buildMark({ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } });
+    const named = buildMark({
+      id: "no-1",
+      kind: "buoy",
+      at: { lat: 33.9, lon: 131.7 },
+      shape: ASSUMED_MARK.shape,
+      colour: ASSUMED_MARK.colour,
+      heightMetres: ASSUMED_MARK.heightMetres,
+    });
+    expect(bare.heightMetres).toBe(named.heightMetres);
+    expect(bare.group.children.length).toBe(named.group.children.length);
+  });
+});
+
+describe("the sea has a section of its own", () => {
+  /**
+   * The correction that found this: the occlusion table needs two ships and the sea does
+   * not. A scenario with one ship and a stated sea drew three metres of it, with a readable
+   * height and a readable direction, and the page said nothing whatever about them - the
+   * picture asserting a sea the page never mentioned.
+   */
+  it("describes the sea even where there is no encounter to judge", () => {
+    const subject = scenario([actor("A", northboundPoints(), COASTER)]);
+    subject.environment = {
+      lightCondition: "day",
+      waves: {
+        significantHeightMetres: 3,
+        peakPeriodSeconds: 8.6,
+        fromDegreesTrue: 290,
+        derivation: "inferred",
+      },
+    };
+    const html = panelsFor(subject);
+
+    // The encounter cannot be judged...
+    expect(html).toContain("Needs two actors.");
+    // ...but everything the view is drawing is still stated.
+    expect(html).toContain("The sea");
+    expect(html).toContain("3 m");
+    expect(html).toContain("8.6 s");
+    expect(html).toContain("290 deg true");
+    expect(html).toContain("inferred");
+  });
+
+  it("says the view draws flat water, and what that claims, where no sea is stated", () => {
+    const subject = scenario([actor("A", northboundPoints(), COASTER)]);
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the view therefore draws flat water");
+    expect(html).toContain("the strongest claim available");
+    expect(html).toContain("An unstated sea is not a calm one");
+  });
+
+  it("marks an assumed period and an assumed direction as assumed, in the table", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("1.25 to 2.5 m");
+    expect(html).toContain("(assumed)");
+    expect(html).toContain("assumed - nothing states it");
+  });
+});
+
+describe("restricted visibility, which is the enum's fourth value and a different axis", () => {
+  /**
+   * `lightCondition` mixes a statement about the sun with a statement about the air, and
+   * this is the value that shows it. The view draws it as a day with fog, so declaring a
+   * fine day over it contradicts both the picture and the visibility printed two rows
+   * above. A fog in the dark carries the same word and would be drawn wrongly.
+   */
+  it("does not call a fog a fine day, and says what is drawn instead", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "restricted-visibility", visibilityMetres: 600 };
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("fine day");
+    expect(html).not.toContain("draws this as night");
+    expect(html).toContain("a statement about the air and not about the sun");
+    expect(html).toContain("fog is drawn out to the stated 600 m");
+    expect(html).toContain("would be drawn wrongly here");
+  });
+
+  it("says no fog is drawn where the file gives no distance", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "restricted-visibility", visibilityMetres: null };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no distance is given, so no fog is drawn");
+    expect(html).not.toContain("fine day");
+  });
+});
+
+describe("a caveat only qualifies figures that are there", () => {
+  /**
+   * The occlusion column is empty where no sea is stated, and a note explaining that the
+   * figures run high and low for such-and-such reasons reads as though something had been
+   * computed. The reasons belong with the numbers.
+   */
+  it("keeps the modelling biases for the rows that carry figures", () => {
+    const withSea = scenario();
+    withSea.environment = { lightCondition: "night", seaState: 4 };
+    expect(panelsFor(withSea)).toContain("count crossings independently");
+
+    const without = scenario();
+    expect(panelsFor(without)).not.toContain("count crossings independently");
+    expect(panelsFor(without)).toContain("The last column is empty rather than zero");
   });
 });
