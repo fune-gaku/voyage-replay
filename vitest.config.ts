@@ -54,10 +54,10 @@ export default defineConfig({
        * Raise them when the real figure rises; do not lower them to make a run pass.
        */
       thresholds: {
-        lines: 98,
+        lines: 99,
         functions: 99,
-        branches: 83,
-        statements: 95,
+        branches: 90,
+        statements: 97,
       },
     },
   },

@@ -14,6 +14,7 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
@@ -935,7 +936,7 @@ function tailNote(sea: SeaEstimate): string {
 }
 
 /**
- * The buoys, and how much of each one is somebody's word.
+ * The sea marks, and how much of each one is somebody's word.
  *
  * A mark's position is the whole of what a report usually gives, and it is the part that
  * matters - which side of it she passed. Its shape and its height are what the renderer
@@ -943,22 +944,29 @@ function tailNote(sea: SeaEstimate): string {
  * an assumed height is indistinguishable from a measured one. A can is port hand and a cone
  * starboard, so a shape this tool chose is a statement this tool made.
  *
+ * **The two kinds do not answer the same questions, so the table must not read as if they
+ * did.** A beacon has no IALA shape and no watch circle, and its height is measured from
+ * its foundation; a buoy has all three, and the position given for her is her sinker's. One
+ * table takes both, so every cell that differs by kind says which is being reported.
+ *
  * Absent entirely when a scenario carries no marks, rather than an empty table: a section
  * headed "Sea marks" over nothing invites the reading that there were none.
  */
 function marksSection(scenario: Scenario): string[] {
   const marks = scenario.marks ?? [];
   if (marks.length === 0) return [];
-  const head = ["id", "name", "position", "shape", "colour", "height"];
+  const head = ["id", "name", "kind", "position", "shape", "colour", "height", "watch circle"];
   const rows = marks.map((mark) => [
     mark.id,
     mark.name ?? "-",
+    mark.kind,
     `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
-    stated(mark.shape, ASSUMED_MARK.shape),
+    // A beacon has no IALA body shape - the schema refuses one - so there is nothing to
+    // report and nothing was assumed.
+    mark.kind === "beacon" ? "a structure" : stated(mark.shape, ASSUMED_MARK.shape),
     stated(mark.colour, ASSUMED_MARK.colour),
-    mark.heightMetres === undefined
-      ? `assumed ${ASSUMED_MARK.heightMetres} m`
-      : `${mark.heightMetres} m`,
+    heightCell(mark),
+    watchCircleCell(mark),
   ]);
   return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
 }
@@ -974,19 +982,89 @@ function stated(value: string | undefined, fallback: string): string {
   return value ?? `assumed ${fallback}`;
 }
 
+/**
+ * The height, and what it was measured from - which is not the same question for both kinds.
+ *
+ * A buoy's body stands above her own waterline. A beacon's stands above the foundation it
+ * is built on, and the sea runs past it somewhere in between. One field takes both, so
+ * without the datum the two figures read as comparable when they are not.
+ */
+function heightCell(mark: Mark): string {
+  const datum = mark.kind === "beacon" ? "above its foundation" : "above the waterline";
+  const height =
+    mark.heightMetres === undefined
+      ? `assumed ${ASSUMED_MARK.heightMetres} m`
+      : `${mark.heightMetres} m`;
+  return `${height} ${datum}`;
+}
+
+/**
+ * How far a buoy may lie from the position given for her.
+ *
+ * Three answers, and they must not collapse into two. A beacon has no circle at all, which
+ * is the difference between the kinds rather than a gap in the file - it is built where it
+ * stands. A buoy always has one; when the file gives no depth or scope its radius is
+ * unknown, and printing a dash there would read as "none".
+ */
+function watchCircleCell(mark: Mark): string {
+  if (mark.kind === "beacon") return "none - built where it stands";
+  const radius = watchCircleMetres(mark);
+  if (radius === null) return "she has one, size not stated";
+  return `${radius.toFixed(0)} m about the stated position`;
+}
+
+/**
+ * Which of this mark's drawn properties came from here rather than from the source.
+ *
+ * **A beacon's shape is not among them.** It has no IALA shape to state, so nothing was
+ * assumed in its place, and counting the empty field as an assumption would have the page
+ * confessing to a choice the renderer never made.
+ */
+function assumedOf(mark: Mark): string[] {
+  const chosen: string[] = [];
+  if (mark.kind === "buoy" && mark.shape === undefined) chosen.push("shape");
+  if (mark.colour === undefined) chosen.push("colour");
+  if (mark.heightMetres === undefined) chosen.push("height");
+  return chosen;
+}
+
+/**
+ * What the table cannot show: what was chosen here, and how each kind behaves in the water.
+ *
+ * Built from what these marks actually are. A page carrying the buoy sentence over a lone
+ * beacon, or the beacon sentence over a fleet of buoys, is the picture and the page
+ * disagreeing in prose - the failure `plans/done/antenna-offset-6.md` records.
+ */
 function marksCaveat(marks: Mark[]): string {
-  const assumed = marks.filter((m) => !m.shape || !m.colour || m.heightMetres === undefined);
-  const drawn =
-    "A mark is drawn riding the sea as the water is drawn beneath it, which past a few " +
-    "hundred metres has faded flat - so a distant buoy stops heaving because the water " +
-    "under it has, not because the sea has. It follows the surface exactly, which is right " +
-    "for something small against the wave and wrong in a short steep sea: issue #32.";
-  if (assumed.length === 0) return drawn;
-  return (
-    `${assumed.length} of ${marks.length} carry a shape, colour or height this tool chose ` +
-    "rather than the source - and a can is port hand where a cone is starboard, so a shape " +
-    `drawn here is a statement made here (issue #34). ${drawn}`
-  );
+  const parts = [assumedNote(marks)];
+  if (marks.some((m) => m.kind === "buoy")) {
+    parts.push(
+      "A buoy is drawn riding the sea as the water is drawn beneath her, which past a few " +
+        "hundred metres has faded flat - so a distant buoy stops heaving because the water " +
+        "under her has, not because the sea has. She follows the surface exactly, which is " +
+        "right for something small against the wave and wrong in a short steep sea: issue " +
+        "#32. Her stated position is her sinker's, not hers.",
+    );
+  }
+  if (marks.some((m) => m.kind === "beacon")) {
+    parts.push(
+      "A beacon neither heaves nor tilts: it is built on the ground it marks, the sea runs " +
+        "past it, and the position given for it is the structure's own.",
+    );
+  }
+  return parts.filter((p) => p !== "").join(" ");
+}
+
+/** The count and the named fields, or nothing at all when the source gave everything. */
+function assumedNote(marks: Mark[]): string {
+  const chosen = marks.filter((m) => assumedOf(m).length > 0);
+  if (chosen.length === 0) return "";
+  const fields = [...new Set(chosen.flatMap(assumedOf))].join(", ");
+  const shapes = chosen.some((m) => assumedOf(m).includes("shape"))
+    ? " - and a can is port hand where a cone is starboard, so a shape drawn here is a " +
+      "statement made here (issue #34)"
+    : "";
+  return `${chosen.length} of ${marks.length} carry a ${fields} this tool chose rather than the source${shapes}.`;
 }
 
 function findingList(findings: Finding[], scenario: Scenario): string {

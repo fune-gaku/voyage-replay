@@ -170,14 +170,43 @@ export type MarkColour = (typeof MARK_COLOURS)[number];
  * to say about heading. What it does have is a fixed position, which is often the thing a
  * report turns on - which side of the buoy she passed.
  */
+/** What a buoy swings on. Meaningless for anything built on a foundation. */
+export interface Mooring {
+  depthMetres?: number;
+  /** Chain length as a multiple of the depth. Two to three is usual. */
+  chainScope?: number;
+}
+
+/**
+ * A sea mark, which is a place rather than a passage.
+ *
+ * Not an `Actor`: it does not move along a track, so it has no derivation of motion and
+ * nothing to say about heading. What it does have is a position - and what that position
+ * MEANS depends on the kind.
+ *
+ * **A buoy's position is her sinker's.** She lies somewhere on a circle about it, of radius
+ * `sqrt(scope^2 - depth^2)`, and in a stream on its downstream edge. **A beacon's position
+ * is its own**, to the accuracy of the survey, because it is built on the ground it marks.
+ * Which side of a mark a ship passed is regularly the question a report answers, and the
+ * answer can sit inside a buoy's slack.
+ */
 export interface Mark {
   id: string;
   name?: string;
-  kind: "buoy";
+  kind: "buoy" | "beacon";
   at: LatLon;
+  /**
+   * IALA body shape, and only a buoy has one: a can is port hand, a cone starboard. A
+   * beacon's form is engineering rather than meaning, and the schema refuses it here.
+   */
   shape?: MarkShape;
   colour?: MarkColour;
+  /**
+   * Body height. **The datum differs by kind**: above the waterline for a buoy, above the
+   * foundation for a beacon. `ui/panels.ts` says which, since one field takes both.
+   */
   heightMetres?: number;
+  mooring?: Mooring;
   source?: Source;
 }
 

@@ -146,7 +146,10 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
-        "kind": { "enum": ["buoy"] },
+        "kind": {
+          "description": "Whether it floats or is built. A buoy is moored and rides the sea, and the position given is her SINKER's - she lies somewhere on a circle about it. A beacon stands on a foundation on the shoal it marks: it does not move, and its position is its own.",
+          "enum": ["buoy", "beacon"]
+        },
         "at": { "$ref": "#/$defs/latLon" },
         "shape": {
           "description": "IALA buoy shapes, which carry meaning: a can is port hand, a cone starboard, a sphere safe water. Optional, because reports often omit it - a renderer then has to choose one, and what it chose is named beside the mark rather than declared here, so that the shape drawn and the shape stated cannot drift apart.",
@@ -157,12 +160,41 @@
           "enum": ["green", "red", "yellow", "black", "white"]
         },
         "heightMetres": {
-          "description": "Body height above the waterline, excluding any topmark. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
+          "description": "Body height, excluding any topmark. THE DATUM DIFFERS BY KIND: above the waterline for a buoy, above the foundation for a beacon - the sea runs past a beacon somewhere in between, so the two figures are not comparable and a page reporting one says which it is. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
           "type": "number",
           "exclusiveMinimum": 0
         },
+        "mooring": {
+          "description": "What a buoy swings on. Only meaningful for one that floats, and stated so that the watch circle can be given as a figure rather than left to a reader who does not know it is there - at 20 m depth on three times scope it is 57 m, a ship's length of slack.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "depthMetres": { "type": "number", "exclusiveMinimum": 0 },
+            "chainScope": {
+              "description": "Length of chain as a multiple of the depth. Two to three is usual.",
+              "type": "number",
+              "minimum": 1
+            }
+          }
+        },
         "source": { "$ref": "#/$defs/source" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "beacon" } }, "required": ["kind"] },
+          "then": {
+            "not": { "required": ["shape"] },
+            "$comment": "IALA body shapes carry meaning - a can is port hand, a cone starboard - and a beacon has no equivalent: its form is engineering, and belongs to a vocabulary this format does not yet have. Letting one be stated and then ignored would lie to whoever wrote it."
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "beacon" } }, "required": ["kind"] },
+          "then": {
+            "not": { "required": ["mooring"] },
+            "$comment": "A beacon is not moored. It stands on a foundation and has no watch circle."
+          }
+        }
+      ]
     },
 
     "degrees": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },

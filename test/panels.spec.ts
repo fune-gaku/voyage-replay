@@ -531,7 +531,7 @@ describe("the sea marks a scenario carries", () => {
 
     expect(html).toContain("<td>can</td>");
     expect(html).toContain("<td>red</td>");
-    expect(html).toContain("<td>3.1 m</td>");
+    expect(html).toContain("<td>3.1 m above the waterline</td>");
     expect(html).toContain("No. 2");
     // "assumed" appears elsewhere on the page - the hull's bridge, the occlusion heights -
     // so the check has to be about this row rather than about the word.
@@ -548,15 +548,110 @@ describe("the sea marks a scenario carries", () => {
   });
 
   /**
-   * A buoy stops heaving at a few hundred metres because the water beneath it has, not
+   * A buoy stops heaving at a few hundred metres because the water beneath her has, not
    * because the sea has - which the picture cannot say for itself.
    */
   it("says the buoy rides the sea as drawn, and follows it exactly", () => {
     const subject = scenario();
     subject.marks = [buoy({ shape: "spar", colour: "black", heightMetres: 2 })];
     const html = panelsFor(subject);
-    expect(html).toContain("riding the sea as the water is drawn beneath it");
+    expect(html).toContain("riding the sea as the water is drawn beneath her");
     expect(html).toContain("issue #32");
+  });
+});
+
+/**
+ * A beacon is not a kind of buoy, and the table takes both. Every cell that differs between
+ * them is one the reader would otherwise carry across from the row above: the height's
+ * datum, the shape, the watch circle, and whether the thing moves at all.
+ */
+describe("a beacon in the same table as a buoy", () => {
+  const beacon = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "shoal",
+    kind: "beacon",
+    at: { lat: 33.9, lon: 131.7 },
+    ...overrides,
+  });
+
+  const buoy = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "no-1",
+    kind: "buoy",
+    at: { lat: 33.9, lon: 131.7 },
+    ...overrides,
+  });
+
+  it("names the kind, so the two are not read as one another", () => {
+    const subject = scenario();
+    subject.marks = [beacon()];
+    expect(panelsFor(subject)).toContain("<td>beacon</td>");
+  });
+
+  /**
+   * Heights measured from different data must not print alike. A beacon's 8 m stands above
+   * its foundation with the sea somewhere up the column; a buoy's 8 m is all of it above her
+   * own waterline. Printed as "8 m" twice the page invites a comparison that is not there.
+   */
+  it("says what each height was measured from", () => {
+    const subject = scenario();
+    subject.marks = [beacon({ heightMetres: 8 }), buoy({ heightMetres: 8 })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>8 m above its foundation</td>");
+    expect(html).toContain("<td>8 m above the waterline</td>");
+  });
+
+  /**
+   * Three answers, not two. A beacon has no watch circle because of what it is; a buoy with
+   * no stated mooring has one whose size nobody wrote down. A blank in both cells would put
+   * those two facts on the same footing.
+   */
+  it("tells a beacon having no watch circle from a buoy whose circle is unknown", () => {
+    const subject = scenario();
+    subject.marks = [
+      beacon(),
+      buoy(),
+      buoy({ id: "no-3", mooring: { depthMetres: 20, chainScope: 3 } }),
+    ];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("none - built where it stands");
+    expect(html).toContain("she has one, size not stated");
+    expect(html).toContain("<td>57 m about the stated position</td>");
+  });
+
+  /**
+   * The schema refuses a shape on a beacon, so nothing was chosen in its place. Counting the
+   * empty field as an assumption would have the page confessing to a decision the renderer
+   * never made - and naming "shape" over a scenario carrying no buoy at all.
+   */
+  it("does not confess to choosing a shape it was never allowed to choose", () => {
+    const subject = scenario();
+    subject.marks = [beacon({ colour: "black" })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("1 of 1 carry a height this tool chose");
+    expect(html).not.toContain("assumed pillar");
+    expect(html).not.toContain("a statement made here");
+  });
+
+  /** Nothing about riding a sea belongs on a page whose only mark is built on the ground. */
+  it("keeps the buoy's sentence off a scenario that has no buoy", () => {
+    const subject = scenario();
+    subject.marks = [beacon()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("neither heaves nor tilts");
+    expect(html).toContain("the position given for it is the structure&#39;s own");
+    expect(html).not.toContain("riding the sea");
+  });
+
+  it("keeps the beacon's sentence off a scenario that has no beacon", () => {
+    const subject = scenario();
+    subject.marks = [buoy()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("riding the sea");
+    expect(html).not.toContain("neither heaves nor tilts");
   });
 });
 

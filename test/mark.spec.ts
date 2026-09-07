@@ -162,3 +162,76 @@ describe("a buoy's outline is the shape the page names", () => {
     }
   });
 });
+
+/**
+ * A beacon is not a kind of buoy. It is built on a foundation on the ground it marks, so it
+ * passes THROUGH the waterline rather than straddling one it follows, and it carries no IALA
+ * body shape at all - a shape is a statement in the buoyage, and a structure makes none.
+ */
+describe("a beacon", () => {
+  const beacon = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "shoal",
+    kind: "beacon",
+    at: { lat: 33, lon: 140 },
+    ...overrides,
+  });
+
+  function extent(mark: Mark): { top: number; bottom: number } {
+    let top = -Infinity;
+    let bottom = Infinity;
+    for (const mesh of meshes(buildMark(mark).group)) {
+      mesh.geometry.computeBoundingBox();
+      const box = mesh.geometry.boundingBox;
+      if (!box) throw new Error("every part should have a bounding box");
+      top = Math.max(top, mesh.position.y + box.max.y);
+      bottom = Math.min(bottom, mesh.position.y + box.min.y);
+    }
+    return { top, bottom };
+  }
+
+  /**
+   * The stated height is above the foundation, and that is where the drawn structure has to
+   * reach - a beacon whose body ended at its own height above the WATER would be the
+   * renderer answering a question with the buoy's datum.
+   */
+  it("stands from below the water up to the height it was given", () => {
+    const { top, bottom } = extent(beacon({ heightMetres: 6 }));
+    expect(top).toBeCloseTo(6, 5);
+    expect(bottom).toBeLessThan(0);
+  });
+
+  it("reports the height it was given, and assumes one where the source states none", () => {
+    expect(buildMark(beacon({ heightMetres: 9 })).heightMetres).toBe(9);
+    expect(buildMark(beacon()).heightMetres).toBeGreaterThan(0);
+  });
+
+  /**
+   * The two silhouettes have to be told apart at a glance, or a viewer reads a structure on
+   * a shoal as a buoy that has stopped bobbing. A beacon is slender for its height, where
+   * every buoy body here is at least a fifth of its own height across.
+   */
+  it("does not read as a buoy of the same height", () => {
+    const widthOf = (mark: Mark): number => {
+      let widest = 0;
+      for (const mesh of meshes(buildMark(mark).group)) {
+        mesh.geometry.computeBoundingBox();
+        widest = Math.max(widest, mesh.geometry.boundingBox?.max.x ?? 0);
+      }
+      return widest;
+    };
+    // Against the widest buoy body there is, so the claim does not rest on which shape the
+    // renderer happens to assume when none is stated.
+    expect(widthOf(beacon({ heightMetres: 3 }))).toBeLessThan(
+      widthOf(mark({ shape: "spherical", heightMetres: 3 })),
+    );
+  });
+
+  it("takes its colour like any other mark", () => {
+    const red = paintOf(meshes(buildMark(beacon({ colour: "red" })).group)[0]!).color;
+    expect(red.r).toBeGreaterThan(red.g);
+  });
+
+  it("names the group after the mark, as a buoy's is", () => {
+    expect(buildMark(beacon({ id: "hirase" })).group.name).toBe("mark:hirase");
+  });
+});

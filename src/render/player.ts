@@ -32,6 +32,7 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
+import { floats } from "../actors/mark/mooring.js";
 import { buildHull } from "./hull.js";
 import { buildMark, type MarkParts } from "./mark.js";
 import {
@@ -170,10 +171,12 @@ function audienceFor(
  * never changes, while the renderer and the cameras below it belong to whatever surface
  * happens to be showing it and are rebuilt or resized freely.
  */
-/** One buoy in the scene, with the place it is moored at worked out once. */
+/** One mark in the scene, with its place worked out once and whether it floats. */
 interface Moored {
   parts: MarkParts;
   at: LocalPosition;
+  /** A buoy rides the sea; a beacon is built on the ground and does not. */
+  floats: boolean;
 }
 
 interface Stage {
@@ -489,12 +492,19 @@ export class Replay {
    * One buoy, riding the sea as it is drawn under her.
    *
    * A buoy is small against an ocean wave, so she follows the surface rather than arguing
-   * with it: her deck lies along the local slope and her waterline is the local height.
+   * with it: her deck lies along the local slope and her waterline is the local height. A
+   * beacon leaves before any of that - it is built on the ground and the sea runs past it.
    * That is a real approximation and it fails in short steep seas, where a buoy of a few
    * metres spans a wave and cannot follow - the same response question issue #32 holds
    * back for ships, and the reason nothing here pretends to a period of its own.
    */
   private float(mark: Moored, eye: Eye | null): void {
+    // A beacon stands on a foundation on the shoal it marks. It neither heaves nor tilts,
+    // and putting it on the surface would draw a structure riding a swell.
+    if (!mark.floats) {
+      mark.parts.group.position.copy(toWorld(mark.at, sinkage(mark.at, eye)));
+      return;
+    }
     const seconds = this.currentSeconds - this.startSeconds;
     const sea = this.stage.sceneParts.drawnSurfaceAt(mark.at, seconds);
     mark.parts.group.position.copy(toWorld(mark.at, sinkage(mark.at, eye) + sea.heightMetres));
@@ -653,7 +663,7 @@ function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage
   const marks = (scenario.marks ?? []).map((mark) => {
     const parts = buildMark(mark);
     sceneParts.actors.add(parts.group);
-    return { parts, at: toLocalPosition(mark.at, scenario.origin) };
+    return { parts, at: toLocalPosition(mark.at, scenario.origin), floats: floats(mark) };
   });
 
   return {

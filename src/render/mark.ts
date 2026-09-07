@@ -10,6 +10,10 @@
  * **It rides the sea as DRAWN, not the sea as computed.** Past the range where the water's
  * geometry fades to flat, the buoy stops heaving with it. A buoy bobbing over visibly still
  * water would be the same kind of untruth as a panel claiming more than the picture shows.
+ *
+ * **A beacon does none of that.** It is built on a foundation on the shoal it marks, so it
+ * neither heaves nor tilts, and it has no IALA body shape - a can is port hand and a cone
+ * starboard, and a structure means nothing at all. The schema refuses a shape on one.
  */
 
 import {
@@ -65,9 +69,7 @@ export interface MarkParts {
 }
 
 export function buildMark(mark: Mark): MarkParts {
-  const shape = mark.shape ?? ASSUMED_MARK.shape;
   const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres;
-  const proportions = PROPORTIONS[shape];
   const material = new MeshStandardMaterial({
     color: COLOURS[mark.colour ?? ASSUMED_MARK.colour],
     roughness: 0.65,
@@ -76,9 +78,43 @@ export function buildMark(mark: Mark): MarkParts {
 
   const group = new Group();
   group.name = `mark:${mark.id}`;
-  group.add(body(shape, height, proportions, material));
+  if (mark.kind === "beacon") {
+    for (const part of beacon(height, material)) group.add(part);
+    return { group, heightMetres: height };
+  }
+
+  const shape = mark.shape ?? ASSUMED_MARK.shape;
+  group.add(body(shape, height, PROPORTIONS[shape], material));
   if (shape === "pillar" || shape === "spar") group.add(mast(height, material));
   return { group, heightMetres: height };
+}
+
+/**
+ * A beacon: a structure standing on a foundation, not a body floating on a surface.
+ *
+ * Drawn from the water DOWN as well as up, because that is what it does - it is built on
+ * the shoal it marks and the sea runs past it. A buoy's body straddles a waterline it
+ * follows; this one passes through a waterline that moves around it.
+ *
+ * One form for now. What kind of structure - a tower, a lattice, a column, a pile - is a
+ * vocabulary the format does not have yet, and inventing one here would put a shape on the
+ * screen that the file never chose. Issue #42.
+ */
+function beacon(heightMetres: number, material: MeshStandardMaterial): Mesh[] {
+  const width = heightMetres * 0.28;
+  // Enough of a base to read as standing on something rather than hovering. It is not a
+  // stated depth: nothing here knows how deep the shoal is.
+  const footing = heightMetres * 0.35;
+
+  const column = new Mesh(
+    new CylinderGeometry(width * 0.35, width * 0.5, heightMetres + footing, 12),
+    material,
+  );
+  column.position.y = (heightMetres - footing) / 2;
+
+  const plinth = new Mesh(new CylinderGeometry(width, width, footing * 0.5, 12), material);
+  plinth.position.y = -footing * 0.75;
+  return [column, plinth];
 }
 
 /**

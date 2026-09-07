@@ -309,3 +309,43 @@ special cases is how the second one gets missed.
 used, being the narrower statement, but eighteen knots beside force 9 means one of them is
 wrong and the page says so rather than choosing in silence. Which is right is not something
 this tool can settle — but the sea drawn from one is not the sea drawn from the other.
+
+## Sea marks
+
+### A beacon is not a kind of buoy
+
+They are drawn side by side and read as variants of one another, and almost nothing they
+carry means the same thing.
+
+| | buoy | beacon |
+|---|---|---|
+| what it is | a float on a chain | a structure on a foundation |
+| the stated position | her **sinker's** | its own |
+| how far it may be from it | the watch circle | nowhere |
+| body shape | IALA, and it means something | engineering, and it means nothing |
+| `heightMetres` measured from | her waterline | its foundation |
+| in a sea | heaves and tilts with it | the sea runs past it |
+
+Two of those are traps rather than differences. **A shape is a statement in the buoyage** — a
+can is port hand, a cone starboard, a sphere safe water — so a beacon has none to give, and a
+format that accepted one and then drew a structure would have told whoever wrote it that it
+was understood. The schema refuses it. **And `heightMetres` is one field answering two
+questions**: 8 m of beacon and 8 m of buoy are not comparable quantities, so nothing may print
+either without naming the datum.
+
+### A buoy is not at her charted position
+
+The position a report gives is her sinker's. She lies somewhere on a circle about it of radius
+`sqrt(scope^2 - depth^2)`, where scope is the chain as a multiple of the depth, and in a
+stream on its downstream edge. At 20 m on three times scope that is **57 m** — against ships
+of 49 m and 121 m in this project's reference case, a ship's length of slack, and "which side
+of the mark did she pass" is regularly the question a report is answering.
+
+**The renderer still draws her at the stated position**, because where in the circle she was is
+not known and moving her would invent a placement — the same judgement
+`plans/done/antenna-offset-6.md` reached about a hull and its antenna. The panel gives the
+radius instead.
+
+Three answers, not two: a beacon has **no** circle, a buoy with no stated mooring has one
+whose size **nobody wrote down**, and a buoy with a mooring has a figure. A blank shared by
+the first two would put a fact about the world and a gap in the file on the same footing.
