@@ -14,7 +14,7 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
-import { meanOfHighest, type SeaEstimate } from "../core/seaway.js";
+import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
 import {
@@ -512,7 +512,8 @@ function seaCaveat(sea: SeaEstimate | null): string {
     );
   }
   return (
-    `${heightSentence(sea)}${periodSentence(sea)} ${tailNote(sea)} The figures count crossings ` +
+    `${heightSentence(sea)}${periodSentence(sea)}${directionSentence(sea)} ${tailNote(sea)} ` +
+    `The figures count crossings ` +
     "independently, which runs high, and treat the sea as long crested along one line, which " +
     "runs low."
   );
@@ -552,6 +553,27 @@ function periodSentence(sea: SeaEstimate): string {
   return (
     ` The period is assumed from the height (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the ` +
     "rough end), which runs long in enclosed water and so errs towards saying she was visible."
+  );
+}
+
+/**
+ * Which way the sea runs, and whether anybody said so.
+ *
+ * A sea state carries no direction, so most scenarios reach the renderer without one - and
+ * the renderer still has to draw the water running somewhere. The waves are drawn from a
+ * single direction with a narrow spread, which means a reader can take a bearing off the
+ * picture, which means an undeclared one is the picture asserting a figure the file does
+ * not contain. A wind would settle it properly; the format has no field for one.
+ */
+function directionSentence(sea: SeaEstimate): string {
+  if (sea.fromDegreesTrue !== null) {
+    return ` The file puts the sea as coming from ${sea.fromDegreesTrue.toFixed(0)} degrees true.`;
+  }
+  return (
+    ` Nothing states which way the sea runs - a sea state does not carry a direction - so ` +
+    `the view draws it from ${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} degrees true, which ` +
+    "is a bearing this tool chose and not one the source gives. Do not read a wave direction " +
+    "off the picture unless this line says the file supplied it."
   );
 }
 

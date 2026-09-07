@@ -464,3 +464,33 @@ describe("the surface at a place and an instant", () => {
     });
   });
 });
+
+describe("which way the sea runs", () => {
+  /**
+   * A sea state is a description of the water's appearance and carries no bearing at all.
+   * Null rather than a default, so whatever draws it has to decide what to do about not
+   * knowing - and say what it decided. The renderer draws a narrow-spread sea a reader can
+   * take a bearing off, so an undeclared direction is the picture asserting a figure the
+   * file does not contain.
+   */
+  it("has no direction at all from a sea state", () => {
+    expect(seawayFrom({ seaState: 4 })?.fromDegreesTrue).toBeNull();
+    expect(seawayFrom({ seaState: 0 })?.fromDegreesTrue).toBeNull();
+  });
+
+  it("carries a stated direction through, including due north", () => {
+    const stated = (fromDegreesTrue: number): number | null | undefined =>
+      seawayFrom({
+        waves: { significantHeightMetres: 2, fromDegreesTrue, derivation: "measured" },
+      })?.fromDegreesTrue;
+    expect(stated(290)).toBe(290);
+    expect(stated(0)).toBe(0);
+  });
+
+  it("is null where a height is stated without one, rather than quietly north", () => {
+    const estimate = seawayFrom({
+      waves: { significantHeightMetres: 2, derivation: "inferred" },
+    });
+    expect(estimate?.fromDegreesTrue).toBeNull();
+  });
+});

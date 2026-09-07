@@ -150,6 +150,12 @@ export interface SeaEstimate {
   roughEndIsOpen: boolean;
   /** The period was assumed from the height, the source having stated none. */
   periodAssumed: boolean;
+  /**
+   * Where the sea comes from, or null where the source does not say - which is every sea
+   * state, since the class carries no direction at all. Null rather than a default, so that
+   * whatever draws it has to decide what to do about not knowing and say what it decided.
+   */
+  fromDegreesTrue: number | null;
 }
 
 /**
@@ -188,6 +194,7 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
       derivation: waves.derivation,
       roughEndIsOpen: false,
       periodAssumed: waves.peakPeriodSeconds === undefined,
+      fromDegreesTrue: waves.fromDegreesTrue ?? null,
     };
   }
   return fromSeaState(environment?.seaState);
@@ -206,6 +213,9 @@ function fromSeaState(seaState: number | null | undefined): SeaEstimate | null {
     derivation: "inferred",
     roughEndIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
     periodAssumed: true,
+    // A sea state is a description of the water's appearance and says nothing about which
+    // way it is running.
+    fromDegreesTrue: null,
   };
 }
 
@@ -445,6 +455,20 @@ const DRAWN_COMPONENTS = 24;
  */
 export const SPREADING_EXPONENT = 6;
 
+/**
+ * Which way a sea runs when nothing says.
+ *
+ * Arbitrary, and that is the problem rather than the solution: a sea state carries no
+ * direction at all, so without this every such scenario would still have to be drawn
+ * running SOMEWHERE, and a narrow spread makes that somewhere plainly readable off the
+ * picture. There is no honest default bearing, only a declared one - `ui/panels.ts` names
+ * it beside the sea it was used for, which is the whole of what makes drawing it allowable.
+ *
+ * What would actually fix it is a wind: a wind sea runs with the wind, reports state wind
+ * far more often than they state waves, and `environment` has no field for it yet.
+ */
+export const ASSUMED_DIRECTION_DEGREES_TRUE = 0;
+
 /** One sinusoid of a drawn sea. Deep water throughout, so `omega^2 = g k`. */
 export interface WaveComponent {
   amplitudeMetres: number;
@@ -474,7 +498,10 @@ export interface WaveComponent {
  *   with the same sea every time. A reconstruction whose sea is different on every viewing
  *   is not one.
  */
-export function waveComponents(seaway: Seaway, fromDegreesTrue = 0): WaveComponent[] {
+export function waveComponents(
+  seaway: Seaway,
+  fromDegreesTrue: number = ASSUMED_DIRECTION_DEGREES_TRUE,
+): WaveComponent[] {
   if (seaway.significantHeightMetres <= 0) return [];
   const peak = (2 * Math.PI) / seaway.peakPeriodSeconds;
   const random = seededRandom(seaway);

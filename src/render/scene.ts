@@ -26,6 +26,7 @@ import {
 
 import type { LocalPosition } from "../core/geodesy.js";
 import {
+  ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
   surfaceAt,
   waveComponents,
@@ -257,7 +258,12 @@ function addWater(
   const waves = makeWaveUniforms();
   waves.uSkyColour.value.setHex(palette.sky);
   applyWaves(material, waves);
-  const components = sea ? waveComponents(sea.rough, environment?.waves?.fromDegreesTrue ?? 0) : [];
+  // Where the source states no direction the sea still has to run somewhere, so it runs the
+  // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
+  // bearing plainly readable off the picture, which is exactly why it cannot go undeclared.
+  const components = sea
+    ? waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE)
+    : [];
   setWaves(waves, components);
 
   const mesh = buildWater(material);

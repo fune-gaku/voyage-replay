@@ -556,3 +556,42 @@ describe("the sea marks a scenario carries", () => {
     expect(html).toContain("issue #32");
   });
 });
+
+describe("which way the drawn sea runs", () => {
+  /**
+   * The waves are drawn from one direction with a narrow spread, so a reader can take a
+   * bearing off the picture. Where the file gives none, the bearing is this tool's and the
+   * page has to say so - otherwise the video asserts a figure nothing in the source
+   * contains, which is the fault the whole sea section exists to avoid.
+   */
+  it("warns off the picture's bearing where the file states no direction", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", seaState: 4 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("Nothing states which way the sea runs");
+    expect(html).toContain("a bearing this tool chose");
+    expect(html).toContain("Do not read a wave direction off the picture");
+  });
+
+  it("says the file supplied it where the file did", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 290, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("coming from 290 degrees true");
+    expect(html).not.toContain("a bearing this tool chose");
+  });
+
+  it("does not treat a stated due north as a missing direction", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 0, derivation: "measured" },
+    };
+    expect(panelsFor(subject)).toContain("coming from 0 degrees true");
+  });
+});
