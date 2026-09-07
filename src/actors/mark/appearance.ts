@@ -69,12 +69,30 @@ export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): Drawn
   return {
     pattern: { ...pattern, value: onlyWhatItSays(pattern.value) },
     shape: mark.kind === "beacon" ? null : shapeOf(mark, meant),
-    // A topmark comes only from the buoyage: it is a statement OF the meaning, so a file
-    // that states no purpose states no topmark either, and one invented here would say
-    // something about the mark that nothing in the source does.
-    topmark: meant?.topmark ? { value: meant.topmark, from: "from its purpose" } : null,
+    topmark: topmarkOf(mark, meant),
     construction:
       mark.kind === "beacon" ? pick(mark.construction, undefined, CHOSEN.construction) : null,
+  };
+}
+
+/**
+ * The shape on top, where there is one.
+ *
+ * **The purpose says what a topmark would BE, not whether there was one.** R1001 heads that
+ * column "Topmark (if any)" in every table, and notes that an authority may leave them off
+ * where weather or ice make them impractical - so a file that says nothing has not said there
+ * was one. Drawn anyway, because it is the daylight statement a viewer reads a cardinal mark
+ * off, and reported as this tool's decision to draw it: what it looks like comes from the
+ * buoyage, that it is there at all does not.
+ */
+function topmarkOf(
+  mark: Mark,
+  meant: Appearance | null,
+): From<{ shape: Topmark; colour: MarkColour }> | null {
+  if (mark.topmark === false || !meant?.topmark) return null;
+  return {
+    value: meant.topmark,
+    from: mark.topmark === true ? "from its purpose" : "chosen from what its purpose allows",
   };
 }
 

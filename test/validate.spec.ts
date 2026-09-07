@@ -176,6 +176,15 @@ describe("the schema on what a mark means", () => {
     marks: [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 }, ...mark }],
   });
 
+  /**
+   * R1001 heads that column "Topmark (if any)", and notes an authority may leave them off in
+   * weather or ice. So "there was none" is a fact a report can state, not a gap in it.
+   */
+  it("takes a statement that a mark carried no topmark", () => {
+    expect(validateScenario(withMark({ topmark: false })).valid).toBe(true);
+    expect(validateScenario(withMark({ topmark: "none" })).valid).toBe(false);
+  });
+
   it("takes a purpose, and refuses one that is not in the buoyage", () => {
     expect(validateScenario(withMark({ purpose: "north-cardinal" })).valid).toBe(true);
     expect(validateScenario(withMark({ purpose: "north-westerly" })).valid).toBe(false);

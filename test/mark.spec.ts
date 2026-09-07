@@ -420,6 +420,14 @@ describe("a mark drawn from what it is for", () => {
     expect(lamp("north-cardinal")).toBeGreaterThan(height * 1.7);
   });
 
+  /** A mark whose file says it carried no topmark is drawn without one. */
+  it("draws no topmark where the file says there was none", () => {
+    const bare = meshes(buildMark(buoy({ purpose: "north-cardinal", topmark: false })).group);
+    const withOne = meshes(buildMark(buoy({ purpose: "north-cardinal" })).group);
+    expect(bare.length).toBeLessThan(withOne.length);
+    expect(bare.filter((mesh) => mesh.geometry.type === "ConeGeometry")).toHaveLength(0);
+  });
+
   /** Two spheres for an isolated danger, one for safe water - by day that is the difference. */
   it("gives an isolated danger two spheres and safe water one", () => {
     const spheres = (purpose: MarkPurpose): number =>

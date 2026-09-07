@@ -204,6 +204,10 @@
             }
           ]
         },
+        "topmark": {
+          "description": "Whether the mark carried a topmark at all. THE PURPOSE SAYS WHAT ONE WOULD BE, NOT WHETHER THERE WAS ONE: R1001 heads that column 'Topmark (if any)' in every table, and notes that an authority may leave them off where weather or ice make them impractical. Absence is therefore a real thing to state, and where nothing states it the renderer draws one and says the decision was its own.",
+          "type": "boolean"
+        },
         "construction": {
           "description": "How a beacon is built, which means NOTHING - a lattice tower and a concrete column can both be a north cardinal. The buoy's counterpart is `shape`, and that one is partly meaning, which is why they are different fields on different kinds.",
           "enum": ["tower", "lattice", "column", "pile"]

@@ -516,6 +516,10 @@ cardinal, isolated danger, safe water and special marks are the same the world o
   striped, isolated danger is banded — a single-colour field leaves out most of the system.
   The pattern is carried as a kind and an ordered list, and the order is the message: black
   over yellow is north, yellow over black is south.
+- **"Topmark (if any)" is how R1001 heads that column, in every table.** The purpose says
+  what a topmark would *be*; it does not say whether the mark had one — an authority may leave
+  them off where weather or ice make them impractical. So a file can state that there was none,
+  and where nothing states it, drawing one is this tool's decision rather than the buoyage's.
 - **The origin of a drawn value has four states, not three.** Stated; fixed by the buoyage;
   *picked from the several the buoyage allows*; chosen with nothing to go on. A cardinal
   mark's colours are black over yellow and nothing else, but its body may be a pillar or a

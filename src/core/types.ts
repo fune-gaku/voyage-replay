@@ -296,6 +296,16 @@ export interface Mark {
   /** How a beacon is built. Meaningless for a buoy, and the schema refuses it on one. */
   construction?: MarkConstruction;
   /**
+   * Whether it carried a topmark at all.
+   *
+   * **The purpose says what one would BE, not whether there was one.** R1001 heads that
+   * column "Topmark (if any)" in every table, and notes that an authority may leave topmarks
+   * off where weather or ice make them impractical. So absence is a real thing a report can
+   * state, and where nothing states it, drawing one is this tool's decision rather than the
+   * buoyage's - which is what `ui/panels.ts` says beside it.
+   */
+  topmark?: boolean;
+  /**
    * Body height **above the water**, and the same datum for both kinds.
    *
    * A beacon's structure carries on below the sea to a foundation, and nothing in this

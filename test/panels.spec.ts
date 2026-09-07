@@ -716,7 +716,24 @@ describe("what the page says a mark means", () => {
 
     expect(html).toContain("<td>north-cardinal</td>");
     expect(html).toContain("black over yellow, from its purpose");
-    expect(html).toContain("black two cones point up, from its purpose");
+    // What the topmark looks like comes from the purpose; that there IS one does not, so the
+    // cell says the decision to draw it was this tool's.
+    expect(html).toContain("black two cones point up, chosen from what its purpose allows");
+  });
+
+  /**
+   * R1001 heads that column "Topmark (if any)" in every table, and notes that an authority
+   * may leave topmarks off where weather or ice make them impractical. So a file can say a
+   * mark carried one - or that it did not, which is a fact about the mark and not a gap.
+   */
+  it("takes the file's word on whether there was a topmark at all", () => {
+    const told = scenario();
+    told.marks = [cardinal({ topmark: true })];
+    expect(panelsFor(told)).toContain("black two cones point up, from its purpose");
+
+    const without = scenario();
+    without.marks = [cardinal({ topmark: false })];
+    expect(panelsFor(without)).toContain("<td>none drawn</td>");
   });
 
   /**
