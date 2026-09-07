@@ -17,7 +17,7 @@
  *   so beside the mark.
  */
 
-import { appearanceOf, type BuoyageRegion, type Topmark } from "./buoyage.js";
+import { appearanceOf, type Appearance, type BuoyageRegion, type Topmark } from "./buoyage.js";
 import type {
   Mark,
   MarkColour,
@@ -26,7 +26,16 @@ import type {
   MarkShape,
 } from "../../core/types.js";
 
-export type Origin = "stated" | "from its purpose" | "chosen here";
+/**
+ * Four, not three - because the buoyage sometimes narrows a thing without fixing it.
+ *
+ * A north cardinal's colours are black over yellow and nothing else; its body may be a pillar
+ * OR a spar, and R1001 does not choose. Reporting the pillar as "from its purpose" would put
+ * this tool's pick behind the buoyage's authority, which is the same overclaim as calling an
+ * invented colour a stated one - one step further in.
+ */
+export type Origin =
+  "stated" | "from its purpose" | "chosen from what its purpose allows" | "chosen here";
 
 export interface From<T> {
   value: T;
@@ -59,13 +68,32 @@ export function drawnAppearance(mark: Mark, region: BuoyageRegion | null): Drawn
   const pattern = pick(mark.pattern, meant?.pattern, CHOSEN.pattern);
   return {
     pattern: { ...pattern, value: onlyWhatItSays(pattern.value) },
-    shape: mark.kind === "beacon" ? null : pick(mark.shape, meant?.shapes[0], CHOSEN.shape),
+    shape: mark.kind === "beacon" ? null : shapeOf(mark, meant),
     // A topmark comes only from the buoyage: it is a statement OF the meaning, so a file
     // that states no purpose states no topmark either, and one invented here would say
     // something about the mark that nothing in the source does.
     topmark: meant?.topmark ? { value: meant.topmark, from: "from its purpose" } : null,
     construction:
       mark.kind === "beacon" ? pick(mark.construction, undefined, CHOSEN.construction) : null,
+  };
+}
+
+/**
+ * The IALA body shape, which the buoyage narrows without always fixing.
+ *
+ * A cardinal mark may be a pillar or a spar; a safe-water mark may be a sphere, a pillar or a
+ * spar; a port-hand mark a can, a pillar or a spar. Where more than one is allowed, the first
+ * is this tool's pick out of a list the buoyage supplied - which is neither "from its purpose"
+ * nor "chosen here", and is reported as the third thing it is.
+ */
+function shapeOf(mark: Mark, meant: Appearance | null): From<MarkShape> {
+  if (mark.shape !== undefined) return { value: mark.shape, from: "stated" };
+  const allowed = meant?.shapes ?? [];
+  const first = allowed[0];
+  if (first === undefined) return { value: CHOSEN.shape, from: "chosen here" };
+  return {
+    value: first,
+    from: allowed.length > 1 ? "chosen from what its purpose allows" : "from its purpose",
   };
 }
 

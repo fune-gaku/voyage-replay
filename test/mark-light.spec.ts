@@ -544,7 +544,9 @@ describe("lightOf", () => {
     expect(reading.known).toBe(true);
     if (reading.known) {
       expect(formatCharacter(reading.character)).toBe("VQ W");
-      expect(reading.characterFrom).toBe("from its purpose");
+      // R1001 Table 5 allows VQ **or** Q, so the one taken is a pick and not a derivation -
+      // and saying "from its purpose" would put this tool's choice behind IALA's authority.
+      expect(reading.characterFrom).toBe("chosen from what its purpose allows");
     }
 
     const stated = lightOf(buoy({ purpose: "north-cardinal", light: { character: "Q W 1s" } }));
@@ -585,7 +587,11 @@ describe("lightOf", () => {
   it("supplies a preferred-channel rhythm once the region is known", () => {
     const reading = lightOf(buoy({ purpose: "preferred-channel-to-port", light: {} }), "B");
     expect(reading.known).toBe(true);
-    if (reading.known) expect(formatCharacter(reading.character)).toBe("Fl(2+1) R");
+    if (reading.known) {
+      expect(formatCharacter(reading.character)).toBe("Fl(2+1) R");
+      // The buoyage fixes this one outright, so it really is from the purpose.
+      expect(reading.characterFrom).toBe("from its purpose");
+    }
   });
 
   it("takes a light on a beacon as readily as on a buoy", () => {

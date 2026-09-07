@@ -55,7 +55,7 @@ export type LightReading =
        * a north cardinal. The page says which, since a generated rhythm and a reported one
        * are the same dot on the water.
        */
-      characterFrom: "stated" | "from its purpose";
+      characterFrom: "stated" | "from its purpose" | "chosen from what its purpose allows";
     }
   | { known: false; because: Unlit };
 
@@ -128,7 +128,13 @@ function fromItsPurpose(mark: Mark, region: BuoyageRegion | null): LightReading 
     character: meant.character,
     phases: phasesOf(meant.character),
     timings: "inferred",
-    characterFrom: "from its purpose",
+    // **Where the buoyage allowed several, this is a pick and not a derivation.** A north
+    // cardinal may show VQ or Q; a safe-water mark may be isophase, occulting, a long flash
+    // every ten seconds or Morse A. Reporting the one taken as "from its purpose" would put
+    // this tool's choice behind IALA's authority.
+    characterFrom: meant.chosenFromSeveral
+      ? "chosen from what its purpose allows"
+      : "from its purpose",
   };
 }
 

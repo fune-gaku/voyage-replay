@@ -14,7 +14,12 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
-import { drawnAppearance, type DrawnMark, type From } from "../actors/mark/appearance.js";
+import {
+  drawnAppearance,
+  type DrawnMark,
+  type From,
+  type Origin,
+} from "../actors/mark/appearance.js";
 import type { BuoyageRegion } from "../actors/mark/buoyage.js";
 import { lightOf } from "../actors/mark/light.js";
 import { watchCircleMetres } from "../actors/mark/mooring.js";
@@ -1118,10 +1123,21 @@ function assumedOf(mark: Mark, region: BuoyageRegion | null): Choosable[] {
   const drawn = drawnAppearance(mark, region);
   const chosen: Choosable[] = [];
   const form = drawn.construction ?? drawn.shape;
-  if (form?.from === "chosen here") chosen.push("form");
-  if (drawn.pattern.from === "chosen here") chosen.push("colours");
+  if (form && decided(form.from)) chosen.push("form");
+  if (decided(drawn.pattern.from)) chosen.push("colours");
   if (mark.heightMetres === undefined) chosen.push("height");
   return chosen;
+}
+
+/**
+ * Both kinds of decision this tool makes, and neither kind of thing it was told.
+ *
+ * Picking the first of the shapes a purpose allows is a smaller decision than picking one
+ * with nothing to go on, but it is still this tool deciding - and the count is of what a
+ * reader cannot hold the source to.
+ */
+function decided(origin: Origin): boolean {
+  return origin === "chosen here" || origin === "chosen from what its purpose allows";
 }
 
 /**
@@ -1222,7 +1238,11 @@ function assumedNote(marks: Mark[], region: BuoyageRegion | null): string {
   )
     ? SHAPE_CLAUSE
     : "";
-  return `Chosen here rather than taken from the source or the buoyage: ${list}${shapes}.`;
+  return (
+    `Decided here rather than stated: ${list}${shapes}. Each cell above says which kind of ` +
+    "decision it was - a value the buoyage fixes, one it allows several of, or one with " +
+    "nothing to go on at all."
+  );
 }
 
 /**

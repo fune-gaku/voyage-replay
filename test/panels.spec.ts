@@ -520,8 +520,8 @@ describe("the sea marks a scenario carries", () => {
 
     expect(html).toContain("Sea marks (1)");
     expect(html).toContain(
-      "Chosen here rather than taken from the source or the buoyage: a form for 1 of 1, a " +
-        "colours for 1 of 1 and a height for 1 of 1",
+      "Decided here rather than stated: a form for 1 of 1, a colours for 1 of 1 and a height " +
+        "for 1 of 1",
     );
     expect(html).toContain("pillar, chosen here");
     expect(html).toContain("yellow, chosen here");
@@ -754,10 +754,38 @@ describe("what the page says a mark means", () => {
   });
 
   /** A rhythm the buoyage supplied is not one the source stated, and the page separates them. */
-  it("says a rhythm came from the purpose rather than from the file", () => {
+  /**
+   * Three things a rhythm can be, and the page separates all three: stated, fixed by the
+   * buoyage, or picked from the several it allows. A north cardinal may show VQ or Q, so the
+   * VQ on screen is this tool's pick out of IALA's list - not IALA's answer.
+   */
+  it("says whether a rhythm was stated, fixed by the buoyage, or picked from its choices", () => {
+    const several = scenario();
+    several.marks = [cardinal({ light: {} })];
+    expect(panelsFor(several)).toContain("VQ W, chosen from what its purpose allows");
+
+    const fixed = scenario();
+    fixed.meta.buoyageRegion = "B";
+    fixed.marks = [cardinal({ purpose: "preferred-channel-to-port", light: {} })];
+    expect(panelsFor(fixed)).toContain("Fl(2+1) R, from its purpose");
+
+    const told = scenario();
+    told.marks = [cardinal({ light: { character: "Q W 1s" } })];
+    expect(panelsFor(told)).toContain("<td>Q W 1s</td>");
+  });
+
+  /**
+   * The same three for the body's shape. R1001 lets a cardinal mark be a pillar or a spar and
+   * does not choose; the colours it fixes outright.
+   */
+  it("separates a shape the buoyage allows several of from the colours it fixes", () => {
     const subject = scenario();
-    subject.marks = [cardinal({ light: {} })];
-    expect(panelsFor(subject)).toContain("VQ W, from its purpose");
+    subject.marks = [cardinal()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("pillar, chosen from what its purpose allows");
+    expect(html).toContain("black over yellow, from its purpose");
+    expect(html).toContain("a form for 1 of 1");
   });
 
   /** A mark with no purpose has no topmark to draw, and the page does not invent one. */
