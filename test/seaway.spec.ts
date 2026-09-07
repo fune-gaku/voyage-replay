@@ -8,6 +8,7 @@ import {
   SEA_STATE_HEIGHT_METRES,
   seawayFrom,
   seawayOf,
+  SPREADING_EXPONENT,
   surfaceAt,
   waveComponents,
 } from "../src/core/seaway.js";
@@ -324,9 +325,35 @@ describe("a sea broken into sinusoids, for something that has to draw it", () =>
     // The waves travel towards the reciprocal of where they come from.
     expect(mean).toBeCloseTo(from + 180, 0);
     expect(Math.max(...travelling) - Math.min(...travelling)).toBeGreaterThan(60);
-    for (const direction of travelling) {
-      expect(Math.abs(direction - (from + 180))).toBeLessThanOrEqual(90);
+  });
+
+  /**
+   * How wide that fan is, against the published identity rather than against a second copy
+   * of the formula: for the Longuet-Higgins form `cos^2s(theta/2)`, the mean resultant
+   * length of the directions is exactly `s / (s + 1)`.
+   *
+   * It is worth pinning because the same exponent on the wrong form - `cos^2s(theta)`,
+   * which is also a published spreading function - leaves a quarter of the weight ninety
+   * degrees off the sea's stated direction, and the picture then argues with the figure it
+   * was handed. Every component stays individually correct while it does.
+   */
+  it("has the directional spread the Longuet-Higgins form gives for its exponent", () => {
+    const from = 290;
+    const mean = ((from + 180) * Math.PI) / 180;
+    const components = waveComponents(seawayOf(3), from);
+
+    let east = 0;
+    let north = 0;
+    for (const component of components) {
+      east += Math.cos(component.directionRadians - mean);
+      north += Math.sin(component.directionRadians - mean);
     }
+    const resultant = Math.hypot(east, north) / components.length;
+    expect(resultant).toBeCloseTo(SPREADING_EXPONENT / (SPREADING_EXPONENT + 1), 2);
+
+    // Narrow enough to still be a sea from one direction, wide enough not to be corduroy.
+    expect(resultant).toBeGreaterThan(0.5);
+    expect(resultant).toBeLessThan(0.95);
   });
 
   /**

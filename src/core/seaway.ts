@@ -426,13 +426,24 @@ function erfc(x: number): number {
 const DRAWN_COMPONENTS = 24;
 
 /**
- * Directional spreading, as the exponent of `cos^2s` about the mean direction.
+ * Directional spreading: the `s` of the Longuet-Higgins form, `D(theta) ~ cos^2s(theta/2)`,
+ * with theta measured from the mean direction over the whole circle.
  *
- * A sea drawn from one direction is corduroy - long parallel crests that no wind sea has -
- * and it also makes occlusion far too correlated across bearing. Two is the usual figure
- * for wind sea.
+ * **The half-angle is the whole of the form and not a detail.** Written `cos^2s(theta)`
+ * instead - which is a different published spreading function - the same exponent gives a
+ * far wider fan: a quarter of the weight still at ninety degrees off the sea's stated
+ * direction, so the picture argues with the figure it was given.
+ *
+ * Six is towards the middle of what has been measured for wind sea near the spectral peak,
+ * where the range usually quoted is about five to ten. Real spreading is not one number:
+ * it is narrowest at the peak and broadens away from it in both directions, which is not
+ * modelled here.
+ *
+ * A sea drawn from a single direction is corduroy - long parallel crests no wind sea has -
+ * and it also makes occlusion far too correlated across bearing, which is why some spread
+ * is needed at all.
  */
-const SPREADING_EXPONENT = 2;
+export const SPREADING_EXPONENT = 6;
 
 /** One sinusoid of a drawn sea. Deep water throughout, so `omega^2 = g k`. */
 export interface WaveComponent {
@@ -562,13 +573,21 @@ function normalised(drawn: Drawn[], sigma: number, peak: number): WaveComponent[
 }
 
 /**
- * An offset from the mean direction, for a `cos^2s` spread, by inverting its integral
- * numerically over a quarter turn each way. Deterministic in the component's index rather
- * than random, so the fan is filled evenly instead of clumping.
+ * An offset from the mean direction, by inverting the spreading function's integral
+ * numerically over the whole circle.
+ *
+ * The whole circle rather than a quarter turn each way, because the form already goes to
+ * zero at a half turn - `cos^2s(theta/2)` is exactly nought at theta = 180 degrees - so
+ * clipping it would only distort what it already handles. It also leaves the published
+ * identity for the mean resultant length, `s / (s + 1)`, exactly true of what comes out,
+ * which is what `test/seaway.spec.ts` holds this against.
+ *
+ * Deterministic in the component's index rather than random, so the fan is filled evenly
+ * instead of clumping.
  */
 function spreadAngle(fraction: number): number {
-  const limit = Math.PI / 2;
-  const steps = 200;
+  const limit = Math.PI;
+  const steps = 400;
   let total = 0;
   const weights: number[] = [];
   for (let i = 0; i <= steps; i += 1) {
