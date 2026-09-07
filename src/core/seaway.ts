@@ -184,6 +184,31 @@ export interface SeaEstimate {
  * WMO code 3700. The upper bound of state 9 is open; 14 m stands in for it and
  * `roughEndIsOpen` says so rather than letting the number pass as a bound.
  */
+/**
+ * How one sea state class ends, which is the same question `forceClass` answers about the
+ * wind - and for the same reason.
+ *
+ * State 9 is "over 14 m" and the table's 14 is a floor. Two places knew that separately
+ * until the Beaufort scale taught the lesson at its own two odd ends: scattering a special
+ * case is how the second one gets missed. One function knows.
+ */
+export interface SeaStateClass {
+  calmestMetres: number;
+  /** A floor rather than a ceiling where `topIsOpen`. */
+  roughestMetres: number;
+  topIsOpen: boolean;
+}
+
+export function seaStateClass(seaState: number): SeaStateClass | null {
+  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  if (!band) return null;
+  return {
+    calmestMetres: band[0],
+    roughestMetres: band[1],
+    topIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
+  };
+}
+
 export const SEA_STATE_HEIGHT_METRES: readonly (readonly [number, number])[] = [
   [0, 0],
   [0, 0.1],
@@ -251,12 +276,11 @@ function roughestHeightMetres(
 ): number {
   if (waves?.significantHeightMetres !== undefined) return waves.significantHeightMetres;
   if (seaState === null || seaState === undefined) return 0;
-  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  const band = seaStateClass(seaState);
   if (!band) return 0;
-  // State 9 is "over 14 m" and the table's 14 is a sentinel, not a ceiling. Returning
-  // infinity is not a trick: the roughest sea the file allows really is unbounded, and no
-  // finite wind can account for it - which is exactly what the caller has to conclude.
-  return seaState === SEA_STATE_HEIGHT_METRES.length - 1 ? Infinity : band[1];
+  // Infinity is not a trick: where the class is open the roughest sea the file allows really
+  // is unbounded, and no finite wind can account for it - which is what the caller concludes.
+  return band.topIsOpen ? Infinity : band.roughestMetres;
 }
 
 /**
@@ -343,16 +367,16 @@ function fromSeaState(
   direction: { fromDegreesTrue: number | null; directionFrom: SeaEstimate["directionFrom"] },
 ): SeaEstimate | null {
   if (seaState === null || seaState === undefined) return null;
-  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  const band = seaStateClass(seaState);
   if (!band) return null;
   return {
-    calm: seawayOf(band[0], period.seconds),
-    rough: seawayOf(band[1], period.seconds),
+    calm: seawayOf(band.calmestMetres, period.seconds),
+    rough: seawayOf(band.roughestMetres, period.seconds),
     source: "sea-state",
     // A sea state is somebody's estimate of the sea from its appearance, so the figures it
     // yields were reconstructed from a description rather than recorded.
     derivation: "inferred",
-    roughEndIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
+    roughEndIsOpen: band.topIsOpen,
     periodFrom: period.from,
     ...direction,
   };
@@ -1036,10 +1060,18 @@ export function fullyDevelopedHeightMetres(speedKnots: number): number {
   return (0.21 * speed * speed) / GRAVITY_METRES_PER_SECOND_SQUARED;
 }
 
-/** The peak period of that same fully developed sea, taken forwards from the wind. */
+/**
+ * The peak period of that same fully developed sea, taken forwards from the wind.
+ *
+ * A calm returns nought, which is the relation's own answer and not a period: a calm raises
+ * no waves and so has none. It used to return the spectrum's lower clamp instead, half a
+ * second, which is a plausible-looking figure for a question with no answer - the same
+ * shape of trap that had a calm drawing a two-metre sea 0.4 m from crest to crest. Nothing
+ * in the tool asks, because `periodFor` will not take a period from a wind that could not
+ * raise the sea; anything that does ask gets something visibly wrong rather than quietly so.
+ */
 export function periodFromWindSeconds(speedKnots: number): number {
-  const speed = speedKnots * METRES_PER_SECOND_PER_KNOT;
-  if (speed <= 0) return PERIOD_LIMITS_SECONDS.least;
+  const speed = Math.max(speedKnots, 0) * METRES_PER_SECOND_PER_KNOT;
   return (2 * Math.PI * speed) / (0.877 * GRAVITY_METRES_PER_SECOND_SQUARED);
 }
 

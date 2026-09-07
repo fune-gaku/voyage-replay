@@ -17,6 +17,7 @@ import {
   highestExpectedMetres,
   meanOfHighest,
   SEA_STATE_HEIGHT_METRES,
+  seaStateClass,
   seawayFrom,
   seawayOf,
   SPREADING_EXPONENT,
@@ -886,5 +887,51 @@ describe("the two Beaufort classes whose ends are not numbers", () => {
     expect(forceClass(5)).toMatchObject({ topIsExclusive: false, topIsOpen: false });
     expect(forceClass(12)).toMatchObject({ topIsExclusive: false, topIsOpen: true });
     expect(forceClass(13)).toBeNull();
+  });
+});
+
+describe("the sea state's open end, known in one place like the wind's", () => {
+  /**
+   * The Beaufort scale taught this at its own two odd ends: scattering a special case is how
+   * the second one gets missed. Two functions knew separately that state 9 has no ceiling.
+   */
+  it("says which class has a ceiling and which has a floor", () => {
+    expect(seaStateClass(4)).toEqual({
+      calmestMetres: 1.25,
+      roughestMetres: 2.5,
+      topIsOpen: false,
+    });
+    expect(seaStateClass(9)).toMatchObject({ calmestMetres: 14, topIsOpen: true });
+    expect(seaStateClass(0)).toMatchObject({ topIsOpen: false });
+    expect(seaStateClass(10)).toBeNull();
+  });
+
+  it("agrees with what the estimate reports about its own ends", () => {
+    for (let state = 0; state < SEA_STATE_HEIGHT_METRES.length; state += 1) {
+      const estimate = seawayFrom({ seaState: state });
+      const band = seaStateClass(state);
+      expect(estimate?.roughEndIsOpen, `state ${state}`).toBe(band?.topIsOpen);
+      expect(estimate?.calm.significantHeightMetres).toBe(band?.calmestMetres);
+      expect(estimate?.rough.significantHeightMetres).toBe(band?.roughestMetres);
+    }
+  });
+});
+
+describe("what a calm is worth as a period", () => {
+  /**
+   * Nought, which is the relation's own answer and not a period. It used to hand back the
+   * spectrum's lower clamp - half a second - which is a plausible-looking figure for a
+   * question that has none, and is the shape of trap that had a calm drawing a two-metre sea
+   * 0.4 m from crest to crest.
+   */
+  it("gives a calm no period rather than the clamp", () => {
+    expect(periodFromWindSeconds(0)).toBe(0);
+    expect(periodFromWindSeconds(-5)).toBe(0);
+    expect(periodFromWindSeconds(0)).not.toBe(PERIOD_LIMITS_SECONDS.least);
+  });
+
+  it("still runs the relation for any wind that raises something", () => {
+    expect(periodFromWindSeconds(20)).toBeGreaterThan(PERIOD_LIMITS_SECONDS.least);
+    expect(periodFromWindSeconds(40) / periodFromWindSeconds(20)).toBeCloseTo(2, 9);
   });
 });
