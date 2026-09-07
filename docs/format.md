@@ -119,12 +119,28 @@ different question depending on which it is.
   nothing here states it. A beacon is therefore drawn taller than its stated height — the
   footing below the surface is the renderer standing it on something, and the page says so.
 
+- **`purpose`** is what the mark is FOR, and **the colours, the topmark and the rhythm are all
+  generated from it**. Carried once so the three cannot disagree — as independent fields, a
+  file could state black-and-yellow bands with two spheres and Fl(2), which is a mark nobody
+  could identify. Stated as the mark's *hand* (`port-hand`, not "red"), because which colour
+  that is depends on the region.
+- **`pattern`** overrides the generated colours where a report gives them. A kind — solid,
+  horizontal bands, vertical stripes — and an ordered list; the order is the message.
+- **`construction`** is how a *beacon* is built: a tower, a lattice, a column, a pile. It means
+  nothing at all, which is why it is separate from the buoy's `shape`, which means a great
+  deal. **The schema keeps each on its own kind.**
 - **`light`** is the light it carries, and **its absence means the file did not say** — not
   that the mark was unlit. `character` is the Light List abbreviation ("Fl(2) W 10s",
   "Q(6)+LFl 15s", "Mo(A) W 7s"), which is what a report gives. `phases` is for the rare source
   that states the actual on/off durations: the abbreviation bounds them without fixing them,
   so a sequence worked out from it alone conforms to IALA E-110 without being the sequence
   that light showed.
+
+`meta.buoyageRegion` sits beside these: `A` or `B`, deciding the lateral colours. **Japan,
+Korea, the Philippines and the Americas are Region B**, where red is to starboard. It is
+stated rather than derived from the position because the boundary between the regions is a
+map and not a formula — and without it, a lateral mark gets no colours rather than colours
+that would be wrong half the world over.
 
 Everything optional here is regularly missing from a report, and a renderer then has to choose
 something to draw. What it chose is named beside the mark on the page rather than written into

@@ -22,11 +22,15 @@ import {
   type Phase,
   type Unreadable,
 } from "../../core/light-character.js";
+import { appearanceOf, type BuoyageRegion } from "./buoyage.js";
 import type { LightPhase, Mark } from "../../core/types.js";
 
 /** Why nothing can be shown flashing. */
 export type Unlit =
   | "the file does not say whether it carried a light"
+  | "the file states a light but neither its character nor a purpose"
+  | "a lateral mark whose buoyage region is not stated"
+  | "a purpose the buoyage gives no rhythm of its own"
   | "the stated timings include a phase of no length"
   | "the stated timings do not run for the period the character states"
   | "the stated timings show a colour the character does not"
@@ -45,6 +49,13 @@ export type LightReading =
        * generated from one conforms without being the sequence that light actually showed.
        */
       timings: "stated" | "inferred";
+      /**
+       * Where the character itself came from. A file may say a mark was lit without saying
+       * what it showed, and the buoyage answers that: a north cardinal shows VQ because it is
+       * a north cardinal. The page says which, since a generated rhythm and a reported one
+       * are the same dot on the water.
+       */
+      characterFrom: "stated" | "from its purpose";
     }
   | { known: false; because: Unlit };
 
@@ -55,11 +66,14 @@ export type LightReading =
  * readings of the same field is how a panel comes to describe a rhythm the view is not
  * drawing - the fault `plans/done/antenna-offset-6.md` records.
  */
-export function lightOf(mark: Mark): LightReading {
+export function lightOf(mark: Mark, region: BuoyageRegion | null = null): LightReading {
   const light = mark.light;
   if (!light) return { known: false, because: "the file does not say whether it carried a light" };
 
-  const reading = parseCharacter(light.character);
+  const written = light.character;
+  if (written === undefined) return fromItsPurpose(mark, region);
+
+  const reading = parseCharacter(written);
   if (!reading.read) return { known: false, because: reading.because };
 
   const stated = statedPhases(light.phases);
@@ -72,12 +86,50 @@ export function lightOf(mark: Mark): LightReading {
       character: reading.character,
       phases: phasesOf(reading.character),
       timings: "inferred",
+      characterFrom: "stated",
     };
   }
 
   const quarrel = disagreement(reading.character, stated);
   if (quarrel) return { known: false, because: quarrel };
-  return { known: true, character: reading.character, phases: stated, timings: "stated" };
+  return {
+    known: true,
+    character: reading.character,
+    phases: stated,
+    timings: "stated",
+    characterFrom: "stated",
+  };
+}
+
+/**
+ * A file that says the mark was lit without saying what it showed, answered by the buoyage.
+ *
+ * **Only where the buoyage actually fixes a rhythm.** A lateral mark takes "any character
+ * other than the preferred channel's", and a special mark "any other than those reserved" -
+ * so for those there is nothing to fall back on, and a rhythm chosen here would identify
+ * nothing while looking as though it identified something.
+ */
+function fromItsPurpose(mark: Mark, region: BuoyageRegion | null): LightReading {
+  if (mark.purpose === undefined) {
+    return {
+      known: false,
+      because: "the file states a light but neither its character nor a purpose",
+    };
+  }
+  const meant = appearanceOf(mark.purpose, region);
+  if (meant === null) {
+    return { known: false, because: "a lateral mark whose buoyage region is not stated" };
+  }
+  if (meant.character === null) {
+    return { known: false, because: "a purpose the buoyage gives no rhythm of its own" };
+  }
+  return {
+    known: true,
+    character: meant.character,
+    phases: phasesOf(meant.character),
+    timings: "inferred",
+    characterFrom: "from its purpose",
+  };
 }
 
 /**

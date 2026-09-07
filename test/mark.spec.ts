@@ -1,11 +1,22 @@
-import { Mesh, type MeshStandardMaterial } from "three";
+import { Mesh, type CylinderGeometry, type MeshStandardMaterial } from "three";
 import { describe, expect, it } from "vitest";
 
-import type { Mark } from "../src/core/types.js";
+import type {
+  Mark,
+  MarkColour,
+  MarkConstruction,
+  MarkPattern,
+  MarkPurpose,
+} from "../src/core/types.js";
 import { buildMark } from "../src/render/mark.js";
 
 function mark(overrides: Partial<Mark> = {}): Mark {
   return { id: "no-1", kind: "buoy", at: { lat: 33, lon: 140 }, ...overrides };
+}
+
+/** One colour all over, which in this system is the exception rather than the rule. */
+function solid(colour: MarkColour): MarkPattern {
+  return { kind: "solid", colours: [colour] };
 }
 
 function meshes(group: { children: unknown[] }): Mesh[] {
@@ -25,8 +36,8 @@ function paintOf(mesh: Mesh): MeshStandardMaterial {
 
 describe("a buoy", () => {
   it("takes its colour from the mark, and a lateral green is not a red", () => {
-    const green = paintOf(bodyOf(mark({ colour: "green" }))).color;
-    const red = paintOf(bodyOf(mark({ colour: "red" }))).color;
+    const green = paintOf(bodyOf(mark({ pattern: solid("green") }))).color;
+    const red = paintOf(bodyOf(mark({ pattern: solid("red") }))).color;
     expect(green.getHex()).not.toBe(red.getHex());
 
     // Green really is green, and red red: the enum is a colour and not a label.
@@ -241,7 +252,8 @@ describe("a beacon", () => {
   });
 
   it("takes its colour like any other mark", () => {
-    const red = paintOf(meshes(buildMark(beacon({ colour: "red" })).group)[0]!).color;
+    const parts = meshes(buildMark(beacon({ pattern: solid("red") })).group);
+    const red = paintOf(parts[0]!).color;
     expect(red.r).toBeGreaterThan(red.g);
   });
 
@@ -299,5 +311,143 @@ describe("the lamp a mark carries", () => {
   it("belongs to the mark's own group, so it heaves and leans with her", () => {
     const parts = buildMark(lit());
     expect(parts.group.children).toContain(parts.lamp);
+  });
+});
+
+/**
+ * What the buoyage says in daylight, drawn. A mark states its meaning three times over, and
+ * two of those three are geometry: the colours as they sit on the body, and the shape on top.
+ *
+ * These are held on the DRAWN mark rather than on the table it came from, because the table
+ * being right is not the same as the picture being right - and it is the picture a viewer
+ * reads a mark off.
+ */
+describe("a mark drawn from what it is for", () => {
+  const buoy = (overrides: Partial<Mark> = {}): Mark => mark({ heightMetres: 3, ...overrides });
+
+  /**
+   * The BODY's parts, with the colour each was painted.
+   *
+   * The staff and the topmark are excluded by their height: they sit above the body, they are
+   * painted from the buoyage's own colours rather than the body's, and a claim about the
+   * order of the bands has to be about the bands.
+   */
+  function paintedParts(mark: Mark, region: "A" | "B" | null = null): { y: number; hex: number }[] {
+    const top = mark.heightMetres ?? 0;
+    return meshes(buildMark(mark, region).group)
+      .filter((mesh) => mesh.position.y < top)
+      .map((mesh) => ({ y: mesh.position.y, hex: paintOf(mesh).color.getHex() }));
+  }
+
+  /**
+   * Black over yellow is north and yellow over black is south, and nothing else on the body
+   * tells them apart. Drawn the wrong way up, a mark tells a ship to pass on the other side
+   * of a danger.
+   */
+  it("puts the bands on in the order the buoyage gives them", () => {
+    const north = paintedParts(buoy({ purpose: "north-cardinal" }));
+    const south = paintedParts(buoy({ purpose: "south-cardinal" }));
+    const upper = (parts: { y: number; hex: number }[]): number =>
+      [...parts].sort((a, b) => b.y - a.y)[0]?.hex ?? 0;
+
+    expect(upper(north)).not.toBe(upper(south));
+    // And the two are each other's mirror: north's upper band is south's lower.
+    const lower = (parts: { y: number; hex: number }[]): number =>
+      [...parts].sort((a, b) => a.y - b.y)[0]?.hex ?? 0;
+    expect(upper(north)).toBe(lower(south));
+  });
+
+  /** A striped mark's colours sit around it, so every stripe is at the same height. */
+  it("stripes safe water around the body rather than up it", () => {
+    const parts = paintedParts(buoy({ purpose: "safe-water" }));
+    const heights = new Set(parts.map((part) => part.y.toFixed(6)));
+
+    expect(parts.length).toBeGreaterThan(1);
+    expect(heights.size).toBe(1);
+    expect(new Set(parts.map((part) => part.hex)).size).toBe(2);
+  });
+
+  /**
+   * The four cardinal topmarks differ only in how the two cones are turned, and that is the
+   * whole message by day. A cone points up when its wide end is at the bottom.
+   */
+  it("turns the cardinal cones the four ways the buoyage turns them", () => {
+    const cones = (purpose: MarkPurpose): number[] =>
+      meshes(buildMark(buoy({ purpose })).group)
+        .filter((mesh) => mesh.geometry.type === "ConeGeometry")
+        .map((mesh) => Math.round(mesh.rotation.z * 100) / 100);
+
+    expect(cones("north-cardinal")).toEqual([0, 0]);
+    expect(cones("south-cardinal").every((turn) => turn !== 0)).toBe(true);
+    // East is base to base and west point to point: one of each, the other way round.
+    expect(cones("east-cardinal")[0]).not.toBe(cones("east-cardinal")[1]);
+    expect(cones("west-cardinal")[0]).not.toBe(cones("west-cardinal")[1]);
+    expect(cones("east-cardinal")[0]).not.toBe(cones("west-cardinal")[0]);
+  });
+
+  /** Two spheres for an isolated danger, one for safe water - by day that is the difference. */
+  it("gives an isolated danger two spheres and safe water one", () => {
+    const spheres = (purpose: MarkPurpose): number =>
+      meshes(buildMark(buoy({ purpose })).group).filter(
+        (mesh) => mesh.geometry.type === "SphereGeometry",
+      ).length;
+
+    expect(spheres("isolated-danger")).toBe(2);
+    // Safe water's own body is a sphere as well, so its topmark is the one above the rest.
+    expect(spheres("safe-water")).toBeGreaterThan(spheres("special"));
+  });
+
+  /**
+   * The region reverses the lateral colours and nothing else. A tool that ignored it would
+   * paint every Japanese channel mark the wrong colour, plausibly and silently.
+   */
+  it("paints a port-hand mark green in Region B and red in Region A", () => {
+    const green = paintedParts(buoy({ purpose: "port-hand" }), "B")[0]?.hex ?? 0;
+    const red = paintedParts(buoy({ purpose: "port-hand" }), "A")[0]?.hex ?? 0;
+    expect(green).not.toBe(red);
+  });
+
+  /** With no region, there is nothing to paint it from, and the fallback is this tool's. */
+  it("falls back to what this tool chose where the region is not stated", () => {
+    const chosen = paintedParts(buoy({ purpose: "port-hand" }), null)[0]?.hex ?? 0;
+    const plain = paintedParts(buoy())[0]?.hex ?? 0;
+    expect(chosen).toBe(plain);
+  });
+});
+
+/**
+ * How a beacon is built, which means nothing at all - and is therefore a different field from
+ * the buoy's shape, which means a great deal.
+ */
+describe("a beacon's construction", () => {
+  const built = (construction: MarkConstruction): Mesh[] =>
+    meshes(
+      buildMark({
+        id: "shoal",
+        kind: "beacon",
+        at: { lat: 33, lon: 140 },
+        heightMetres: 8,
+        construction,
+      }).group,
+    );
+
+  it("draws a lattice as a framework and the others as one upright", () => {
+    expect(built("lattice").length).toBeGreaterThan(built("tower").length);
+    expect(built("column")).toHaveLength(2);
+  });
+
+  /** A pile is driven into the ground and stands on nothing else. */
+  it("gives a pile no plinth, and the others one", () => {
+    expect(built("pile")).toHaveLength(1);
+    expect(built("tower")).toHaveLength(2);
+  });
+
+  it("tapers a tower harder than a column, which is the whole difference", () => {
+    const taper = (construction: MarkConstruction): number => {
+      const mesh = built(construction)[0];
+      const parameters = (mesh?.geometry as CylinderGeometry).parameters;
+      return parameters.radiusTop / parameters.radiusBottom;
+    };
+    expect(taper("tower")).toBeLessThan(taper("column"));
   });
 });

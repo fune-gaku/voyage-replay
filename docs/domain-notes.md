@@ -466,3 +466,64 @@ Three of these are less obvious than they look. `Fl(2+1)` with evenly spaced fla
 of darkness and half a second of red has two appearances and joins its two ends into one flash
 as it repeats. And dot-then-dash is A while dash-then-dot is N — a safe-water mark shows
 Mo(A).
+
+### One fact, said three ways
+
+A mark says what it is three times over. A north cardinal says "north" in black above yellow,
+in two cones point-up, and in a light showing VQ or Q. An isolated danger says its own thing
+in black and red bands, in two spheres, and in Fl(2).
+
+**That redundancy is the design.** The pattern is for daylight, the topmark for when the
+colours are hard to read, the rhythm for the dark — so that losing one still leaves the mark
+identifiable. Which is why the format carries the *meaning* and generates the three: three
+independent fields would let a scenario state black-and-yellow bands with two spheres and
+Fl(2), a chimera nobody could identify, drawn without complaint.
+
+From **IALA Recommendation R1001, "The IALA Maritime Buoyage System", Edition 2.0**, Tables 1
+to 11:
+
+| mark | colours | topmark | rhythm |
+|---|---|---|---|
+| Port hand (Region A) | red | red can | any but (2+1) |
+| Starboard hand (Region A) | green | green cone, point up | any but (2+1) |
+| Port hand (Region B) | **green** | green can | any but (2+1) |
+| Starboard hand (Region B) | **red** | red cone, point up | any but (2+1) |
+| Preferred channel | own colour with a broad band of the other | own colour, own shape | Fl(2+1) |
+| North cardinal | black over yellow | 2 black cones, points up | VQ or Q |
+| East cardinal | black, one broad yellow band | 2 black cones, base to base | VQ(3) 5s or Q(3) 10s |
+| South cardinal | yellow over black | 2 black cones, points down | VQ(6)+LFl 10s or Q(6)+LFl 15s |
+| West cardinal | yellow, one broad black band | 2 black cones, point to point | VQ(9) 10s or Q(9) 15s |
+| Isolated danger | black, one or more broad red bands | 2 black spheres | Fl(2) |
+| Safe water | red and white **vertical stripes** | one red sphere | Iso, Oc, LFl 10s or Mo(A) |
+| Special | yellow | yellow X | any not reserved above |
+| Emergency wreck | blue and yellow vertical stripes | yellow cross | blue 1 s, yellow 1 s, 0.5 s eclipse |
+
+### Japan is Region B, and that reverses the lateral colours
+
+R1001 2.1.1: Region A uses "red and green colours ... to denote the port and starboard sides
+of channels, respectively. However, in Region B ... these colours are reversed with red to
+starboard and green to port." Region B is the Americas, Japan, Korea and the Philippines.
+
+**The region cannot be worked out from a position.** The boundary is a map, not a formula. A
+tool that assumed Region A would paint every Japanese channel mark the wrong colour and put a
+ship on the wrong side of the fairway — plausibly, and silently. So it is stated on the
+scenario, and a lateral mark with no region stated gets no colours generated at all. The
+cardinal, isolated danger, safe water and special marks are the same the world over.
+
+### Where the three come apart if you are not careful
+
+- **A colour is not enough to hold them.** Every cardinal mark is banded, safe water is
+  striped, isolated danger is banded — a single-colour field leaves out most of the system.
+  The pattern is carried as a kind and an ordered list, and the order is the message: black
+  over yellow is north, yellow over black is south.
+- **Several rhythms are allowed for most marks, and choosing one is unavoidable.** A north
+  cardinal may be VQ or Q; a safe-water mark may be isophase, occulting, a long flash every
+  ten seconds or Morse A. The one taken is the one the source pins completely — only LFl comes
+  with its period attached — and the page says it was chosen.
+- **A lateral mark and a special mark have no rhythm of their own**, by design: "any character
+  other than those reserved". Generating one would put a light on the water that identifies
+  nothing while looking as though it identified something.
+- **How a beacon is built means nothing.** A lattice tower and a concrete column can both be a
+  north cardinal, so construction is a field of its own, independent of the meaning. The
+  buoy's counterpart is the IALA body shape, and *that* one is partly meaning — a can is port
+  hand where a cone is starboard — which is why the two live on different kinds (#40).

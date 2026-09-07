@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { lightOf } from "../src/actors/mark/light.js";
-import { cycleSeconds } from "../src/core/light-character.js";
+import { cycleSeconds, formatCharacter } from "../src/core/light-character.js";
 import type { Mark } from "../src/core/types.js";
 
 function buoy(overrides: Partial<Mark> = {}): Mark {
@@ -529,6 +529,63 @@ describe("lightOf", () => {
     if (!reading.known) {
       expect(reading.because).toBe("flashes too close together in a group to be counted");
     }
+  });
+
+  /**
+   * **The buoyage answers for a light the file did not describe.** A report often says a mark
+   * was lit without saying what it showed, and a north cardinal shows VQ because it is a north
+   * cardinal - the rhythm is one of the three statements the meaning generates.
+   *
+   * An empty light object says the mark WAS lit. Leaving the light out says nothing either
+   * way, which is a different answer and stays one.
+   */
+  it("takes the rhythm from the purpose where the file states a light but no character", () => {
+    const reading = lightOf(buoy({ purpose: "north-cardinal", light: {} }));
+    expect(reading.known).toBe(true);
+    if (reading.known) {
+      expect(formatCharacter(reading.character)).toBe("VQ W");
+      expect(reading.characterFrom).toBe("from its purpose");
+    }
+
+    const stated = lightOf(buoy({ purpose: "north-cardinal", light: { character: "Q W 1s" } }));
+    expect(stated.known).toBe(true);
+    // A stated character wins: the buoyage allows Q as well as VQ, and the file knows which.
+    if (stated.known) expect(stated.characterFrom).toBe("stated");
+  });
+
+  /**
+   * Three refusals where the buoyage cannot answer, and they are different facts: no purpose
+   * at all, a lateral mark whose region nobody stated, and a purpose the buoyage deliberately
+   * leaves open. A rhythm invented for any of them would identify nothing while looking as
+   * though it identified something.
+   */
+  it("says why the buoyage could not supply a rhythm, rather than inventing one", () => {
+    const noPurpose = lightOf(buoy({ light: {} }));
+    expect(noPurpose.known).toBe(false);
+    if (!noPurpose.known) {
+      expect(noPurpose.because).toBe(
+        "the file states a light but neither its character nor a purpose",
+      );
+    }
+
+    const noRegion = lightOf(buoy({ purpose: "preferred-channel-to-port", light: {} }));
+    expect(noRegion.known).toBe(false);
+    if (!noRegion.known) {
+      expect(noRegion.because).toBe("a lateral mark whose buoyage region is not stated");
+    }
+
+    const openEnded = lightOf(buoy({ purpose: "special", light: {} }));
+    expect(openEnded.known).toBe(false);
+    if (!openEnded.known) {
+      expect(openEnded.because).toBe("a purpose the buoyage gives no rhythm of its own");
+    }
+  });
+
+  /** With the region, a preferred-channel mark has the one lateral rhythm the buoyage fixes. */
+  it("supplies a preferred-channel rhythm once the region is known", () => {
+    const reading = lightOf(buoy({ purpose: "preferred-channel-to-port", light: {} }), "B");
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(formatCharacter(reading.character)).toBe("Fl(2+1) R");
   });
 
   it("takes a light on a beacon as readily as on a buoy", () => {

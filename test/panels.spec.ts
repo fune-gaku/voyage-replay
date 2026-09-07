@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
+import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
 
@@ -519,28 +520,32 @@ describe("the sea marks a scenario carries", () => {
 
     expect(html).toContain("Sea marks (1)");
     expect(html).toContain(
-      "Chosen here rather than taken from the source: a shape for 1 of 1, a colour for 1 of 1 " +
-        "and a height for 1 of 1",
+      "Chosen here rather than taken from the source or the buoyage: a form for 1 of 1, a " +
+        "colours for 1 of 1 and a height for 1 of 1",
     );
-    expect(html).toContain("assumed pillar");
-    expect(html).toContain("assumed yellow");
+    expect(html).toContain("pillar, chosen here");
+    expect(html).toContain("yellow, chosen here");
     expect(html).toContain("assumed 2.4 m");
     expect(html).toContain("a shape drawn here is a statement made here");
   });
 
   it("reports a stated shape, colour and height as stated", () => {
     const subject = scenario();
-    subject.marks = [buoy({ shape: "can", colour: "red", heightMetres: 3.1, name: "No. 2" })];
+    subject.marks = [
+      buoy({
+        shape: "can",
+        pattern: { kind: "solid", colours: ["red"] },
+        heightMetres: 3.1,
+        name: "No. 2",
+      }),
+    ];
     const html = panelsFor(subject);
 
     expect(html).toContain("<td>can</td>");
     expect(html).toContain("<td>red</td>");
     expect(html).toContain("<td>3.1 m above the water</td>");
     expect(html).toContain("No. 2");
-    // "assumed" appears elsewhere on the page - the hull's bridge, the occlusion heights -
-    // so the check has to be about this row rather than about the word.
-    expect(html).not.toContain("assumed pillar");
-    expect(html).not.toContain("assumed yellow");
+    expect(html).not.toContain("chosen here");
     expect(html).not.toContain("assumed 2.4 m");
     expect(html).not.toContain("a statement made here");
   });
@@ -557,7 +562,9 @@ describe("the sea marks a scenario carries", () => {
    */
   it("says the buoy rides the sea as drawn, and follows it exactly", () => {
     const subject = scenario();
-    subject.marks = [buoy({ shape: "spar", colour: "black", heightMetres: 2 })];
+    subject.marks = [
+      buoy({ shape: "spar", pattern: { kind: "solid", colours: ["black"] }, heightMetres: 2 }),
+    ];
     const html = panelsFor(subject);
     expect(html).toContain("riding the sea as the water is drawn beneath her");
     expect(html).toContain("issue #32");
@@ -614,7 +621,6 @@ describe("what the page says about a mark's light", () => {
     const section = marksSection(subject);
 
     expect(section).toContain("stated, unreadable - no class in it");
-    expect(section).not.toContain("<td>not stated</td>");
   });
 
   /**
@@ -687,6 +693,78 @@ describe("what the page says about a mark's light", () => {
 
     expect(html).not.toContain("E-110");
     expect(html).not.toContain("drawn from a bridge at night");
+  });
+});
+
+/**
+ * What a mark is FOR, said three ways over - and the page's job is to say which of the three
+ * came from the file, which from the buoyage, and which from this tool.
+ */
+describe("what the page says a mark means", () => {
+  const cardinal = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "no-1",
+    kind: "buoy",
+    at: { lat: 33.9, lon: 131.7 },
+    purpose: "north-cardinal",
+    ...overrides,
+  });
+
+  it("names the purpose, and the colours and topmark it generated from it", () => {
+    const subject = scenario();
+    subject.marks = [cardinal()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>north-cardinal</td>");
+    expect(html).toContain("black over yellow, from its purpose");
+    expect(html).toContain("black two cones point up, from its purpose");
+  });
+
+  /**
+   * A colour the file states beats one the buoyage would have given - real marks deviate, and
+   * the source is the thing being reconstructed. The page says which it had.
+   */
+  it("lets a stated pattern beat the one the purpose would give", () => {
+    const subject = scenario();
+    subject.marks = [cardinal({ pattern: { kind: "solid", colours: ["black"] } })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>black</td>");
+    expect(html).not.toContain("black over yellow");
+  });
+
+  /**
+   * **Japan is Region B**, where the lateral colours are reversed. Without the region there is
+   * nothing to reverse, so the page shows what this tool chose rather than a colour that would
+   * be wrong half the world over.
+   */
+  it("colours a lateral mark from the region, and says so where there is none", () => {
+    const inJapan = scenario();
+    inJapan.meta.buoyageRegion = "B";
+    inJapan.marks = [cardinal({ purpose: "port-hand" })];
+    expect(panelsFor(inJapan)).toContain("green, from its purpose");
+
+    const elsewhere = scenario();
+    elsewhere.meta.buoyageRegion = "A";
+    elsewhere.marks = [cardinal({ purpose: "port-hand" })];
+    expect(panelsFor(elsewhere)).toContain("red, from its purpose");
+
+    const unstated = scenario();
+    unstated.marks = [cardinal({ purpose: "port-hand" })];
+    expect(panelsFor(unstated)).toContain("yellow, chosen here");
+  });
+
+  /** A rhythm the buoyage supplied is not one the source stated, and the page separates them. */
+  it("says a rhythm came from the purpose rather than from the file", () => {
+    const subject = scenario();
+    subject.marks = [cardinal({ light: {} })];
+    expect(panelsFor(subject)).toContain("VQ W, from its purpose");
+  });
+
+  /** A mark with no purpose has no topmark to draw, and the page does not invent one. */
+  it("draws no topmark where nothing says what the mark is", () => {
+    const subject = scenario();
+    subject.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
+    expect(panelsFor(subject)).toContain("<td>none drawn</td>");
   });
 });
 
@@ -771,12 +849,13 @@ describe("a beacon in the same table as a buoy", () => {
    */
   it("does not confess to choosing a shape it was never allowed to choose", () => {
     const subject = scenario();
-    subject.marks = [beacon({ colour: "black" })];
+    subject.marks = [beacon({ pattern: { kind: "solid", colours: ["black"] } })];
     const html = panelsFor(subject);
 
-    expect(html).toContain("Chosen here rather than taken from the source: a height for 1 of 1");
-    expect(html).not.toContain("assumed pillar");
-    expect(html).not.toContain("a statement made here");
+    // A beacon has no IALA shape, so nothing was chosen in its place. What WAS chosen is how
+    // the structure is built, which is the other axis entirely.
+    expect(html).toContain("a form for 1 of 1");
+    expect(html).not.toContain("a shape drawn here is a statement made here");
   });
 
   /**
@@ -799,13 +878,19 @@ describe("a beacon in the same table as a buoy", () => {
    * and the format has no word for which. Left blank, the picture would be making the only
    * statement about it - the fault the whole column exists to prevent.
    */
-  it("owns the structure it drew, having no vocabulary to have been told one", () => {
+  it("owns the structure it drew, where the file did not say how it was built", () => {
     const subject = scenario();
     subject.marks = [beacon()];
+    expect(panelsFor(subject)).toContain("column, chosen here");
+  });
+
+  it("reports a stated construction as stated, and gives a buoy its shape instead", () => {
+    const subject = scenario();
+    subject.marks = [beacon({ construction: "lattice" }), buoy()];
     const html = panelsFor(subject);
 
-    expect(html).toContain("form chosen here");
-    expect(html).toContain("issue #42");
+    expect(html).toContain("<td>lattice</td>");
+    expect(html).toContain("pillar, chosen here");
   });
 
   /**
@@ -816,13 +901,16 @@ describe("a beacon in the same table as a buoy", () => {
    */
   it("counts each chosen field over the marks that could have carried it", () => {
     const subject = scenario();
-    subject.marks = [buoy({ colour: "green", heightMetres: 2 }), beacon({ heightMetres: 8 })];
+    subject.marks = [
+      buoy({ shape: "can", pattern: { kind: "solid", colours: ["green"] }, heightMetres: 2 }),
+      beacon({ heightMetres: 8 }),
+    ];
     const html = panelsFor(subject);
 
-    // The shape is missing from one buoy, and one buoy is all there is to count.
-    expect(html).toContain("a shape for 1 of 1");
-    // The colour is missing from the beacon only, and both kinds can carry one.
-    expect(html).toContain("a colour for 1 of 2");
+    // The buoy's shape is stated and the beacon's construction is not, so one form of the
+    // two was chosen here; the beacon's colours were chosen and the buoy's were not.
+    expect(html).toContain("a form for 1 of 2");
+    expect(html).toContain("a colours for 1 of 2");
     // Both heights are stated, so the height is not in the sentence at all.
     expect(html).not.toContain("a height for");
   });
@@ -960,8 +1048,8 @@ describe("the buoy defaults the page names are the ones the view draws", () => {
     subject.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
     const html = panelsFor(subject);
 
-    expect(html).toContain(`assumed ${ASSUMED_MARK.shape}`);
-    expect(html).toContain(`assumed ${ASSUMED_MARK.colour}`);
+    expect(html).toContain(`${CHOSEN.shape}, chosen here`);
+    expect(html).toContain(`${CHOSEN.pattern.colours[0]}, chosen here`);
     expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres.buoy} m`);
   });
 
@@ -971,8 +1059,8 @@ describe("the buoy defaults the page names are the ones the view draws", () => {
       id: "no-1",
       kind: "buoy",
       at: { lat: 33.9, lon: 131.7 },
-      shape: ASSUMED_MARK.shape,
-      colour: ASSUMED_MARK.colour,
+      shape: CHOSEN.shape,
+      pattern: CHOSEN.pattern,
       heightMetres: ASSUMED_MARK.heightMetres.buoy,
     });
     expect(bare.heightMetres).toBe(named.heightMetres);

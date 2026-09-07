@@ -701,14 +701,17 @@ const UP = new Vector3();
  * times a second would be parsing a string to get the same answer every time.
  */
 function moorMarks(scenario: Scenario, sceneParts: SceneParts): Moored[] {
+  // The buoyage region decides the lateral colours and nothing else, and it cannot be worked
+  // out from where the scenario is: the boundary between the two is a map, not a formula.
+  const region = scenario.meta.buoyageRegion ?? null;
   return (scenario.marks ?? []).map((mark) => {
-    const parts = buildMark(mark);
+    const parts = buildMark(mark, region);
     sceneParts.actors.add(parts.group);
     return {
       parts,
       at: toLocalPosition(mark.at, scenario.origin),
       floats: floats(mark),
-      light: lightOf(mark),
+      light: lightOf(mark, region),
     };
   });
 }

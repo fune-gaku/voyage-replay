@@ -4,7 +4,9 @@ import schema from "../spec/voyage.schema.json";
 import {
   DERIVATIONS,
   MARK_COLOURS,
+  MARK_CONSTRUCTIONS,
   MARK_KINDS,
+  MARK_PURPOSES,
   MARK_SHAPES,
   SOURCE_KINDS,
   VESSEL_TYPES,
@@ -53,9 +55,23 @@ describe("the schema and the TypeScript types agree", () => {
     expect([...enumAt("mark", "properties", "kind")].sort()).toEqual([...MARK_KINDS].sort());
   });
 
-  it("agrees on mark shape and colour", () => {
+  it("agrees on mark shape, colour and construction", () => {
     expect([...enumAt("mark", "properties", "shape")].sort()).toEqual([...MARK_SHAPES].sort());
-    expect([...enumAt("mark", "properties", "colour")].sort()).toEqual([...MARK_COLOURS].sort());
+    expect(
+      [...enumAt("mark", "properties", "pattern", "properties", "colours", "items")].sort(),
+    ).toEqual([...MARK_COLOURS].sort());
+    expect([...enumAt("mark", "properties", "construction")].sort()).toEqual(
+      [...MARK_CONSTRUCTIONS].sort(),
+    );
+  });
+
+  /**
+   * The purpose is the one the rest is generated from - the colours, the topmark and the
+   * rhythm all come off it - so a value the schema takes and the code has never heard of is
+   * not a cosmetic drift but a mark drawn as something else entirely.
+   */
+  it("agrees on what a mark can be for", () => {
+    expect([...enumAt("mark", "properties", "purpose")].sort()).toEqual([...MARK_PURPOSES].sort());
   });
 
   it("only knows about the vessel actor kind", () => {
