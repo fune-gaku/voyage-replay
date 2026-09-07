@@ -287,6 +287,78 @@ describe("lightOf", () => {
     if (reading.known) expect(reading.timings).toBe("stated");
   });
 
+  /**
+   * A continuous quick light has no group, so it has no pair inside one to take a rate from -
+   * its whole cycle IS the flash cycle. `Q` stated as two seconds lit and three dark is
+   * twelve flashes a minute, which is a flashing light under a page saying "Q".
+   */
+  it("refuses a continuous quick light whose whole cycle is too slow", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          // A second and a half of light in five seconds: twelve flashes a minute, where a
+          // quick light is fifty to seventy-nine. The flash is under two seconds, so this
+          // fails on the rate and nothing else.
+          character: "Q W",
+          phases: [{ seconds: 1.5, colour: "white" }, { seconds: 3.5 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings flash at a rate that is not the character's class",
+      );
+    }
+
+    // And one inside the band is taken, however it divides its second.
+    const taken = lightOf(
+      buoy({
+        light: {
+          character: "Q W",
+          phases: [{ seconds: 0.3, colour: "white" }, { seconds: 0.7 }],
+        },
+      }),
+    );
+    expect(taken.known).toBe(true);
+  });
+
+  /**
+   * Two seconds is the line between a flash and a long flash, and it cuts both ways: 2.2 s
+   * of red under `Fl` is a long-flashing light on the water, which in the buoyage is a
+   * safe-water mark shown where the page says something else.
+   */
+  it("refuses timings whose ordinary flash is long enough to be a long flash", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "Fl R 10s",
+          phases: [{ seconds: 2.2, colour: "red" }, { seconds: 7.8 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(false);
+    if (!reading.known) {
+      expect(reading.because).toBe(
+        "the stated timings hold an ordinary flash for two seconds or more",
+      );
+    }
+  });
+
+  /** And a long-flashing light's own appearance is held to the other side of the same line. */
+  it("takes a long-flashing light whose flash is long", () => {
+    const reading = lightOf(
+      buoy({
+        light: {
+          character: "LFl W 10s",
+          phases: [{ seconds: 2.5, colour: "white" }, { seconds: 7.5 }],
+        },
+      }),
+    );
+    expect(reading.known).toBe(true);
+    if (reading.known) expect(reading.timings).toBe("stated");
+  });
+
   /** And a quick light flashing at twelve a minute is a flashing light, not a quick one. */
   it("refuses timings that flash outside the rate of their own class", () => {
     const reading = lightOf(

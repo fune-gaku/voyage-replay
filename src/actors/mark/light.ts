@@ -35,6 +35,7 @@ export type Unlit =
   | "the stated timings are not the shape of the character's own sequence"
   | "the stated timings do not keep the character's groups apart"
   | "the stated timings hold a long flash for less than two seconds"
+  | "the stated timings hold an ordinary flash for two seconds or more"
   | "the stated timings flash at a rate that is not the character's class"
   | "the stated timings spell a different letter from the character's"
   | Unreadable;
@@ -138,8 +139,15 @@ function wrongShape(drawn: Phase[], stated: Phase[]): Unlit | null {
  * minute is a flashing light (classes 5 to 7). The rest of the split stays free.
  */
 function wrongParts(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
+  // Two seconds is the line between a flash and a long flash (Table 2 class 4.2 and its
+  // footnote), and it cuts both ways: a flash of 2.2 s under `Fl` is an LFl on the water with
+  // the page still saying `Fl`, which in the buoyage is a safe-water mark shown as a special
+  // one.
   if (lengthsOf(drawn, stated, "long flash").some((seconds) => seconds < 2)) {
     return "the stated timings hold a long flash for less than two seconds";
+  }
+  if (lengthsOf(drawn, stated, "flash").some((seconds) => seconds >= 2)) {
+    return "the stated timings hold an ordinary flash for two seconds or more";
   }
   if (dashShorterThanDot(drawn, stated)) {
     return "the stated timings spell a different letter from the character's";
@@ -192,7 +200,15 @@ function separatorsTooShort(drawn: Phase[], stated: Phase[]): Unlit | null {
 function offItsRate(character: LightCharacter, drawn: Phase[], stated: Phase[]): Unlit | null {
   const band = RATE_BAND[character.klass];
   if (band === undefined) return null;
-  return insideRates(drawn, stated).some((rate) => rate < band[0] || rate > band[1])
+
+  // A CONTINUOUS quick light has no group, so it has no pair inside one: its whole cycle is
+  // the flash cycle. Left to the pair rule alone, `Q` stated as two seconds lit and three
+  // dark passes as a quick light while showing twelve flashes a minute.
+  const rates =
+    character.groups.length > 0
+      ? insideRates(drawn, stated)
+      : [60 / stated.reduce((total, phase) => total + phase.seconds, 0)];
+  return rates.some((rate) => rate < band[0] || rate > band[1])
     ? "the stated timings flash at a rate that is not the character's class"
     : null;
 }

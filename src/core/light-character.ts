@@ -512,11 +512,14 @@ function flashing(character: LightCharacter, colour: LightColour): Phase[] {
   const dark = flash;
   const groups = character.groups.length > 0 ? character.groups : [1];
   const closing = closingEclipse(character, dark);
+  // A long-flashing light's single appearance IS the long flash, and has to be held to the
+  // two seconds that make it one rather than to the under-two that makes an ordinary flash.
+  const role: PhaseRole = character.klass === "LFl" ? "long flash" : "flash";
 
   const phases: Phase[] = [];
   groups.forEach((count, index) => {
     for (let i = 0; i < count; i += 1) {
-      phases.push({ seconds: flash, colour, role: "flash" });
+      phases.push({ seconds: flash, colour, role });
       if (i < count - 1) phases.push({ seconds: dark, colour: null });
     }
     phases.push(afterAGroup(character, index === groups.length - 1, dark, closing));
