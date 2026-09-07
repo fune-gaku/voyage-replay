@@ -906,7 +906,7 @@ describe("how the disagreement quotes the wind it is comparing against", () => {
       seaState: 5,
     };
     expect(panelsFor(subject)).toContain(
-      "the calmest sea the file allows against the most wind it allows",
+      "the calmest sea the file allows against the strongest wind it allows",
     );
   });
 });
@@ -970,5 +970,38 @@ describe("a flat sea, which has no period and no direction", () => {
     subject.environment = { seaState: 1 };
     const html = panelsFor(subject);
     expect(html).not.toContain("no waves to have one");
+  });
+});
+
+describe("the disagreement note over a calm, whose class has no top to quote", () => {
+  /**
+   * `forceClass` models Beaufort 0 as "under 1 knot", and the speed row and the range both
+   * show it that way - but the note re-read every force as a closed interval and offered
+   * "the 1 kn at the top of the stated force". A knot is force 1. The comparison may use it
+   * as a supremum, which keeps the warning conservative; the sentence may not present it as
+   * a wind the file stated.
+   */
+  it("does not offer one knot as the wind it compared against", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 0, derivation: "measured" },
+      waves: { significantHeightMetres: 0.5, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("bigger than the stated wind can raise");
+    expect(html).toContain("anything under 1 kn could raise at most");
+    expect(html).not.toContain("at the top of the stated force");
+  });
+
+  it("still quotes the top for a class that has one", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 3, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+    expect(html).toContain("10 kn at the top of the stated force");
+    expect(html).not.toContain("could raise at most");
   });
 });

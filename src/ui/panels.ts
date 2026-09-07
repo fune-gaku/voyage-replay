@@ -546,6 +546,31 @@ function windSpeed(wind: WindEstimate): string {
 }
 
 /**
+ * The wind this was compared against, named the way the file gave it.
+ *
+ * A force is a class, and quoting its top as though the file had stated 21 knots would put a
+ * figure in the reader's hands that nobody wrote down. Calm is worse: its top is EXCLUSIVE -
+ * "under 1 knot", and a knot is force 1 - so calling 1 kn "the top of the stated force"
+ * offers a speed the class does not contain. The comparison may use it as a supremum, which
+ * keeps the warning conservative; the sentence may not present it as a wind.
+ *
+ * Force 12 cannot arrive here: its top is open, and `seaExceedsWind` declines to compare at
+ * all where the wind has no ceiling.
+ */
+function windCompared(wind: WindEstimate): string {
+  const raised = fullyDevelopedHeightMetres(wind.fastestKnots).toFixed(2);
+  const band = wind.statedForce === null ? null : forceClass(wind.statedForce);
+  if (wind.source === "force" && band?.topIsExclusive) {
+    return `the ${raised} m that anything under ${band.fastestKnots} kn could raise at most`;
+  }
+  const at =
+    wind.source === "force"
+      ? `the ${wind.fastestKnots} kn at the top of the stated force`
+      : `the stated ${wind.fastestKnots} kn`;
+  return `the ${raised} m a fully developed sea reaches at ${at}`;
+}
+
+/**
  * The one comparison the wind and the sea can be held to, and only in one direction.
  *
  * A sea bigger than the wind can raise is either carrying a swell from another weather
@@ -556,22 +581,14 @@ function disagreementNote(conditions: Conditions): string {
   if (conditions.seaExceedsWind !== true) return "";
   const { wind, sea } = conditions;
   if (!wind || !sea) return "";
-  // The speed is named the way the file gave it. A force is a class, and quoting its top as
-  // though the file had stated 21 knots would put a figure in the reader's hands that
-  // nobody wrote down - which is the fault this whole page is built to avoid.
-  const at =
-    wind.source === "force"
-      ? `the ${wind.fastestKnots} kn at the top of the stated force`
-      : `the stated ${wind.fastestKnots} kn`;
   return note(
     `The stated sea is bigger than the stated wind can raise: ` +
-      `${sea.calm.significantHeightMetres} m against the ` +
-      `${fullyDevelopedHeightMetres(wind.fastestKnots).toFixed(2)} m a fully developed sea ` +
-      `reaches at ${at}. Either a swell is running from another weather system - which no ` +
-      "wind stated here can account for - or one of the two figures is wrong. Both sides are " +
-      "taken the way that makes this hard to say: the calmest sea the file allows against the " +
-      "most wind it allows. The reverse is never reported - a sea smaller than its wind is " +
-      "ordinary, since a sea needs both fetch and time to reach what the wind can give it.",
+      `${sea.calm.significantHeightMetres} m against ${windCompared(wind)}. Either a swell is ` +
+      "running from another weather system - which no wind stated here can account for - or " +
+      "one of the two figures is wrong. Both sides are taken the way that makes this hard to " +
+      "say: the calmest sea the file allows against the strongest wind it allows. The reverse " +
+      "is never reported - a sea smaller than its wind is ordinary, since a sea needs both " +
+      "fetch and time to reach what the wind can give it.",
   );
 }
 
