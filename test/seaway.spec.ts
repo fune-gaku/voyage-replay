@@ -170,3 +170,26 @@ describe("what the file allows the sea to have been", () => {
     expect(estimate?.rough.surfaceStdDevMetres).toBe(0);
   });
 });
+
+describe("how far away the sea stops being the same wave", () => {
+  /**
+   * Deep-water wavelength, `g T^2 / 2 pi`, which `visibility.ts` uses to decide how much of
+   * a sight line moves with a floating target rather than independently of her. Held
+   * against the published coefficient of 1.56 rather than against a second copy of the
+   * formula.
+   */
+  it("puts the peak wavelength at 1.56 times the square of the period", () => {
+    for (const period of [4, 6, 10]) {
+      expect(seawayOf(1, period).peakWavelengthMetres / (period * period)).toBeCloseTo(1.56, 2);
+    }
+    expect(seawayOf(1, 6).peakWavelengthMetres).toBeCloseTo(56.2, 1);
+    expect(seawayOf(1, 10).peakWavelengthMetres).toBeCloseTo(156.1, 1);
+  });
+
+  it("goes as the square of the period, so twice the period is four times the length", () => {
+    expect(seawayOf(1, 12).peakWavelengthMetres / seawayOf(1, 6).peakWavelengthMetres).toBeCloseTo(
+      4,
+      6,
+    );
+  });
+});

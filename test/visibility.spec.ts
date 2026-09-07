@@ -85,6 +85,21 @@ describe("holding her rigid against letting her ride the sea", () => {
     expect(far.ridingFraction).toBeLessThan(far.rigidFraction);
   });
 
+  /**
+   * A vessel riding the sea cannot be hidden by the wave she is sitting on: within a
+   * wavelength of her, her freeboard and the surface are the same wave. Held here at the
+   * limit, where the whole line is inside that stretch and there is no independent sea
+   * between the two at all - the rigid model, which does not float, still finds a crest.
+   */
+  it("is never hidden by her own wave, however rough it is", () => {
+    const sea = seawayOf(4, 8);
+    const close = { eyeHeightMetres: 8, targetHeightMetres: 1.5, rangeMetres: 40 };
+    expect(sea.peakWavelengthMetres).toBeGreaterThan(close.rangeMetres);
+
+    expect(occludedFraction(close, sea).ridingFraction).toBe(0);
+    expect(occludedFraction(close, sea).rigidFraction).toBeGreaterThan(0);
+  });
+
   it("keeps riding within reach of rigid rather than answering a different question", () => {
     const sea = seawayOf(2, 5.5);
     for (const range of [8_000, 11_000, 13_000]) {

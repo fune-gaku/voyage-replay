@@ -39,6 +39,14 @@
  * exactly what issue #32 holds back for want of a recorded GM. Picking one here would be
  * making that judgement quietly.
  *
+ * **A riding vessel cannot be hidden by the wave she is sitting on.** Within a wavelength
+ * of her the sea and her freeboard are the same wave, so her height above it is her height,
+ * whatever the sea is doing; treating that stretch as an independent surface lets the
+ * arithmetic put her in a trough and raise a crest under her at the same instant. That
+ * stretch is excluded. Structural rather than large - about a point at eight kilometres,
+ * less further out, since the correlation dies within a wavelength and the line is
+ * kilometres long - but the case it removes is impossible rather than unlikely.
+ *
  * ## Known biases, in both directions
  *
  * - **Rice runs high.** Level crossings cluster, so counting them independently
@@ -56,6 +64,19 @@ const ALONG_LINE_STEPS = 600;
  * under a tenth of a percentage point, which is far inside the width of a sea state. */
 const HEAVE_NODES = 16;
 const HEAVE_LIMIT_SIGMA = 4;
+
+/** How the target sits in the sea, for one of the two bounds. */
+interface Ride {
+  /** Her own displacement from the mean surface, which tilts the whole sight line. */
+  liftMetres: number;
+  /**
+   * How much of the line nearest her moves with her rather than independently. Zero for a
+   * vessel held rigid at a fixed height above the mean surface, since then nothing does.
+   */
+  coupledMetres: number;
+}
+
+const HELD_RIGID: Ride = { liftMetres: 0, coupledMetres: 0 };
 
 export interface Occlusion {
   /** Held at a fixed height above the mean surface. */
@@ -84,7 +105,7 @@ export interface OcclusionBounds {
 /** How much of the time this target is behind a crest, for one sea. */
 export function occludedFraction(sightline: Sightline, seaway: Seaway): Occlusion {
   return {
-    rigidFraction: blockedProbability(sightline, seaway, 0),
+    rigidFraction: blockedProbability(sightline, seaway, HELD_RIGID),
     ridingFraction: ridingProbability(sightline, seaway),
   };
 }
@@ -137,7 +158,8 @@ function ridingProbability(sightline: Sightline, seaway: Seaway): number {
   for (let i = -HEAVE_NODES; i <= HEAVE_NODES; i += 1) {
     const z = (i / HEAVE_NODES) * HEAVE_LIMIT_SIGMA;
     const weight = Math.exp(-(z * z) / 2);
-    weighted += weight * blockedProbability(sightline, seaway, sigma * z);
+    const ride = { liftMetres: sigma * z, coupledMetres: seaway.peakWavelengthMetres };
+    weighted += weight * blockedProbability(sightline, seaway, ride);
     weights += weight;
   }
   return weighted / weights;
@@ -152,7 +174,7 @@ function ridingProbability(sightline: Sightline, seaway: Seaway): number {
  * report almost nothing where the truth is certainty. Asking the single most exposed point
  * whether it is covered fixes that end without touching the other.
  */
-function blockedProbability(sightline: Sightline, seaway: Seaway, liftMetres: number): number {
+function blockedProbability(sightline: Sightline, seaway: Seaway, ride: Ride): number {
   const sigma = seaway.surfaceStdDevMetres;
   const range = sightline.rangeMetres;
   if (sigma <= 0 || range <= 0) return 0;
@@ -162,11 +184,15 @@ function blockedProbability(sightline: Sightline, seaway: Seaway, liftMetres: nu
   let lowestClearance = Infinity;
   for (let i = 0; i <= ALONG_LINE_STEPS; i += 1) {
     const at = i * step;
-    const clearance = clearanceMetres(sightline, at) + liftMetres * (at / range);
+    // The stretch nearest her is her own wave, not an independent surface. See above.
+    if (range - at < ride.coupledMetres) continue;
+    const clearance = clearanceMetres(sightline, at) + ride.liftMetres * (at / range);
     lowestClearance = Math.min(lowestClearance, clearance);
     const rate = Math.exp(-(clearance * clearance) / (2 * sigma * sigma));
     crossings += (i === 0 || i === ALONG_LINE_STEPS ? 0.5 : 1) * rate * step;
   }
+  // Every point was inside her own wave: at that range there is no independent sea between.
+  if (lowestClearance === Infinity) return 0;
   crossings *= seaway.rmsWavenumberPerMetre / (2 * Math.PI);
 
   const alreadyCovered = exceedanceProbability(seaway, lowestClearance);

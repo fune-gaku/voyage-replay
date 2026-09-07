@@ -80,6 +80,12 @@ export interface Seaway {
    * SPACE. See `TAIL_CUTOFF_FRACTION_OF_PEAK`: this one is cutoff-dependent.
    */
   rmsWavenumberPerMetre: number;
+  /**
+   * Wavelength at the peak, in deep water. The distance over which the sea stops being the
+   * same wave, which is what `visibility.ts` needs to know how far from a floating vessel
+   * the surface can be treated as moving independently of her.
+   */
+  peakWavelengthMetres: number;
 }
 
 /**
@@ -169,6 +175,7 @@ export function seawayOf(significantHeightMetres: number, peakPeriodSeconds?: nu
     significantHeightMetres: height,
     peakPeriodSeconds: period,
     surfaceStdDevMetres: height / 4,
+    peakWavelengthMetres: (GRAVITY_METRES_PER_SECOND_SQUARED * period * period) / (2 * Math.PI),
     ...periodsAndWavenumber(period),
   };
 }

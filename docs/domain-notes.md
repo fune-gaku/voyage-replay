@@ -181,10 +181,24 @@ Measured, 8 m eye on 1.5 m freeboard in a 2 m sea:
 Neither is the conservative side, so neither can be picked. Both are returned. Which is nearer
 the truth depends on her heave response, which needs a GM no report states — issue #32.
 
+**A riding vessel cannot be hidden by the wave she is sitting on.** Within a wavelength of her,
+her freeboard and the surface are the same wave, so her height above it is her height whatever
+the sea is doing. Treating that stretch as independent lets the arithmetic put her in a trough
+and raise a crest under her at the same instant. It is excluded. Structural rather than large —
+about a point at 8 km and less further out, because the surface decorrelates within roughly a
+wavelength while the sight line runs for kilometres — but the case it removes is impossible
+rather than unlikely.
+
+Note that the wavenumber spectrum is far broader than the frequency spectrum, since `k = ω²/g`
+squares the spread. That is why the correlation dies so fast: for a 5.5 s sea the along-line
+autocorrelation is essentially zero by ten metres, against a peak wavelength of 47 m.
+
 ### Known biases, in both directions
 
-- **Counting crossings independently runs high.** They cluster. Against the Monte Carlo above,
-  69% where the truth is 48%.
+- **Counting crossings independently runs high.** They cluster, and Rice assumes they do not.
+  Measured against the Monte Carlo, both bounds carry it in the same direction and by a similar
+  margin — held rigid 18.3% against 10.5% at 8 km, riding 34.9% against 30.0% — so it shifts the
+  pair rather than widening or narrowing it.
 - **A long-crested sea runs low.** The calculation works along one line; real seas are short
   crested, which decorrelates the surface along it and makes blocking likelier.
 - **The assumed period runs long.** With no stated period, Pierson-Moskowitz for a fully
