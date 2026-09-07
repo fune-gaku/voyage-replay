@@ -265,7 +265,13 @@ The period now runs forwards from a wind where one is stated, rather than backwa
 height. **The round trip disappears; the bias does not** — both routes assume a sea that has
 stopped growing, so both run long in enclosed water.
 
-**A wind cannot supply a period for a sea it could not have raised.** A stated calm beside a
+**A wind cannot supply a period for a sea it could not have raised — and the sea it has to be
+able to raise is the ROUGHEST the file allows.** One period is worked out and then applied to
+both ends of a class, so testing the wind against the calm end passes a sea state of 1.25 to
+2.5 m at fourteen knots, which raises 1.44 m, and then labels a 2.5 m sea's period "from the
+stated wind". The warning that compares a stated sea against its wind asks about the calm end
+instead, and that is not an inconsistency: a warning should be hard to raise, and a derivation
+has to hold everywhere it is used. Two questions, two ends. A stated calm beside a
 stated two-metre swell is a valid file and an ordinary situation — the swell belongs to
 another weather system. Running Pierson-Moskowitz forwards from that wind hits the period
 clamp and returns half a second: a two-metre sea 0.4 m from crest to crest, drawn under a

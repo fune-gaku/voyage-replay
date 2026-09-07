@@ -754,19 +754,50 @@ describe("a wind that could not have raised the sea it is stated beside", () => 
   });
 
   /**
-   * The same comparison the disagreement note reports, asked one step earlier. If the two
-   * ever fell out of step, a page could report a sea too big for its wind while having
-   * taken that sea's period from it.
+   * The invariant, and it is not the one that was here before.
+   *
+   * A wind-derived period is applied to BOTH ends of a class, so it has to hold at the
+   * rough end - not merely at the calm one. Pinning it to `seaExceedsWind` instead pinned
+   * the wrong thing: that warning asks about the calm end on purpose, because a warning
+   * should be hard to raise, and a sea state of 1.25 to 2.5 m at fourteen knots therefore
+   * passed and labelled a 2.5 m sea's period "from the stated wind".
    */
-  it("declines the period exactly where it reports the disagreement", () => {
-    for (const knots of [0, 3, 6, 10, 14, 20, 30]) {
-      const environment = {
-        wind: { speedKnots: knots, derivation: "measured" as const },
-        waves: { significantHeightMetres: 2, derivation: "measured" as const },
-      };
-      const estimate = seawayFrom(environment);
-      const exceeds = seaExceedsWind(estimate, windFrom(environment));
-      expect(estimate?.periodFrom, `${knots} kn`).toBe(exceeds === true ? "height" : "wind");
+  it("only takes a period from a wind that could raise the roughest sea allowed", () => {
+    for (const state of [1, 3, 4, 6]) {
+      for (const knots of [0, 5, 10, 14, 20, 30, 45]) {
+        const environment = {
+          seaState: state,
+          wind: { speedKnots: knots, derivation: "measured" as const },
+        };
+        const estimate = seawayFrom(environment);
+        if (estimate?.periodFrom !== "wind") continue;
+        const raised = fullyDevelopedHeightMetres(knots) * 1.3;
+        expect(
+          estimate.rough.significantHeightMetres,
+          `state ${state}, ${knots} kn`,
+        ).toBeLessThanOrEqual(raised + 1e-9);
+      }
     }
+  });
+
+  /**
+   * The case that found it. Fourteen knots raises 1.44 m with the margin, which clears the
+   * calm end of state 4 and comes nowhere near its rough end.
+   */
+  it("does not label a 2.5 m sea's period as coming from a fourteen-knot wind", () => {
+    const estimate = seawayFrom({
+      seaState: 4,
+      wind: { speedKnots: 14, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("height");
+  });
+
+  it("does not put a half-second period on the rough end of a nearly calm state", () => {
+    const estimate = seawayFrom({
+      seaState: 1,
+      wind: { speedKnots: 0, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("height");
+    expect(estimate?.rough.peakPeriodSeconds).toBeGreaterThan(PERIOD_LIMITS_SECONDS.least);
   });
 });

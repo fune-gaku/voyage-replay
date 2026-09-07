@@ -198,9 +198,10 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
   const waves = environment?.waves;
   const direction = directionFor(waves, wind);
   // The height first, because whether the wind can supply a period depends on whether it
-  // could have raised this sea - and the calm end is the one that has to be beyond it.
-  const calmest = calmestHeightMetres(waves, environment?.seaState);
-  const period = periodFor(waves, wind, calmest);
+  // could have raised this sea - and it is the ROUGH end that has to be within reach, since
+  // one period is applied to both.
+  const roughest = roughestHeightMetres(waves, environment?.seaState);
+  const period = periodFor(waves, wind, roughest);
 
   if (waves?.significantHeightMetres !== undefined) {
     const seaway = seawayOf(waves.significantHeightMetres, period.seconds);
@@ -217,15 +218,29 @@ export function seawayFrom(environment: Environment | undefined): SeaEstimate | 
   return fromSeaState(environment?.seaState, period, direction);
 }
 
-/** The gentlest sea the file allows, which is what the wind has to be able to account for. */
-function calmestHeightMetres(
+/**
+ * The ROUGHEST sea the file allows, which is what a single derived period has to fit.
+ *
+ * Not the gentlest, and the difference is the whole of it: one period is worked out and
+ * then applied to both ends of the class. Testing the wind against the calm end passes a
+ * sea state of 1.25 to 2.5 m at fourteen knots - which raises 1.44 m with the margin - and
+ * then labels a 2.5 m sea's period "from the stated wind". At the bottom of the scale it is
+ * worse: state 1 runs from nought, so a flat calm clears the test and puts a half-second
+ * period on the rough end.
+ *
+ * `seaExceedsWind` still asks about the calm end, and that is not an inconsistency: it is a
+ * WARNING, and a warning should be hard to raise, so it fires only where even the gentlest
+ * reading is beyond the wind. This is a DERIVATION, and a derivation has to hold for every
+ * sea it will be applied to. Two questions, two ends.
+ */
+function roughestHeightMetres(
   waves: Environment["waves"],
   seaState: number | null | undefined,
 ): number {
   if (waves?.significantHeightMetres !== undefined) return waves.significantHeightMetres;
   const band =
     seaState === null || seaState === undefined ? undefined : SEA_STATE_HEIGHT_METRES[seaState];
-  return band?.[0] ?? 0;
+  return band?.[1] ?? 0;
 }
 
 /**
@@ -270,9 +285,14 @@ function directionFor(
  * is a two-metre sea 0.4 m from crest to crest: absurd geometry under a panel reading
  * "from the stated wind".
  *
- * So the wind supplies a period only when it could have raised the sea in the first place,
- * which is the same comparison `seaExceedsWind` reports. Where it could not, the height
- * route takes over and the page says the height was what it came from.
+ * So the wind supplies a period only when it could have raised the sea in the first place.
+ * Where it could not, the height route takes over and the page says the height was what it
+ * came from.
+ *
+ * The height asked about is the ROUGHEST the file allows, because the one period that comes
+ * out is applied to both ends of a class. `seaExceedsWind` asks about the calm end instead,
+ * and the two are answering different questions: a warning should be hard to raise, and a
+ * derivation has to hold everywhere it is used.
  */
 function periodFor(
   waves: Environment["waves"],
