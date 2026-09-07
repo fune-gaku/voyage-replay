@@ -565,6 +565,132 @@ describe("the sea marks a scenario carries", () => {
 });
 
 /**
+ * The light a mark carries, which under IALA is what the mark IS - the four cardinal marks
+ * are told apart by nothing else. What the page has to keep separate is the character the
+ * file stated from the timings this tool worked out to draw it.
+ */
+describe("what the page says about a mark's light", () => {
+  const buoy = (light: Mark["light"]): Mark => ({
+    id: "no-1",
+    kind: "buoy",
+    at: { lat: 33.9, lon: 131.7 },
+    ...(light === undefined ? {} : { light }),
+  });
+
+  /**
+   * The sea marks section alone. "not stated" appears in other sections about other
+   * questions - the sky's visibility, for one - so a claim about this table has to be made
+   * about this table.
+   */
+  function marksSection(subject: Scenario): string {
+    const html = panelsFor(subject);
+    const start = html.indexOf("<section><h2>Sea marks");
+    return html.slice(start, html.indexOf("</section>", start));
+  }
+
+  it("prints the character it read, rather than the string it was given", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ character: "Q(6) + LFl 15s" })];
+    expect(panelsFor(subject)).toContain("<td>Q(6)+LFl 15s</td>");
+  });
+
+  /**
+   * Silence is not an unlit mark. A buoy and a lighted buoy are different marks, and a report
+   * that does not mention the light is the ordinary case rather than a statement that there
+   * was none - so the cell says what the file did, not what the mark was.
+   */
+  it("says the file did not say, rather than that the mark was dark", () => {
+    const subject = scenario();
+    subject.marks = [buoy(undefined)];
+    const section = marksSection(subject);
+
+    expect(section).toContain("<td>not stated</td>");
+    expect(section).not.toContain("unlit");
+  });
+
+  it("says a character it could not read was stated and unreadable, with the reason", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ character: "flashing twice" })];
+    const section = marksSection(subject);
+
+    expect(section).toContain("stated, unreadable - no class in it");
+    expect(section).not.toContain("<td>not stated</td>");
+  });
+
+  /**
+   * The trap the whole issue turns on: an abbreviation says how often a light flashes and
+   * not how long the flash lasts. A page that printed the rhythm without saying the split
+   * was worked out here would be reporting this tool's arithmetic as somebody's observation.
+   */
+  it("owns the timings it worked out, and stands aside where the file stated them", () => {
+    const worked = scenario();
+    worked.marks = [buoy({ character: "Fl(2) R 10s" })];
+    const workedHtml = panelsFor(worked);
+
+    // The page is HTML, so an apostrophe reaches it escaped - assert the text as it lands.
+    expect(workedHtml).toContain("The timings of 1 of these are this tool&#39;s");
+    expect(workedHtml).toContain("IALA Recommendation E-110");
+
+    const told = scenario();
+    told.marks = [
+      buoy({ character: "Fl R 4s", phases: [{ seconds: 0.3, colour: "red" }, { seconds: 3.7 }] }),
+    ];
+    const toldHtml = panelsFor(told);
+
+    expect(toldHtml).toContain("timings stated");
+    expect(toldHtml).not.toContain("are this tool's");
+  });
+
+  /**
+   * Where a light is drawn at all, and how far. A real light has a nominal range and this one
+   * is drawn wherever the mark is in frame, so the picture shows a light further off than it
+   * could have been seen - which the page has to own, since nothing in the frame says it.
+   */
+  it("says where the rhythm can be seen, and that it is drawn too far", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ character: "Fl(2) R 10s" })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("drawn from a bridge at night and nowhere else");
+    expect(html).toContain("overstates a real one");
+    expect(html).toContain("nominal range");
+  });
+
+  /**
+   * Every light in the scene starts its sequence at the same instant, because nothing in the
+   * file says otherwise - so two marks with the same character keep step on screen. That is a
+   * relationship a viewer would read out of the picture, and nobody stated it.
+   */
+  it("says why two lights in one scene keep step, and only where there are two", () => {
+    const pair = scenario();
+    pair.marks = [
+      buoy({ character: "Fl(2) R 10s" }),
+      {
+        id: "no-3",
+        kind: "buoy",
+        at: { lat: 33.91, lon: 131.71 },
+        light: { character: "Fl(2) G 10s" },
+      },
+    ];
+    expect(panelsFor(pair)).toContain("nothing states the phase of one light against another");
+
+    const alone = scenario();
+    alone.marks = [buoy({ character: "Fl(2) R 10s" })];
+    expect(panelsFor(alone)).not.toContain("phase of one light against another");
+  });
+
+  /** No light in the file, nothing to explain: an inference nobody made needs no paragraph. */
+  it("explains nothing about lights where no mark carries one", () => {
+    const subject = scenario();
+    subject.marks = [buoy(undefined)];
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("E-110");
+    expect(html).not.toContain("drawn from a bridge at night");
+  });
+});
+
+/**
  * A beacon is not a kind of buoy, and the table takes both. Every cell that differs between
  * them is one the reader would otherwise carry across from the row above: the height's
  * datum, the shape, the watch circle, and whether the thing moves at all.

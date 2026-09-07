@@ -102,6 +102,61 @@ describe("the schema keeps a beacon from being a kind of buoy", () => {
   });
 });
 
+/**
+ * The light a mark carries. The schema's job is the shape of the field; whether the character
+ * inside it can be READ is `core/light-character.ts`'s, and the two are deliberately
+ * separate - a file may carry an abbreviation this tool has not learned yet without being an
+ * invalid file.
+ */
+describe("the schema on a mark's light", () => {
+  const withLight = (light: unknown): Record<string, unknown> => ({
+    ...scenario(),
+    marks: [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 }, light }],
+  });
+
+  it("takes a character on its own, which is all a report usually gives", () => {
+    expect(validateScenario(withLight({ character: "Fl(2) R 10s" })).valid).toBe(true);
+  });
+
+  it("insists a light have a character, since a light with no rhythm identifies nothing", () => {
+    const result = validateScenario(withLight({ phases: [{ seconds: 1 }, { seconds: 3 }] }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(" ")).toContain("character");
+  });
+
+  it("takes stated timings, with darkness written as a phase of no colour", () => {
+    const stated = withLight({
+      character: "Fl R 4s",
+      phases: [{ seconds: 0.3, colour: "red" }, { seconds: 3.7 }],
+    });
+    expect(validateScenario(stated).valid).toBe(true);
+  });
+
+  /**
+   * A phase of no length is a step no clock can land on, and a negative one runs the light
+   * backwards through its own period. `test/mark-light.spec.ts` holds the same bound in the
+   * code, since a scenario reaches that function by roads other than this validator.
+   */
+  it("refuses a phase of no length, and a sequence with only one phase in it", () => {
+    expect(
+      validateScenario(
+        withLight({ character: "Fl R 4s", phases: [{ seconds: 0 }, { seconds: 4 }] }),
+      ).valid,
+    ).toBe(false);
+    expect(
+      validateScenario(withLight({ character: "Fl R 4s", phases: [{ seconds: 4 }] })).valid,
+    ).toBe(false);
+  });
+
+  it("refuses a colour the buoyage does not use", () => {
+    const purple = withLight({
+      character: "Fl R 4s",
+      phases: [{ seconds: 1, colour: "purple" }, { seconds: 3 }],
+    });
+    expect(validateScenario(purple).valid).toBe(false);
+  });
+});
+
 describe("parseScenario", () => {
   it("hands back the scenario when it validates", () => {
     const subject = scenario();

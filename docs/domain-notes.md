@@ -365,3 +365,104 @@ radius instead.
 Three answers, not two: a beacon has **no** circle, a buoy with no stated mooring has one
 whose size **nobody wrote down**, and a buoy with a mooring has a figure. A blank shared by
 the first two would put a fact about the world and a gap in the file on the same footing.
+
+### The rhythm is the mark
+
+A light on a sea mark is not decoration and not a colour: **its rhythm is what identifies
+it**. Under IALA the four cardinal marks are told apart by nothing else, and the quadrant a
+ship must pass on is carried in the count of the flashes.
+
+| mark | rhythm |
+|---|---|
+| North cardinal | VQ, or Q |
+| East cardinal | VQ(3) 5s, or Q(3) 10s |
+| South cardinal | VQ(6)+LFl 10s, or Q(6)+LFl 15s |
+| West cardinal | VQ(9) 10s, or Q(9) 15s |
+| Isolated danger | Fl(2) 5s or 10s, white |
+| Safe water | LFl 10s, Iso, Oc, or Mo(A), white |
+| Special | Fl Y, Fl(4/5/6) Y, Oc Y, Mo Y — never A or U |
+| Preferred channel | Fl(2+1), red or green |
+| Emergency wreck | OcAl BuY 3s |
+
+Source for that table and everything below: **IALA Recommendation E-110, "Rhythmic Characters
+of Lights on Aids to Navigation", Edition 4.0, December 2016**, Table 3.
+
+### The abbreviation does not fix the sequence
+
+`Fl 4s` says one flash in every four seconds. **It does not say how long the flash is.** E-110
+gives bounds and worked examples, not a function: a flash under two seconds (that is the
+definition of a *long* flash), darkness at least three times the flash, the eclipse between
+groups at least three times the eclipse within one. The actual split comes from the Light List
+entry for that particular light.
+
+So a sequence worked out from an abbreviation is **`inferred`, never `measured`**, and
+anything drawing or printing one has to say so. Where a scenario states the durations they are
+used instead, and the page says which it had.
+
+The rates are the part that *is* fixed, and they are what make a class that class:
+
+| class | rate | E-110's specified rate |
+|---|---|---|
+| Flashing (Fl) | under 50 a minute | — |
+| Quick (Q) | 50 to 79 a minute | 60 |
+| Very quick (VQ) | 80 to 159 a minute | 120 |
+| Ultra quick (UQ) | 160 to 300 a minute | 240 |
+
+**Take the rate band, not the period bounds printed beside it.** The very quick row of Table 2
+reads "0.5 s ≤ p ≤ 1.6 s" in the published PDF, and 80 flashes a minute is 0.75 s. The band is
+stated twice and unambiguously; that column is not, and a PDF's layout is not a source.
+
+Building the sequence from the specified rate reproduces **every worked example in Table 2
+exactly** — Q(3) with 7.5 s of darkness, Q(9) with 6.5 s, Q(6)+LFl with 7 s, VQ(3) with 3.75 s,
+VQ(9) with 5.75 s, VQ(6)+LFl with 5 s, Fl(2+1) 16s as 1/1/3/9. That agreement is the check that
+the rule has a source rather than a preference, and `test/light-character.spec.ts` holds it.
+
+**Table 3's per-mark remarks are a separate question.** Some of them tighten the timings for
+one kind of mark — an isolated danger's flash plus the eclipse within its group is to be 1 to
+1.5 s in a 5 s period — and applying one means knowing what the mark *means*, which the format
+cannot state yet (#42). What this tool generates conforms to Table 2, which binds every
+character whatever is carrying it.
+
+### Where the sequence can go wrong quietly
+
+- **Level the eclipse between groups** and Fl(2+1) shows as Fl(3): a preferred-channel mark
+  reads as an ordinary lateral one. The separation is three to one, and it is what makes a
+  group a group.
+- **Fall back to something plainer when a character cannot be read** and an isolated danger
+  (Fl(2)) becomes a special mark (Fl). Nothing is drawn for a character that did not parse.
+- **Read silence as darkness** and every unlit-in-the-file mark becomes an unlit mark. A buoy
+  and a lighted buoy are different marks; a report that does not mention the light is the
+  ordinary case, not a statement that there was none.
+- **Flash in the plan view** and a chart starts claiming a moment. A light is drawn from a
+  bridge at night and nowhere else — the judgement `setDiagramView` already makes about
+  lighting and the map.
+
+### Where a scenario states the timings itself
+
+A source that gives the actual on/off durations beats anything worked out from the
+abbreviation — and then the two can disagree, which is the same failure from the other side.
+`Fl(2) R 10s` with one ten-second green phase is a red group-flashing light on the page and a
+steady green one in the picture.
+
+What has to agree, and what does not:
+
+| checked | not checked |
+|---|---|
+| how long the sequence runs | how long each ordinary phase lasts |
+| the order of the phases, and which are lit | |
+| the colours, **both ways round** | |
+| the light-to-dark ratio, which *is* the class | |
+| a long flash of two seconds or more | |
+| the separating phase, three times the ones inside a group | |
+| the rate inside a group, for the quick classes | |
+| a dash of three times a dot | |
+
+The last four are per-phase, so the generated sequence carries **what each phase is for** — a
+flash, a long flash, a dot, a dash, the phase that separates the groups. Working those out
+again in the checker would be a second copy of the generation rules, and the two would drift.
+
+Three of these are less obvious than they look. `Fl(2+1)` with evenly spaced flashes is
+`Fl(3)`: a preferred-channel mark drawn as an ordinary lateral one. Half a second of red, nine
+of darkness and half a second of red has two appearances and joins its two ends into one flash
+as it repeats. And dot-then-dash is A while dash-then-dot is N — a safe-water mark shows
+Mo(A).

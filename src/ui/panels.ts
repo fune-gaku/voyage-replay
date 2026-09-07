@@ -14,7 +14,9 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { lightOf } from "../actors/mark/light.js";
 import { watchCircleMetres } from "../actors/mark/mooring.js";
+import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
@@ -956,7 +958,17 @@ function tailNote(sea: SeaEstimate): string {
 function marksSection(scenario: Scenario): string[] {
   const marks = scenario.marks ?? [];
   if (marks.length === 0) return [];
-  const head = ["id", "name", "kind", "position", "shape", "colour", "height", "watch circle"];
+  const head = [
+    "id",
+    "name",
+    "kind",
+    "position",
+    "shape",
+    "colour",
+    "height",
+    "watch circle",
+    "light",
+  ];
   const rows = marks.map((mark) => [
     mark.id,
     mark.name ?? "-",
@@ -966,8 +978,11 @@ function marksSection(scenario: Scenario): string[] {
     stated(mark.colour, ASSUMED_MARK.colour),
     heightCell(mark),
     watchCircleCell(mark),
+    lightCell(mark),
   ]);
-  return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
+  return [
+    section(`Sea marks (${marks.length})`, dataTable(head, rows) + notes(marksCaveat(marks))),
+  ];
 }
 
 /**
@@ -979,6 +994,26 @@ function marksSection(scenario: Scenario): string[] {
  */
 function stated(value: string | undefined, fallback: string): string {
   return value ?? `assumed ${fallback}`;
+}
+
+/**
+ * The light it carries, and how much of its rhythm is this tool's arithmetic.
+ *
+ * **Three answers again.** A file that says nothing about a light has not said the mark was
+ * unlit - a buoy and a lighted buoy are different marks, and a report omitting the light is
+ * the ordinary case. A character nobody can read is a third thing, and it is reported as
+ * that rather than quietly drawn as something plainer: reading `Fl(2)` as a single flash
+ * turns an isolated-danger mark into a special mark.
+ */
+function lightCell(mark: Mark): string {
+  const reading = lightOf(mark);
+  if (!reading.known) {
+    return reading.because === "the file does not say whether it carried a light"
+      ? "not stated"
+      : `stated, unreadable - ${reading.because}`;
+  }
+  const written = formatCharacter(reading.character);
+  return reading.timings === "stated" ? `${written}, timings stated` : written;
 }
 
 /**
@@ -1051,8 +1086,8 @@ function assumedOf(mark: Mark): Choosable[] {
  * beacon, or the beacon sentence over a fleet of buoys, is the picture and the page
  * disagreeing in prose - the failure `plans/done/antenna-offset-6.md` records.
  */
-function marksCaveat(marks: Mark[]): string {
-  const parts = [assumedNote(marks)];
+function marksCaveat(marks: Mark[]): string[] {
+  const parts = [assumedNote(marks), lightNote(marks)];
   if (marks.some((m) => m.kind === "buoy")) {
     parts.push(
       "A buoy is drawn riding the sea as the water is drawn beneath her, which past a few " +
@@ -1073,12 +1108,48 @@ function marksCaveat(marks: Mark[]): string {
         "this tool's: issue #42.",
     );
   }
-  return parts.filter((p) => p !== "").join(" ");
+  return parts.filter((part) => part !== "");
 }
 
 const SHAPE_CLAUSE =
   " - and a can is port hand where a cone is starboard, so a shape drawn here is a " +
   "statement made here (issue #34)";
+
+/**
+ * What the drawn rhythm is, and is not.
+ *
+ * Only where a light was actually stated, and only about the ones whose timings this tool
+ * worked out: a page that explained an inference nobody made would be as misleading as one
+ * that made an inference and never explained it.
+ */
+function lightNote(marks: Mark[]): string {
+  const readings = marks.map(lightOf);
+  if (!readings.some((reading) => reading.known)) return "";
+
+  const inferred = readings.filter((r) => r.known && r.timings === "inferred").length;
+  // Two lights in one scene start together here, because nothing says otherwise. A file has
+  // nowhere to put the phase of one against another, and a viewer watching two marks flash
+  // in step would be reading a relationship out of the picture that nobody stated.
+  const together =
+    readings.filter((reading) => reading.known).length > 1
+      ? " Where more than one mark is lit, all of them start their sequence at the same " +
+        "instant: nothing states the phase of one light against another, so any two that " +
+        "appear to keep step here are keeping step for that reason."
+      : "";
+  const drawn =
+    "A light is drawn from a bridge at night and nowhere else: a chart is not a moment, so " +
+    "the plan view does not blink, and a light is not what a mark looks like by day. It is " +
+    "drawn at whatever range the mark is in view at, which overstates a real one - a light " +
+    "has a nominal range, and the format has nowhere to put it yet." +
+    together;
+  if (inferred === 0) return drawn;
+  return (
+    `The timings of ${inferred} of these are this tool's. An abbreviation says how often a ` +
+    "light flashes and not how long the flash lasts - IALA Recommendation E-110 bounds the " +
+    "split within the period without fixing it, and the rest comes from that light's own " +
+    `Light List entry. What is drawn conforms to those bounds; it is not what was seen. ${drawn}`
+  );
+}
 
 /**
  * What was chosen here rather than read from the file, **counted field by field**.
@@ -1136,6 +1207,20 @@ function findingList(findings: Finding[], scenario: Scenario): string {
 /** A line under a table saying what the figures in it are, and are not. */
 function note(text: string): string {
   return `<p style="color:var(--muted)">${escapeHtml(text)}</p>`;
+}
+
+/**
+ * Several notes under one table, each as its own paragraph.
+ *
+ * The sea marks section has four things to say - what was chosen here, what the drawn rhythm
+ * is, how a buoy rides, how a beacon stands - and run together they are a wall nobody reads
+ * to the end of. A caveat that is not read is not a caveat.
+ */
+function notes(texts: string[]): string {
+  return texts
+    .filter((text) => text !== "")
+    .map((text) => note(text))
+    .join("");
 }
 
 export function section(title: string, body: string): string {

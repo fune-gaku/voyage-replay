@@ -119,6 +119,13 @@ different question depending on which it is.
   nothing here states it. A beacon is therefore drawn taller than its stated height — the
   footing below the surface is the renderer standing it on something, and the page says so.
 
+- **`light`** is the light it carries, and **its absence means the file did not say** — not
+  that the mark was unlit. `character` is the Light List abbreviation ("Fl(2) W 10s",
+  "Q(6)+LFl 15s", "Mo(A) W 7s"), which is what a report gives. `phases` is for the rare source
+  that states the actual on/off durations: the abbreviation bounds them without fixing them,
+  so a sequence worked out from it alone conforms to IALA E-110 without being the sequence
+  that light showed.
+
 Everything optional here is regularly missing from a report, and a renderer then has to choose
 something to draw. What it chose is named beside the mark on the page rather than written into
 the file, so that the shape drawn and the shape stated cannot drift apart.

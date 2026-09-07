@@ -32,9 +32,11 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
+import { lightOf, type LightReading } from "../actors/mark/light.js";
 import { floats } from "../actors/mark/mooring.js";
 import { buildHull } from "./hull.js";
-import { buildMark, type MarkParts } from "./mark.js";
+import { showingAt } from "../core/light-character.js";
+import { buildMark, LAMP_COLOURS, type MarkParts } from "./mark.js";
 import {
   buildNavigationLights,
   type LampAudience,
@@ -43,6 +45,7 @@ import {
 import {
   buildScene,
   buildTrackLine,
+  isNight,
   type Ground,
   type SceneParts,
   type TrackLine,
@@ -177,6 +180,8 @@ interface Moored {
   at: LocalPosition;
   /** A buoy rides the sea; a beacon is built on the ground and does not. */
   floats: boolean;
+  /** Its light, or why nothing can be shown flashing. Read once - the file does not change. */
+  light: LightReading;
 }
 
 interface Stage {
@@ -198,6 +203,12 @@ export class Replay {
   private readonly clock: Caption;
   private readonly credit: Caption;
   private readonly timeZone: string;
+  /**
+   * Whether the scene is the night, asked of `scene.ts` rather than of the scenario again.
+   * A mark's light is drawn on the same answer that darkened the water, so the page, the sea
+   * and the lamps cannot disagree about what time of day it was.
+   */
+  private readonly night: boolean;
   private readonly renderer: WebGLRenderer;
   private readonly overhead: OrthographicCamera;
   private readonly bridge: PerspectiveCamera;
@@ -247,16 +258,8 @@ export class Replay {
     this.clock = this.overlay.caption("top-right", "figures");
     this.credit = this.overlay.caption("bottom-right", "text");
     this.timeZone = scenario.meta.timeZone;
-    this.stage = buildStage(scenario, {
-      onFirstTile: () => {
-        this.mapCredited = true;
-        this.update();
-      },
-      onFirstLandTile: () => {
-        this.landCredited = true;
-        this.update();
-      },
-    });
+    this.night = isNight(scenario.environment?.lightCondition);
+    this.stage = buildStage(scenario, this.tileArrivals());
     this.startSeconds = this.stage.startSeconds;
     this.endSeconds = this.stage.endSeconds;
     this.currentSeconds = this.startSeconds;
@@ -270,6 +273,26 @@ export class Replay {
 
     this.resize();
     this.update();
+  }
+
+  /**
+   * What to do when the first map or land tile lands.
+   *
+   * A redraw rather than nothing: the tiles arrive long after the opening frame was drawn,
+   * and the credit for them is drawn INSIDE the canvas, so a frame that was correct when it
+   * was made becomes one that shows a map with no attribution on it.
+   */
+  private tileArrivals(): Omit<Ground, "origin"> {
+    return {
+      onFirstTile: () => {
+        this.mapCredited = true;
+        this.update();
+      },
+      onFirstLandTile: () => {
+        this.landCredited = true;
+        this.update();
+      },
+    };
   }
 
   get timeSeconds(): number {
@@ -418,7 +441,10 @@ export class Replay {
     // After the eye is known, since what the sea does under a buoy depends on how far off
     // it is - the water's geometry fades with distance and the buoy has to fade with it.
     this.stage.sceneParts.setEye(eye?.position ?? null, eye?.heading ?? 0);
-    for (const mark of this.stage.marks) this.float(mark, eye);
+    for (const mark of this.stage.marks) {
+      this.float(mark, eye);
+      this.shine(mark, diagramMode);
+    }
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
     this.drawOverlay(diagramMode);
   }
@@ -513,6 +539,31 @@ export class Replay {
     // reads as plausible until it is watched against the waves going past.
     UP.set(-sea.slopeEast, 1, sea.slopeNorth).normalize();
     mark.parts.group.quaternion.setFromUnitVectors(VERTICAL, UP);
+  }
+
+  /**
+   * Whether this mark's light is showing at this instant, and in what colour.
+   *
+   * **The rhythm is the mark.** Under IALA the four cardinal marks are told apart by nothing
+   * else, so a steady dot where a Q(9) should be is not a lesser picture but a different
+   * mark - which is why an unreadable character shows nothing at all rather than something
+   * plainer.
+   *
+   * Drawn from a bridge at night and nowhere else. A chart is not a moment, so a plan view
+   * has no business blinking; and a light is not what a mark looks like by day. Both of
+   * those are the judgement `setDiagramView` already makes about lighting and the map.
+   */
+  private shine(mark: Moored, diagramMode: boolean): void {
+    const lamp = mark.parts.lamp;
+    if (!lamp) return;
+    if (diagramMode || !this.night || !mark.light.known) {
+      lamp.visible = false;
+      return;
+    }
+
+    const showing = showingAt(mark.light.phases, this.currentSeconds - this.startSeconds);
+    lamp.visible = showing !== null;
+    if (showing !== null) lamp.material.color.set(LAMP_COLOURS[showing]);
   }
 
   /** One ship at the current instant, or hidden if her track does not reach it. */
@@ -642,6 +693,26 @@ export class Replay {
 const VERTICAL = new Vector3(0, 1, 0);
 const UP = new Vector3();
 
+/**
+ * Every mark in the scenario, placed once and asked once what it is.
+ *
+ * Both questions are settled here rather than per frame: neither the file nor the ground a
+ * beacon stands on changes while a replay runs, and re-reading a light's character sixty
+ * times a second would be parsing a string to get the same answer every time.
+ */
+function moorMarks(scenario: Scenario, sceneParts: SceneParts): Moored[] {
+  return (scenario.marks ?? []).map((mark) => {
+    const parts = buildMark(mark);
+    sceneParts.actors.add(parts.group);
+    return {
+      parts,
+      at: toLocalPosition(mark.at, scenario.origin),
+      floats: floats(mark),
+      light: lightOf(mark),
+    };
+  });
+}
+
 function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage {
   const prepared = scenario.actors.map((actor) => ({
     actor,
@@ -660,11 +731,7 @@ function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage
   diagram.name = "diagram";
   sceneParts.scene.add(diagram);
   const cast = prepared.map((entry, index) => enterStage(entry, index, sceneParts, diagram));
-  const marks = (scenario.marks ?? []).map((mark) => {
-    const parts = buildMark(mark);
-    sceneParts.actors.add(parts.group);
-    return { parts, at: toLocalPosition(mark.at, scenario.origin), floats: floats(mark) };
-  });
+  const marks = moorMarks(scenario, sceneParts);
 
   return {
     startSeconds: Math.min(...tracks.map((t) => t.startSeconds)),

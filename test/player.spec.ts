@@ -1083,3 +1083,71 @@ describe("marks riding, or not riding, the sea", () => {
     expect(leaned).toBe(true);
   });
 });
+
+/**
+ * A mark's light, which is the mark's identity: under IALA the four cardinal marks are told
+ * apart by nothing else, so a steady dot where a Q(9) should be is a mark misidentified.
+ */
+describe("a mark's light in the picture", () => {
+  function withLight(character: string, condition?: Scenario["environment"]): Scenario {
+    const subject = scenario();
+    subject.environment = condition ?? { lightCondition: "night" };
+    subject.marks = [
+      { id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3, light: { character } },
+    ];
+    return subject;
+  }
+
+  /** Whether the lamp was drawn, second by second through one period. */
+  function shown(subject: Scenario, view: "bridge" | "overhead" = "bridge"): boolean[] {
+    const replay = replayOf(subject);
+    if (view === "bridge") replay.setView({ kind: "bridge", actorId: "A" });
+    return [0, 0.25, 0.75, 1.5, 2, 3, 4.5, 6, 8, 9.5].map((offset) => {
+      replay.seek(replay.startSeconds + offset);
+      return lastFrame().scene.getObjectByName("lamp:no-1")?.visible ?? false;
+    });
+  }
+
+  it("flashes rather than burning, and is dark for most of the period", () => {
+    const flashing = shown(withLight("Fl(2) R 10s"));
+    expect(flashing).toContain(true);
+    expect(flashing.filter(Boolean).length).toBeLessThan(flashing.length / 2);
+  });
+
+  /**
+   * The count is the message. A group of two and a group of nine have to look different at
+   * the same instant, or the picture says the same thing about two different marks.
+   */
+  it("shows a different pattern for a different character", () => {
+    expect(shown(withLight("Fl(2) R 10s"))).not.toEqual(shown(withLight("Q(9) W 15s")));
+  });
+
+  /**
+   * A chart is not a moment, and a light is not what a mark looks like by day. Both are the
+   * judgement `setDiagramView` already makes about lighting and about the map.
+   */
+  it("does not blink in the plan view, nor burn in daylight", () => {
+    expect(shown(withLight("Fl(2) R 10s"), "overhead")).not.toContain(true);
+    expect(shown(withLight("Fl(2) R 10s", { lightCondition: "day" }))).not.toContain(true);
+  });
+
+  /**
+   * Reading an unreadable character as something plainer would put a light on the water that
+   * identifies a different mark. Nothing is drawn instead.
+   */
+  it("shows nothing at all for a character it could not read", () => {
+    expect(shown(withLight("flashing twice"))).not.toContain(true);
+  });
+
+  it("shows the colour the character states", () => {
+    const replay = replayOf(withLight("Iso G 4s"));
+    replay.setView({ kind: "bridge", actorId: "A" });
+    replay.seek(replay.startSeconds + 0.5);
+    const lamp = lastFrame().scene.getObjectByName("lamp:no-1") as Points;
+    const colour = (lamp.material as PointsMaterial).color;
+
+    expect(lamp.visible).toBe(true);
+    expect(colour.g).toBeGreaterThan(colour.r);
+    expect(colour.g).toBeGreaterThan(colour.b);
+  });
+});

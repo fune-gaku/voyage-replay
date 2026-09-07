@@ -164,6 +164,37 @@
           "type": "number",
           "exclusiveMinimum": 0
         },
+        "light": {
+          "description": "The light the mark carries. ABSENT MEANS THE FILE DID NOT SAY, not that the mark was unlit - a buoy and a lighted buoy are different marks, and so are a beacon and a light beacon, but a report omitting the light is the ordinary case. Its rhythm is what identifies the mark: under IALA the four cardinal marks are told apart by nothing else.",
+          "type": "object",
+          "required": ["character"],
+          "additionalProperties": false,
+          "properties": {
+            "character": {
+              "description": "The Light List abbreviation - \"Fl(2) W 10s\", \"Q(6)+LFl 15s\", \"Iso W 4s\", \"Mo(A) W 7s\". The classes are those of IALA Recommendation E-110 Table 2: F, Oc, Iso, Fl, LFl, Q, VQ, UQ, Mo, Al and OcAl, with an optional group or composite group in brackets, an optional colour (W, R, G, Y, Bu) and an optional period in seconds.",
+              "type": "string",
+              "minLength": 1
+            },
+            "phases": {
+              "description": "The actual on/off durations, where the source gives them. THE ABBREVIATION DOES NOT FIX THEM: \"Fl 4s\" says one flash in every four seconds and not how long the flash is, so a sequence worked out from the abbreviation alone conforms to E-110 without being the sequence that light showed. State these and they are used instead, and the page says which it had.",
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "required": ["seconds"],
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": { "type": "number", "exclusiveMinimum": 0 },
+                  "colour": {
+                    "description": "The colour shown in this phase. Absent is darkness.",
+                    "enum": ["white", "red", "green", "yellow", "blue"]
+                  }
+                }
+              }
+            },
+            "source": { "$ref": "#/$defs/source" }
+          }
+        },
         "mooring": {
           "description": "What a buoy swings on. Only meaningful for one that floats, and stated so that the watch circle can be given as a figure rather than left to a reader who does not know it is there - at 20 m depth on three times scope it is 57 m, a ship's length of slack.",
           "type": "object",
