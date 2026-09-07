@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareActor } from "../src/core/track.js";
-import type { Actor, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
+import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
 
@@ -489,5 +489,70 @@ describe("what the sea section says about where its figures came from", () => {
 
     expect(html).toContain("or more</td>");
     expect(html).toContain("the last column is a floor and not a range");
+  });
+});
+
+describe("the sea marks a scenario carries", () => {
+  const buoy = (overrides: Partial<Mark> = {}): Mark => ({
+    id: "no-1",
+    kind: "buoy",
+    at: { lat: 33.9, lon: 131.7 },
+    ...overrides,
+  });
+
+  it("says nothing at all where a scenario carries no marks", () => {
+    expect(panelsFor(scenario())).not.toContain("Sea marks");
+  });
+
+  /**
+   * On screen a pillar this tool chose and a pillar the source stated look exactly alike,
+   * and the shape is a statement: a can is port hand where a cone is starboard. The table
+   * has to be able to tell them apart even though the picture cannot.
+   */
+  it("marks a chosen shape, colour and height as chosen", () => {
+    const subject = scenario();
+    subject.marks = [buoy()];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("Sea marks (1)");
+    expect(html).toContain("assumed pillar");
+    expect(html).toContain("assumed yellow");
+    expect(html).toContain("assumed 2.4 m");
+    expect(html).toContain("a shape drawn here is a statement made here");
+  });
+
+  it("reports a stated shape, colour and height as stated", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ shape: "can", colour: "red", heightMetres: 3.1, name: "No. 2" })];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>can</td>");
+    expect(html).toContain("<td>red</td>");
+    expect(html).toContain("<td>3.1 m</td>");
+    expect(html).toContain("No. 2");
+    // "assumed" appears elsewhere on the page - the hull's bridge, the occlusion heights -
+    // so the check has to be about this row rather than about the word.
+    expect(html).not.toContain("assumed pillar");
+    expect(html).not.toContain("assumed yellow");
+    expect(html).not.toContain("assumed 2.4 m");
+    expect(html).not.toContain("a statement made here");
+  });
+
+  it("gives the position, which is the part a report usually turns on", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ at: { lat: 33.90512, lon: 131.71166 } })];
+    expect(panelsFor(subject)).toContain("33.90512, 131.71166");
+  });
+
+  /**
+   * A buoy stops heaving at a few hundred metres because the water beneath it has, not
+   * because the sea has - which the picture cannot say for itself.
+   */
+  it("says the buoy rides the sea as drawn, and follows it exactly", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ shape: "spar", colour: "black", heightMetres: 2 })];
+    const html = panelsFor(subject);
+    expect(html).toContain("riding the sea as the water is drawn beneath it");
+    expect(html).toContain("issue #32");
   });
 });

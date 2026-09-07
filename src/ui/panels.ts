@@ -23,7 +23,7 @@ import {
   type PreparedTrack,
   type SampledState,
 } from "../core/track.js";
-import type { Actor, Scenario, Vessel } from "../core/types.js";
+import type { Actor, Mark, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -39,6 +39,7 @@ export function renderPanels(scenario: Scenario, prepared: Prepared[]): string {
     section("Closest approach", approach(prepared, scenario)),
     section("What each ship showed the other", aspects(prepared, scenario)),
     section("Whether the sea was in the way", occlusion(prepared, scenario)),
+    ...marksSection(scenario),
     section(`Plausibility screening (${findings.length})`, findingList(findings, scenario)),
   ].join("");
 }
@@ -561,6 +562,53 @@ function tailNote(sea: SeaEstimate): string {
     `Significant height is the mean of the highest third: at the rough end the highest tenth ` +
     `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
     `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
+  );
+}
+
+/**
+ * The buoys, and how much of each one is somebody's word.
+ *
+ * A mark's position is the whole of what a report usually gives, and it is the part that
+ * matters - which side of it she passed. Its shape and its height are what the renderer
+ * needs to draw one, they are almost never written down, and on screen an assumed pillar of
+ * an assumed height is indistinguishable from a measured one. A can is port hand and a cone
+ * starboard, so a shape this tool chose is a statement this tool made.
+ *
+ * Absent entirely when a scenario carries no marks, rather than an empty table: a section
+ * headed "Sea marks" over nothing invites the reading that there were none.
+ */
+function marksSection(scenario: Scenario): string[] {
+  const marks = scenario.marks ?? [];
+  if (marks.length === 0) return [];
+  const head = ["id", "name", "position", "shape", "colour", "height"];
+  const rows = marks.map((mark) => [
+    mark.id,
+    mark.name ?? "-",
+    `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
+    stated(mark.shape, "pillar"),
+    stated(mark.colour, "yellow"),
+    mark.heightMetres === undefined ? "assumed 2.4 m" : `${mark.heightMetres} m`,
+  ]);
+  return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
+}
+
+/** What the file said, or what was drawn in its place - never the two looking alike. */
+function stated(value: string | undefined, fallback: string): string {
+  return value ?? `assumed ${fallback}`;
+}
+
+function marksCaveat(marks: Mark[]): string {
+  const assumed = marks.filter((m) => !m.shape || !m.colour || m.heightMetres === undefined);
+  const drawn =
+    "A mark is drawn riding the sea as the water is drawn beneath it, which past a few " +
+    "hundred metres has faded flat - so a distant buoy stops heaving because the water " +
+    "under it has, not because the sea has. It follows the surface exactly, which is right " +
+    "for something small against the wave and wrong in a short steep sea: issue #32.";
+  if (assumed.length === 0) return drawn;
+  return (
+    `${assumed.length} of ${marks.length} carry a shape, colour or height this tool chose ` +
+    "rather than the source - and a can is port hand where a cone is starboard, so a shape " +
+    `drawn here is a statement made here (issue #34). ${drawn}`
   );
 }
 

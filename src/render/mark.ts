@@ -24,7 +24,9 @@ import type { Mark, MarkColour, MarkShape } from "../core/types.js";
 
 /**
  * Where a report says nothing. A pillar is the commonest shape in open water, and 2.4 m of
- * body about the usual for one; both are assumptions and `ui/panels.ts` says so.
+ * body about the usual for one. Both are assumptions, and `ui/panels.ts` names them as
+ * such beside the mark they were used for - on screen a chosen pillar and a stated one look
+ * exactly alike, and a can is port hand where a cone is starboard.
  */
 const ASSUMED_SHAPE: MarkShape = "pillar";
 const ASSUMED_HEIGHT_METRES = 2.4;

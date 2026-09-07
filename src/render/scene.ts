@@ -428,8 +428,10 @@ function buildFog(
 /** Adds the two lights and hands back the switch described on `setDiagramLighting`. */
 function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boolean) => void {
   const ambient = new AmbientLight(0xffffff, palette.ambient);
-  // A clear day is directional: most of the light from one place, little of it diffuse.
-  const key = new DirectionalLight(0xfff4e2, night ? 0.25 : 1.75);
+  // A clear day is directional: most of the light from one place, little of it diffuse. The
+  // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
+  // which is not warm, and tinting it would be inventing a sunset.
+  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, night ? 0.25 : 1.75);
   key.position.set(1, 2, 1);
   scene.add(ambient);
   scene.add(key);
