@@ -1,0 +1,498 @@
+/**
+ * The rhythmic character of a light: the thing that says which mark it is.
+ *
+ * Under the IALA Maritime Buoyage System the four cardinal marks are told apart by nothing
+ * else - north is a continuous quick light, east three flashes, south six and a long flash,
+ * west nine - so a steady dot where a Q(9) should be is not a cosmetic loss. It is a mark
+ * misidentified, and the quadrant a ship must pass on is carried in the count of the flashes.
+ *
+ * **The grammar lives here rather than in the data.** A table of on/off times per mark would
+ * put the grammar in every scenario, where each one could get it wrong separately. This is
+ * the same shape as `core/celestial.ts` turning a time and a place into an altitude: a small
+ * closed vocabulary in, arithmetic out.
+ *
+ * Everything numeric below comes from **IALA Recommendation E-110, "Rhythmic Characters of
+ * Lights on Aids to Navigation", Edition 4.0, December 2016** - Table 1 (maximum periods),
+ * Table 2 (the classes and their constraints) and Table 3 (what the buoyage assigns to each
+ * mark). Nothing here is invented, and `test/light-character.spec.ts` checks the generated
+ * sequences against Table 2's constraints rather than against this file's own arithmetic.
+ *
+ * **The abbreviation does not determine the sequence, and that is the whole difficulty.**
+ * `Fl 4s` says one flash in every four seconds; it does not say how long the flash is.
+ * E-110 gives bounds and worked examples, not a function - the exact split comes from the
+ * Light List entry for that particular light. So a sequence generated here is `inferred`,
+ * never `measured`, and whatever draws or prints it has to say so.
+ */
+
+/** Colours the buoyage uses. Red and green for lateral, white for cardinal, yellow for
+ * special, blue with yellow for an emergency wreck marking buoy (E-110 note 4). */
+export const LIGHT_COLOURS = ["white", "red", "green", "yellow", "blue"] as const;
+export type LightColour = (typeof LIGHT_COLOURS)[number];
+
+/** The abbreviations a chart and a Light List print for those colours. */
+const COLOUR_CODES: Record<string, LightColour> = {
+  W: "white",
+  R: "red",
+  G: "green",
+  Y: "yellow",
+  Bu: "blue",
+};
+
+/**
+ * The classes of E-110 Table 2 that a mark can carry.
+ *
+ * `F` is here because a file may state one, not because a mark should: E-110 note 2 to
+ * Table 3 says a single fixed light "shall not be used" on a mark within the buoyage,
+ * because it may not be recognised as an aid to navigation at all.
+ */
+export const LIGHT_CLASSES = [
+  "F",
+  "Oc",
+  "Iso",
+  "Fl",
+  "LFl",
+  "Q",
+  "VQ",
+  "UQ",
+  "Mo",
+  "Al",
+  "OcAl",
+] as const;
+export type LightClass = (typeof LIGHT_CLASSES)[number];
+
+export interface LightCharacter {
+  klass: LightClass;
+  /** Flashes or eclipses per group: `[]` plain, `[3]` a group of three, `[2, 1]` composite. */
+  groups: number[];
+  /** The long flash a south cardinal carries after its group - `Q(6) + LFl`. */
+  longFlash: boolean;
+  /** One colour, or two for an alternating light. Empty where the file states none. */
+  colours: LightColour[];
+  /** Seconds. Null for a continuous quick light, whose period is its own flash cycle. */
+  periodSeconds: number | null;
+  /** The letters of a Morse light, e.g. "A". Empty for every other class. */
+  morse: string;
+}
+
+/**
+ * Why a character could not be read, exhaustively.
+ *
+ * A reason rather than a bare null, and never a fallback to something plainer: reading
+ * `Fl(2) W 10s` as a single flash turns an isolated-danger mark into a special mark, on
+ * screen, with the page agreeing. Nothing is drawn flashing that could not be read.
+ */
+export type Unreadable =
+  | "nothing stated"
+  | "no class in it"
+  | "the group is not a count"
+  | "the period is not a number"
+  | "a colour this system does not use"
+  | "a letter that is not in the Morse code";
+
+export type CharacterReading =
+  { read: true; character: LightCharacter } | { read: false; because: Unreadable };
+
+/** Longest first, so `LFl` is not read as `L` and `OcAl` is not read as `Oc`. */
+const CLASS_ORDER: LightClass[] = [
+  "OcAl",
+  "LFl",
+  "Iso",
+  "VQ",
+  "UQ",
+  "Mo",
+  "Al",
+  "Oc",
+  "Fl",
+  "Q",
+  "F",
+];
+
+const MORSE: Record<string, string> = {
+  A: ".-",
+  B: "-...",
+  C: "-.-.",
+  D: "-..",
+  E: ".",
+  F: "..-.",
+  G: "--.",
+  H: "....",
+  I: "..",
+  J: ".---",
+  K: "-.-",
+  L: ".-..",
+  M: "--",
+  N: "-.",
+  O: "---",
+  P: ".--.",
+  Q: "--.-",
+  R: ".-.",
+  S: "...",
+  T: "-",
+  U: "..-",
+  V: "...-",
+  W: ".--",
+  X: "-..-",
+  Y: "-.--",
+  Z: "--..",
+};
+
+/**
+ * Read a Light List abbreviation - "Q(6) + LFl 15s", "Fl(2+1) R 10s", "Mo(A) W 7s".
+ *
+ * Spacing varies between publications and between hands, so it is thrown away first. What is
+ * not thrown away is anything the grammar does not recognise: an unreadable character is
+ * reported as such rather than reduced to the part that parsed.
+ */
+export function parseCharacter(text: string): CharacterReading {
+  const tidy = text.replace(/\s+/g, "");
+  if (tidy === "") return { read: false, because: "nothing stated" };
+
+  const klass = CLASS_ORDER.find((name) => tidy.startsWith(name));
+  if (!klass) return { read: false, because: "no class in it" };
+
+  let rest = tidy.slice(klass.length);
+  const groups = takeGroups(rest, klass);
+  if (typeof groups === "string") return { read: false, because: groups };
+  rest = rest.slice(groups.consumed);
+
+  const longFlash = rest.startsWith("+LFl");
+  if (longFlash) rest = rest.slice("+LFl".length);
+
+  return assemble({ klass, groups: groups.counts, longFlash }, rest);
+}
+
+/** What the class, the bracket and the trailing long flash left to read. */
+interface Head {
+  klass: LightClass;
+  groups: number[];
+  longFlash: boolean;
+}
+
+/** The rest of the abbreviation: the colours, then the period. */
+function assemble(head: Head, rest: string): CharacterReading {
+  const period = /(\d+(?:\.\d+)?)s$/.exec(rest);
+  const colourPart = period === null ? rest : rest.slice(0, rest.length - period[0].length);
+  const colours = takeColours(colourPart);
+  if (colours === null) return { read: false, because: "a colour this system does not use" };
+
+  const morse = head.klass === "Mo" ? lettersOf(head.groups) : "";
+  return { read: true, character: characterOf(head, colours, period?.[1], morse) };
+}
+
+function characterOf(
+  head: Head,
+  colours: LightColour[],
+  period: string | undefined,
+  morse: string,
+): LightCharacter {
+  return {
+    klass: head.klass,
+    // A Morse light's bracket holds its letters, not a count of anything.
+    groups: head.klass === "Mo" ? [] : head.groups,
+    longFlash: head.longFlash,
+    colours,
+    periodSeconds: period === undefined ? null : Number(period),
+    morse,
+  };
+}
+
+function lettersOf(codes: number[]): string {
+  return codes.map((code) => String.fromCharCode(code)).join("");
+}
+
+/**
+ * `(3)`, `(2+1)`, `(A)` - or nothing, which is not a failure.
+ *
+ * **What is inside the bracket depends on the class**, so the class has to be known here: a
+ * Morse light carries letters and every other class carries counts. Reading letters
+ * everywhere would make `Fl(x)` a group of 120 flashes; reading counts everywhere would
+ * report a bad Morse letter as a bad number, which sends whoever wrote it looking in the
+ * wrong place. The letters come back as their character codes because one return type has to
+ * take both, and `assemble` turns them back.
+ */
+function takeGroups(
+  rest: string,
+  klass: LightClass,
+): { counts: number[]; consumed: number } | Unreadable {
+  const wrong: Unreadable =
+    klass === "Mo" ? "a letter that is not in the Morse code" : "the group is not a count";
+  if (!rest.startsWith("(")) return { counts: [], consumed: 0 };
+
+  const close = rest.indexOf(")");
+  if (close < 0) return wrong;
+  const parts = rest.slice(1, close).split("+");
+  const counts = parts.map((part) => (klass === "Mo" ? letterCode(part) : countOf(part)));
+  if (counts.some((count) => count === null)) return wrong;
+  return { counts: counts as number[], consumed: close + 1 };
+}
+
+/** A group of none is not a group; every other class counts flashes or eclipses. */
+function countOf(part: string): number | null {
+  return /^\d+$/.test(part) && Number(part) > 0 ? Number(part) : null;
+}
+
+/** A single letter the Morse code has. */
+function letterCode(part: string): number | null {
+  return MORSE[part] === undefined ? null : part.charCodeAt(0);
+}
+
+function takeColours(part: string): LightColour[] | null {
+  if (part === "") return [];
+  const codes = part.match(/Bu|[WRGY]/g);
+  if (codes?.join("") !== part) return null;
+  return codes.map((code) => COLOUR_CODES[code]).filter((c): c is LightColour => c !== undefined);
+}
+
+/** One appearance or one eclipse. A null colour is darkness. */
+export interface Phase {
+  seconds: number;
+  colour: LightColour | null;
+}
+
+/**
+ * The IALA-specified flash rates: 60, 120 and 240 flashes a minute (E-110 Table 2, classes 5,
+ * 6 and 7). The classes are DEFINED by bands - quick is 50 to 79 a minute, very quick 80 to
+ * 159, ultra quick 160 to 300 - and the specification picks one rate inside each.
+ *
+ * **The band is what to trust, not the period bounds printed beside it.** The very quick row
+ * reads "0.5 s <= p <= 1.6 s" in the published PDF, and 80 flashes a minute is 0.75 s, not
+ * 1.6 s. The band is stated twice and unambiguously; the period column is not.
+ */
+const FLASHES_PER_MINUTE: Partial<Record<LightClass, number>> = { Q: 60, VQ: 120, UQ: 240 };
+
+/** A long flash is "not less than 2 seconds" (E-110 Table 2 class 4.2 and its footnote). */
+const LONG_FLASH_SECONDS = 2;
+
+/**
+ * A flash is shorter than a long flash, which is the only bound the source puts on it. One
+ * second is E-110's own worked example for `Fl`, `Fl(2)` and `Fl(2+1)`, and using it
+ * reproduces the published example sequences exactly.
+ */
+const FLASH_SECONDS = 1;
+
+/**
+ * The sequence a light actually shows, one phase after another, repeating.
+ *
+ * **Inferred, not measured.** The abbreviation bounds these durations and does not fix them,
+ * so this is one sequence that conforms rather than the sequence that light shows. Where a
+ * scenario states the real durations they are used instead and nothing here runs.
+ */
+export function phasesOf(character: LightCharacter): Phase[] {
+  const colour = character.colours[0] ?? "white";
+  switch (character.klass) {
+    case "F":
+      return [{ seconds: character.periodSeconds ?? 1, colour }];
+    case "Iso":
+      return isophase(character, colour);
+    case "Oc":
+      return occulting(character, colour);
+    case "Mo":
+      return morse(character, colour);
+    case "Al":
+    case "OcAl":
+      return alternating(character);
+    default:
+      return flashing(character, colour);
+  }
+}
+
+/** "All the durations of light and darkness are clearly equal" (Table 2 class 3). */
+function isophase(character: LightCharacter, colour: LightColour): Phase[] {
+  const half = (character.periodSeconds ?? 4) / 2;
+  return [
+    { seconds: half, colour },
+    { seconds: half, colour: null },
+  ];
+}
+
+/**
+ * Light longer than darkness, the eclipses equal (Table 2 class 2).
+ *
+ * Single occulting takes the source's own proportion - "the duration of an appearance of
+ * light should not be less than three times the duration of an eclipse" at its limit, which
+ * is E-110's example of l = 3 s, d = 1 s, p = 4 s. A group takes equal eclipses and equal
+ * lights within the group, sized so the light between groups is three times one of them.
+ */
+function occulting(character: LightCharacter, colour: LightColour): Phase[] {
+  const period = character.periodSeconds ?? 4;
+  const count = character.groups[0] ?? 1;
+  if (count === 1) {
+    const dark = period / 4;
+    return [
+      { seconds: period - dark, colour },
+      { seconds: dark, colour: null },
+    ];
+  }
+
+  const unit = period / (2 * count + 2);
+  const phases: Phase[] = [{ seconds: 3 * unit, colour }];
+  for (let i = 0; i < count; i += 1) {
+    phases.push({ seconds: unit, colour: null });
+    if (i < count - 1) phases.push({ seconds: unit, colour });
+  }
+  return phases;
+}
+
+/**
+ * Every flashing class, including the quick ones and the south cardinal's trailing long
+ * flash. Darkness longer than light, and the eclipse between groups at least three times the
+ * eclipse within one (Table 2 classes 4, 5, 6, 7).
+ */
+function flashing(character: LightCharacter, colour: LightColour): Phase[] {
+  const period = character.periodSeconds;
+  const flash = flashLength(character, period);
+  // Light and darkness equal within a group, which is what every worked example in Table 2
+  // does; the eclipse that closes the period then carries the rest.
+  const dark = flash;
+  const groups = character.groups.length > 0 ? character.groups : [1];
+
+  const phases: Phase[] = [];
+  groups.forEach((count, index) => {
+    for (let i = 0; i < count; i += 1) {
+      phases.push({ seconds: flash, colour });
+      if (i < count - 1) phases.push({ seconds: dark, colour: null });
+    }
+    // **The eclipse between groups is three times the one within a group** (Table 2 class
+    // 4.3), and that is not decoration: at the same length, a composite Fl(2+1) would show
+    // as a plain Fl(3), which in the buoyage is a different mark.
+    const last = index < groups.length - 1;
+    phases.push({ seconds: last ? 3 * dark : dark, colour: null });
+  });
+
+  if (character.longFlash) {
+    // "The duration of the eclipse immediately preceding a long flash should be equal to the
+    // duration of the eclipses between the flashes" (Table 3, south cardinal) - which the
+    // group above has just pushed. The long flash follows it, and darkness closes the period.
+    phases.push({ seconds: LONG_FLASH_SECONDS, colour });
+    phases.push({ seconds: dark, colour: null });
+  }
+  return closeThePeriod(phases, period, dark);
+}
+
+/**
+ * How long one flash lasts.
+ *
+ * A quick, very quick or ultra quick light takes it from its rate, which is what makes it
+ * that class at all. Everything else takes a flash of a second - shorter where the period is
+ * too short to leave three times as much darkness, since darkness longer than light is the
+ * definition of a flashing light rather than a preference.
+ */
+function flashLength(character: LightCharacter, period: number | null): number {
+  const rate = FLASHES_PER_MINUTE[character.klass];
+  if (rate !== undefined) return 60 / rate / 2;
+  if (character.klass === "LFl") return LONG_FLASH_SECONDS;
+
+  const flashes = character.groups.reduce((total, count) => total + count, 0) || 1;
+  const room = (period ?? 4) / (2 * flashes + 2);
+  return Math.min(FLASH_SECONDS, room);
+}
+
+/**
+ * The darkness that fills what is left of the period.
+ *
+ * The last eclipse in the list is the one between groups, so it absorbs the remainder rather
+ * than a new phase being added: a sequence that ended with two eclipses in a row would show
+ * the same picture and count wrong when anything asked how many flashes there were.
+ */
+function closeThePeriod(phases: Phase[], period: number | null, dark: number): Phase[] {
+  if (period === null) return phases;
+  if (phases.at(-1)?.colour !== null) return phases;
+
+  const kept = phases.slice(0, -1);
+  const filled = kept.reduce((total, phase) => total + phase.seconds, 0);
+  // Never shorter than an eclipse within the group: a stated period too short for the
+  // character would otherwise close it with negative darkness, and the sequence would run
+  // backwards through the light.
+  return [...kept, { seconds: Math.max(period - filled, dark), colour: null }];
+}
+
+/**
+ * A Morse light: appearances of two clearly different durations (Table 2 class 8).
+ *
+ * "The duration of a 'dot' should be about 0.5 s, and the duration of a 'dash' should not be
+ * less than three times the duration of a 'dot'" - which is E-110's own Mo(A) example of
+ * l = 0.5 s, l' = 1.5 s, d = 0.5 s, d' = 4.5 s, p = 7 s.
+ */
+function morse(character: LightCharacter, colour: LightColour): Phase[] {
+  const dot = 0.5;
+  const phases: Phase[] = [];
+  for (let i = 0; i < character.morse.length; i += 1) {
+    for (const element of MORSE[character.morse.charAt(i)] ?? "") {
+      phases.push({ seconds: element === "-" ? dot * 3 : dot, colour });
+      phases.push({ seconds: dot, colour: null });
+    }
+  }
+  return closeThePeriod(phases, character.periodSeconds, dot);
+}
+
+/**
+ * Two colours in turn, which for an emergency wreck marking buoy is blue and yellow with an
+ * eclipse between them (E-110 Table 2 classes 10 and 11; the OcAl example is l = 1 s,
+ * d = 0.5 s, p = 3 s).
+ */
+function alternating(character: LightCharacter): Phase[] {
+  const period = character.periodSeconds ?? 4;
+  const [first, second] = [character.colours[0] ?? "white", character.colours[1] ?? "white"];
+  if (character.klass === "Al") {
+    return [
+      { seconds: period / 2, colour: first },
+      { seconds: period / 2, colour: second },
+    ];
+  }
+  const lit = period / 3;
+  return [
+    { seconds: lit, colour: first },
+    { seconds: lit / 2, colour: null },
+    { seconds: lit, colour: second },
+    { seconds: lit / 2, colour: null },
+  ];
+}
+
+/** How long one turn of the sequence takes, which is the period whether or not one was stated. */
+export function cycleSeconds(phases: Phase[]): number {
+  return phases.reduce((total, phase) => total + phase.seconds, 0);
+}
+
+/**
+ * What the light is showing at this instant, or null for darkness.
+ *
+ * The clock is the scenario's, so two marks in one scene are not synchronised by accident:
+ * they run from the same zero and drift apart by their own periods, which is what a
+ * wheelhouse sees.
+ */
+export function showingAt(phases: Phase[], secondsFromStart: number): LightColour | null {
+  const cycle = cycleSeconds(phases);
+  if (cycle <= 0) return null;
+
+  let position = secondsFromStart % cycle;
+  if (position < 0) position += cycle;
+
+  // The phase reached last answers for whatever is left over, so the rounding that can
+  // accumulate across a cycle of many short flashes lands in the eclipse that closes it
+  // rather than in nothing at all.
+  let showing: LightColour | null = null;
+  for (const phase of phases) {
+    showing = phase.colour;
+    if (position < phase.seconds) break;
+    position -= phase.seconds;
+  }
+  return showing;
+}
+
+/** The abbreviation again, from the parsed character - so a page can show what it understood. */
+export function formatCharacter(character: LightCharacter): string {
+  const group =
+    character.klass === "Mo"
+      ? `(${character.morse})`
+      : character.groups.length > 0
+        ? `(${character.groups.join("+")})`
+        : "";
+  const long = character.longFlash ? "+LFl" : "";
+  const colours = character.colours.map(codeFor).join("");
+  const period = character.periodSeconds === null ? "" : ` ${character.periodSeconds}s`;
+  return `${character.klass}${group}${long}${colours === "" ? "" : ` ${colours}`}${period}`;
+}
+
+function codeFor(colour: LightColour): string {
+  return Object.keys(COLOUR_CODES).find((code) => COLOUR_CODES[code] === colour) ?? "";
+}

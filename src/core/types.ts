@@ -10,6 +10,8 @@
 // Each closed set is declared once as a runtime array and the type derived from it, so
 // test/schema.spec.ts can compare it with the schema's own enum. A union written by hand
 // vanishes at runtime and drifts from the schema with nothing to catch it.
+import type { LightColour } from "./light-character.js";
+
 export const DERIVATIONS = ["measured", "digitised", "inferred", "interpolated"] as const;
 export type Derivation = (typeof DERIVATIONS)[number];
 
@@ -158,6 +160,7 @@ export interface ScenarioMeta {
 }
 
 export const MARK_KINDS = ["buoy", "beacon"] as const;
+
 export type MarkKind = (typeof MARK_KINDS)[number];
 
 export const MARK_SHAPES = ["pillar", "spar", "can", "conical", "spherical"] as const;
@@ -165,6 +168,29 @@ export type MarkShape = (typeof MARK_SHAPES)[number];
 
 export const MARK_COLOURS = ["green", "red", "yellow", "black", "white"] as const;
 export type MarkColour = (typeof MARK_COLOURS)[number];
+
+/**
+ * One appearance or one eclipse of a light, where a scenario states the timings itself.
+ *
+ * Absent colour is darkness. Stating these is unusual - a report gives the abbreviation, not
+ * the split within the period - but a Light List entry does carry them, and a stated one must
+ * beat anything this tool would generate from the abbreviation.
+ */
+export interface LightPhase {
+  seconds: number;
+  colour?: LightColour;
+}
+
+/**
+ * The light a mark carries. **Its rhythm is what the mark IS**: under IALA the four cardinal
+ * marks are told apart by nothing else.
+ */
+export interface MarkLight {
+  /** The Light List abbreviation - "Fl(2) W 10s", "Q(6)+LFl 15s", "Mo(A) W 7s". */
+  character: string;
+  phases?: LightPhase[];
+  source?: Source;
+}
 
 /** What a buoy swings on. Meaningless for anything built on a foundation. */
 export interface Mooring {
@@ -208,6 +234,12 @@ export interface Mark {
    */
   heightMetres?: number;
   mooring?: Mooring;
+  /**
+   * **Absent means the file did not say, not that the mark was unlit.** 浮標 and 灯浮標 are
+   * different marks and so are 立標 and 灯標, but a report omitting the light is the ordinary
+   * case rather than a statement that there was none.
+   */
+  light?: MarkLight;
   source?: Source;
 }
 

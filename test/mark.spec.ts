@@ -249,3 +249,55 @@ describe("a beacon", () => {
     expect(buildMark(beacon({ id: "hirase" })).group.name).toBe("mark:hirase");
   });
 });
+
+/**
+ * The lamp exists only where a file said the mark carried one.
+ *
+ * **A dark lamp is a claim.** Drawing one on every mark and leaving it switched off would
+ * put an unlit buoy in the picture wherever a report simply did not mention the light - and
+ * a buoy and a lighted buoy are different marks.
+ */
+describe("the lamp a mark carries", () => {
+  const lit = (overrides: Partial<Mark> = {}): Mark =>
+    mark({ light: { character: "Fl(2) R 10s" }, ...overrides });
+
+  it("is there when a light was stated, and absent when none was", () => {
+    expect(buildMark(lit()).lamp).not.toBeNull();
+    expect(buildMark(mark()).lamp).toBeNull();
+  });
+
+  /**
+   * Off as it is built. A light that came on the moment the stage was made would flash once
+   * out of rhythm before the clock had said anything, and the rhythm is the whole of what a
+   * viewer reads off a mark at night.
+   */
+  it("starts hidden, waiting for a clock rather than for a frame", () => {
+    expect(buildMark(lit()).lamp?.visible).toBe(false);
+  });
+
+  it("sits above the staff on a buoy that has one, and on top of a beacon", () => {
+    const height = 3;
+    const onPillar = buildMark(lit({ shape: "pillar", heightMetres: height }));
+    const onCan = buildMark(lit({ shape: "can", heightMetres: height }));
+    const onBeacon = buildMark({
+      id: "shoal",
+      kind: "beacon",
+      at: { lat: 33, lon: 140 },
+      heightMetres: height,
+      light: { character: "Fl(2) R 10s" },
+    });
+
+    const heightOf = (parts: { lamp: { geometry: Mesh["geometry"] } | null }): number =>
+      parts.lamp?.geometry.getAttribute("position").getY(0) ?? 0;
+
+    // The staff is drawn three quarters of the body's height above it, so the lamp clears it.
+    expect(heightOf(onPillar)).toBeGreaterThan(height * 1.7);
+    expect(heightOf(onCan)).toBeCloseTo(height, 5);
+    expect(heightOf(onBeacon)).toBeCloseTo(height, 5);
+  });
+
+  it("belongs to the mark's own group, so it heaves and leans with her", () => {
+    const parts = buildMark(lit());
+    expect(parts.group.children).toContain(parts.lamp);
+  });
+});

@@ -23,15 +23,19 @@
  */
 
 import {
+  BufferGeometry,
   CylinderGeometry,
+  Float32BufferAttribute,
   Group,
   Mesh,
   MeshStandardMaterial,
+  Points,
+  PointsMaterial,
   SphereGeometry,
-  type BufferGeometry,
   type ColorRepresentation,
 } from "three";
 
+import type { LightColour } from "../core/light-character.js";
 import type { Mark, MarkColour, MarkKind, MarkShape } from "../core/types.js";
 
 /**
@@ -81,6 +85,18 @@ const PROPORTIONS: Record<MarkShape, { width: number; draught: number }> = {
   spherical: { width: 1.1, draught: 0.5 },
 };
 
+/** What a light shows, painted the way a lamp is rather than the way a hull is. */
+export const LAMP_COLOURS: Record<LightColour, ColorRepresentation> = {
+  white: 0xfff4d6,
+  red: 0xff4d4d,
+  green: 0x4dff88,
+  yellow: 0xffe14d,
+  blue: 0x6ab8ff,
+};
+
+/** A lamp with its own material, so whatever drives the rhythm can set the colour it shows. */
+export type Lamp = Points<BufferGeometry, PointsMaterial>;
+
 export interface MarkParts {
   group: Group;
   /**
@@ -89,6 +105,13 @@ export interface MarkParts {
    * standing the structure on something, not a sounding.
    */
   heightMetres: number;
+  /**
+   * The lamp, where the file says the mark carried one. Null otherwise - **and null is not
+   * an unlit mark**: a report that does not mention the light is the ordinary case, and
+   * drawing a dark lamp on top of the structure would state something the source did not.
+   * `render/player.ts` shows and hides it; `actors/mark/light.ts` decides when.
+   */
+  lamp: Lamp | null;
 }
 
 export function buildMark(mark: Mark): MarkParts {
@@ -103,13 +126,49 @@ export function buildMark(mark: Mark): MarkParts {
   group.name = `mark:${mark.id}`;
   if (mark.kind === "beacon") {
     for (const part of beacon(height, material)) group.add(part);
-    return { group, heightMetres: height };
+    return withLamp(mark, group, height);
   }
 
   const shape = mark.shape ?? ASSUMED_MARK.shape;
   group.add(body(shape, height, PROPORTIONS[shape], material));
   if (shape === "pillar" || shape === "spar") group.add(mast(height, material));
-  return { group, heightMetres: height };
+  return withLamp(mark, group, height);
+}
+
+/**
+ * The lamp goes at the top of whatever was just built, which is where one is.
+ *
+ * Hidden as it is made. A light that came on the moment a stage was built would flash once
+ * out of rhythm before the clock had said anything, and the first thing a viewer reads off a
+ * mark at night is its rhythm.
+ */
+function withLamp(mark: Mark, group: Group, heightMetres: number): MarkParts {
+  if (!mark.light) return { group, heightMetres, lamp: null };
+
+  const lamp: Lamp = new Points(
+    new BufferGeometry().setAttribute(
+      "position",
+      new Float32BufferAttribute([0, topOf(mark, heightMetres), 0], 3),
+    ),
+    new PointsMaterial({
+      color: LAMP_COLOURS.white,
+      size: 7,
+      sizeAttenuation: false,
+      transparent: true,
+      depthWrite: false,
+    }),
+  );
+  lamp.name = `lamp:${mark.id}`;
+  lamp.visible = false;
+  group.add(lamp);
+  return { group, heightMetres, lamp };
+}
+
+/** Above the staff on the buoys that carry one, and above the column on a beacon. */
+function topOf(mark: Mark, heightMetres: number): number {
+  if (mark.kind === "beacon") return heightMetres;
+  const shape = mark.shape ?? ASSUMED_MARK.shape;
+  return shape === "pillar" || shape === "spar" ? heightMetres * 1.75 : heightMetres;
 }
 
 /**
