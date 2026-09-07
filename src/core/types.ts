@@ -155,6 +155,15 @@ export interface ScenarioMeta {
   occurredAt: string;
   timeZone: string;
   locality?: string;
+  /**
+   * Which IALA buoyage region these waters are in, which decides the lateral colours: A puts
+   * red to port, B reverses it. **Japan, Korea, the Philippines and the Americas are B.**
+   *
+   * Stated rather than worked out from the position: the boundary is a map, not a formula,
+   * and a tool that assumed one would paint every channel mark of the other region the wrong
+   * colour - plausibly, and silently.
+   */
+  buoyageRegion?: "A" | "B";
   source?: Source;
   license?: string;
 }
@@ -166,8 +175,53 @@ export type MarkKind = (typeof MARK_KINDS)[number];
 export const MARK_SHAPES = ["pillar", "spar", "can", "conical", "spherical"] as const;
 export type MarkShape = (typeof MARK_SHAPES)[number];
 
-export const MARK_COLOURS = ["green", "red", "yellow", "black", "white"] as const;
+export const MARK_COLOURS = ["green", "red", "yellow", "black", "white", "blue"] as const;
 export type MarkColour = (typeof MARK_COLOURS)[number];
+
+/**
+ * What a mark is FOR, which is the one fact the buoyage says three ways over - in the
+ * pattern, in the topmark and in the rhythm.
+ *
+ * Carried once so that the three cannot disagree. Stated as the mark's hand rather than its
+ * colour, because **which colour that is depends on the region**: Region A puts red to port
+ * and Region B reverses it, and Japan is Region B.
+ */
+export const MARK_PURPOSES = [
+  "port-hand",
+  "starboard-hand",
+  "preferred-channel-to-port",
+  "preferred-channel-to-starboard",
+  "north-cardinal",
+  "east-cardinal",
+  "south-cardinal",
+  "west-cardinal",
+  "isolated-danger",
+  "safe-water",
+  "special",
+  "emergency-wreck",
+] as const;
+export type MarkPurpose = (typeof MARK_PURPOSES)[number];
+
+/**
+ * How a beacon is built, which means **nothing at all**.
+ *
+ * A light list describes a beacon's form because that is what it looks like, not because it
+ * signifies anything: a lattice tower and a concrete column can both be a north cardinal. The
+ * buoy's counterpart is `shape`, and that one is partly meaning - a can is port hand where a
+ * cone is starboard - which is why the two are different fields on different kinds (#40).
+ */
+export const MARK_CONSTRUCTIONS = ["tower", "lattice", "column", "pile"] as const;
+export type MarkConstruction = (typeof MARK_CONSTRUCTIONS)[number];
+
+/**
+ * How the colours sit on the body. A single colour is the exception in this system: every
+ * cardinal mark is banded, safe water is striped, isolated danger is banded.
+ */
+export interface MarkPattern {
+  kind: "solid" | "horizontal bands" | "vertical stripes";
+  /** Top to bottom for bands, around the body for stripes. */
+  colours: MarkColour[];
+}
 
 /**
  * One appearance or one eclipse of a light, where a scenario states the timings itself.
@@ -186,8 +240,15 @@ export interface LightPhase {
  * marks are told apart by nothing else.
  */
 export interface MarkLight {
-  /** The Light List abbreviation - "Fl(2) W 10s", "Q(6)+LFl 15s", "Mo(A) W 7s". */
-  character: string;
+  /**
+   * The Light List abbreviation - "Fl(2) W 10s", "Q(6)+LFl 15s", "Mo(A) W 7s".
+   *
+   * **Optional, because `purpose` can answer for it.** A report often says a mark was lit
+   * without saying what it showed, and the buoyage knows: a north cardinal shows VQ because
+   * it is a north cardinal. Stating the light with no character says "it was lit"; leaving
+   * the whole `light` out says nothing about whether it was.
+   */
+  character?: string;
   phases?: LightPhase[];
   source?: Source;
 }
@@ -222,7 +283,28 @@ export interface Mark {
    * beacon's form is engineering rather than meaning, and the schema refuses it here.
    */
   shape?: MarkShape;
-  colour?: MarkColour;
+  /**
+   * What the mark is for. **The colours, the topmark and the rhythm are all generated from
+   * it** unless the file states them, so that the three cannot say different things.
+   */
+  purpose?: MarkPurpose;
+  /**
+   * The colours as they sit on the body, where a report gives them. Absent, they come from
+   * `purpose` - and where neither is stated the renderer chooses, which `ui/panels.ts` says.
+   */
+  pattern?: MarkPattern;
+  /** How a beacon is built. Meaningless for a buoy, and the schema refuses it on one. */
+  construction?: MarkConstruction;
+  /**
+   * Whether it carried a topmark at all.
+   *
+   * **The purpose says what one would BE, not whether there was one.** R1001 heads that
+   * column "Topmark (if any)" in every table, and notes that an authority may leave topmarks
+   * off where weather or ice make them impractical. So absence is a real thing a report can
+   * state, and where nothing states it, drawing one is this tool's decision rather than the
+   * buoyage's - which is what `ui/panels.ts` says beside it.
+   */
+  topmark?: boolean;
   /**
    * Body height **above the water**, and the same datum for both kinds.
    *

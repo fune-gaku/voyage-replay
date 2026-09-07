@@ -32,6 +32,10 @@
           "description": "IANA zone the human-readable clock in this scenario refers to.",
           "type": "string"
         },
+        "buoyageRegion": {
+          "description": "Which IALA buoyage region these waters are in, which decides the lateral colours: A puts red to port, B reverses it. JAPAN, KOREA, THE PHILIPPINES AND THE AMERICAS ARE REGION B. Stated rather than worked out from the position, because the boundary is a map and not a formula - and a tool that assumed one would paint every channel mark of the other region the wrong colour, plausibly and silently.",
+          "enum": ["A", "B"]
+        },
         "locality": {
           "description": "Free text, e.g. 'Suo-nada, off Nojima, Yamaguchi'.",
           "type": "string"
@@ -155,9 +159,58 @@
           "description": "IALA buoy shapes, which carry meaning: a can is port hand, a cone starboard, a sphere safe water. Optional, because reports often omit it - a renderer then has to choose one, and what it chose is named beside the mark rather than declared here, so that the shape drawn and the shape stated cannot drift apart.",
           "enum": ["pillar", "spar", "can", "conical", "spherical"]
         },
-        "colour": {
-          "description": "The body's colour. Solid colours only for now; banded and striped marks carry meaning this format cannot yet state.",
-          "enum": ["green", "red", "yellow", "black", "white"]
+        "purpose": {
+          "description": "What the mark is FOR, which is the one fact the buoyage says three ways over - in the colours, in the topmark and in the rhythm. Carried once so that the three cannot disagree: as three independent fields, a scenario could state black-and-yellow bands, two spheres and Fl(2), which is a chimera nobody could identify, drawn without complaint. Stated as the mark's HAND rather than its colour, because which colour that is depends on the region.",
+          "enum": [
+            "port-hand",
+            "starboard-hand",
+            "preferred-channel-to-port",
+            "preferred-channel-to-starboard",
+            "north-cardinal",
+            "east-cardinal",
+            "south-cardinal",
+            "west-cardinal",
+            "isolated-danger",
+            "safe-water",
+            "special",
+            "emergency-wreck"
+          ]
+        },
+        "pattern": {
+          "description": "The colours as they sit on the body, where a report gives them; otherwise they come from `purpose`. A single colour is the EXCEPTION in this system - every cardinal mark is banded, safe water is striped, isolated danger is banded - which is why this is a pattern and not a colour.",
+          "type": "object",
+          "required": ["kind", "colours"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["solid", "horizontal bands", "vertical stripes"] },
+            "colours": {
+              "description": "Top to bottom for bands, around the body for stripes. The ORDER is the message: black over yellow is a north cardinal and yellow over black is a south.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "enum": ["green", "red", "yellow", "black", "white", "blue"] }
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "solid" } }, "required": ["kind"] },
+              "then": {
+                "properties": { "colours": { "maxItems": 1 } },
+                "$comment": "One colour is what SOLID means. Two would be drawn as bands and printed as the first of them - the picture and the page reading the same field differently."
+              },
+              "else": {
+                "properties": { "colours": { "minItems": 2 } },
+                "$comment": "A band or a stripe of one colour is a solid body with a longer name, and calling it banded would have the page describing a division nobody can see."
+              }
+            }
+          ]
+        },
+        "topmark": {
+          "description": "Whether the mark carried a topmark at all. THE PURPOSE SAYS WHAT ONE WOULD BE, NOT WHETHER THERE WAS ONE: R1001 heads that column 'Topmark (if any)' in every table, and notes that an authority may leave them off where weather or ice make them impractical. Absence is therefore a real thing to state, and where nothing states it the renderer draws one and says the decision was its own.",
+          "type": "boolean"
+        },
+        "construction": {
+          "description": "How a beacon is built, which means NOTHING - a lattice tower and a concrete column can both be a north cardinal. The buoy's counterpart is `shape`, and that one is partly meaning, which is why they are different fields on different kinds.",
+          "enum": ["tower", "lattice", "column", "pile"]
         },
         "heightMetres": {
           "description": "Body height ABOVE THE WATER, excluding any topmark, and the same datum for both kinds. A buoy stands above her own waterline. A beacon continues below the sea to a foundation whose depth nothing in this format states - so a height measured from that foundation, which is what a light list gives as the structure height, could not be placed against the water at all. The part above the water is the figure the picture and a sightline both need. Buoys are small compared with an ocean wave and follow the surface closely, which is what makes one the plainest way to see a sea.",
@@ -167,7 +220,6 @@
         "light": {
           "description": "The light the mark carries. ABSENT MEANS THE FILE DID NOT SAY, not that the mark was unlit - a buoy and a lighted buoy are different marks, and so are a beacon and a light beacon, but a report omitting the light is the ordinary case. Its rhythm is what identifies the mark: under IALA the four cardinal marks are told apart by nothing else.",
           "type": "object",
-          "required": ["character"],
           "additionalProperties": false,
           "properties": {
             "character": {
@@ -223,6 +275,13 @@
           "then": {
             "not": { "required": ["mooring"] },
             "$comment": "A beacon is not moored. It stands on a foundation and has no watch circle."
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "buoy" } }, "required": ["kind"] },
+          "then": {
+            "not": { "required": ["construction"] },
+            "$comment": "How a mark is BUILT is a beacon's question - a tower, a lattice, a column, a pile - and it means nothing. A buoy's counterpart is its IALA shape, which does mean something. Different axes on different kinds, so neither takes the other's field."
           }
         }
       ]

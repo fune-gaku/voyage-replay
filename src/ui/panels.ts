@@ -14,6 +14,13 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import {
+  drawnAppearance,
+  type DrawnMark,
+  type From,
+  type Origin,
+} from "../actors/mark/appearance.js";
+import type { BuoyageRegion } from "../actors/mark/buoyage.js";
 import { lightOf } from "../actors/mark/light.js";
 import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
@@ -35,7 +42,7 @@ import {
   type PreparedTrack,
   type SampledState,
 } from "../core/track.js";
-import type { Actor, Mark, Scenario, Vessel } from "../core/types.js";
+import type { Actor, Mark, MarkPattern, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -958,42 +965,97 @@ function tailNote(sea: SeaEstimate): string {
 function marksSection(scenario: Scenario): string[] {
   const marks = scenario.marks ?? [];
   if (marks.length === 0) return [];
+  const region = scenario.meta.buoyageRegion ?? null;
   const head = [
     "id",
     "name",
     "kind",
+    "purpose",
     "position",
-    "shape",
-    "colour",
+    "form",
+    "colours",
+    "topmark",
     "height",
     "watch circle",
     "light",
   ];
-  const rows = marks.map((mark) => [
+  const rows = marks.map((mark) => markRow(mark, region));
+  return [
+    section(
+      `Sea marks (${marks.length})`,
+      dataTable(head, rows) + notes(marksCaveat(marks, region)),
+    ),
+  ];
+}
+
+function markRow(mark: Mark, region: BuoyageRegion | null): string[] {
+  const drawn = drawnAppearance(mark, region);
+  return [
     mark.id,
     mark.name ?? "-",
     mark.kind,
+    mark.purpose ?? "not stated",
     `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
-    shapeCell(mark),
-    stated(mark.colour, ASSUMED_MARK.colour),
+    formCell(drawn),
+    patternCell(drawn.pattern),
+    topmarkCell(drawn),
     heightCell(mark),
     watchCircleCell(mark),
-    lightCell(mark),
-  ]);
-  return [
-    section(`Sea marks (${marks.length})`, dataTable(head, rows) + notes(marksCaveat(marks))),
+    lightCell(mark, region),
   ];
 }
 
 /**
- * What the file said, or what was drawn in its place - never the two looking alike.
+ * Where each part of the drawn mark came from - and this is the whole point of the column.
  *
- * The fallbacks come from `render/mark.ts` rather than being written out again here. Two
- * copies drift, and when they do the page names a shape the picture is not drawing, which
- * is the exact thing this column exists to prevent.
+ * On screen a black-and-yellow the source stated and one this tool worked out from "north
+ * cardinal" look exactly alike, and both look like a colour nobody supplied at all. Three
+ * origins, three phrasings, never collapsed into two.
  */
-function stated(value: string | undefined, fallback: string): string {
-  return value ?? `assumed ${fallback}`;
+function saying<T>(part: From<T>, said: string): string {
+  return part.from === "stated" ? said : `${said}, ${part.from}`;
+}
+
+/** The IALA body shape for a buoy, and how a beacon is built - which are different axes. */
+function formCell(drawn: DrawnMark): string {
+  if (drawn.construction) return saying(drawn.construction, drawn.construction.value);
+  return drawn.shape ? saying(drawn.shape, drawn.shape.value) : "-";
+}
+
+/**
+ * The colours as they sit on the body, which is most of what a mark says by daylight.
+ *
+ * Written the way the buoyage says them - "black over yellow", "red and white stripes" -
+ * rather than as a list, because the ORDER is the message: black over yellow is north and
+ * yellow over black is south.
+ */
+function patternCell(pattern: From<MarkPattern>): string {
+  const colours = pattern.value.colours;
+  const written =
+    pattern.value.kind === "solid"
+      ? (colours[0] ?? "-")
+      : pattern.value.kind === "horizontal bands"
+        ? colours.join(" over ")
+        : `${colours.join(" and ")} stripes`;
+  return saying(pattern, written);
+}
+
+/**
+ * The shape on top, which for a cardinal mark is the only thing that tells north from south
+ * by day.
+ *
+ * **Three answers.** One drawn, with where it came from; a stated absence, which R1001 allows
+ * for in so many words and which is a fact about the mark; and nothing known either way. The
+ * middle and the last look alike in the picture - no topmark - and must not look alike here.
+ */
+function topmarkCell(drawn: DrawnMark): string {
+  const topmark = drawn.topmark;
+  if (!topmark) return "nothing says";
+  // Two statements with nothing to draw for either, and neither is the silence above: the
+  // file said there was none, or said there was one without saying what the mark was for.
+  if (topmark.value === null) return "none, stated";
+  if (topmark.value === "carried one") return "carried one, shape not worked out";
+  return saying(topmark, `${topmark.value.colour} ${topmark.value.shape}`);
 }
 
 /**
@@ -1005,28 +1067,20 @@ function stated(value: string | undefined, fallback: string): string {
  * that rather than quietly drawn as something plainer: reading `Fl(2)` as a single flash
  * turns an isolated-danger mark into a special mark.
  */
-function lightCell(mark: Mark): string {
-  const reading = lightOf(mark);
+function lightCell(mark: Mark, region: BuoyageRegion | null): string {
+  const reading = lightOf(mark, region);
   if (!reading.known) {
     return reading.because === "the file does not say whether it carried a light"
       ? "not stated"
       : `stated, unreadable - ${reading.because}`;
   }
   const written = formatCharacter(reading.character);
-  return reading.timings === "stated" ? `${written}, timings stated` : written;
-}
-
-/**
- * The body shape, where the mark is the kind that has one.
- *
- * A beacon has no IALA shape - the schema refuses one - so nothing was assumed in its place.
- * But something is on the screen, and the form drawn there was chosen here: the format has no
- * vocabulary for towers, lattices, columns and piles yet (issue #42). Reporting the field as
- * simply empty would leave the picture making the only statement about it.
- */
-function shapeCell(mark: Mark): string {
-  if (mark.kind === "beacon") return "a structure, form chosen here";
-  return stated(mark.shape, ASSUMED_MARK.shape);
+  // Where the rhythm came from, and separately where its timings did. A rhythm the buoyage
+  // supplied is not one the source stated - a north cardinal shows VQ because it is a north
+  // cardinal, and the page has to be able to say that rather than appear to quote a report.
+  const source = reading.characterFrom === "stated" ? "" : `, ${reading.characterFrom}`;
+  const timings = reading.timings === "stated" ? ", timings stated" : "";
+  return `${written}${source}${timings}`;
 }
 
 /**
@@ -1060,23 +1114,43 @@ function watchCircleCell(mark: Mark): string {
   return `${radius.toFixed(0)} m about the stated position`;
 }
 
-/** The fields a mark may leave unstated, which this tool then has to choose to draw one. */
-const CHOOSABLE = ["shape", "colour", "height"] as const;
+/** The parts of a drawn mark that this tool may have had to choose for itself. */
+const CHOOSABLE = ["form", "colours", "height"] as const;
 type Choosable = (typeof CHOOSABLE)[number];
 
 /**
- * Which of this mark's drawn properties came from here rather than from the source.
+ * Which of this mark's drawn properties came from here rather than from the file or from the
+ * buoyage.
  *
- * **A beacon's shape is not among them.** It has no IALA shape to state, so nothing was
- * assumed in its place, and counting the empty field as an assumption would have the page
- * confessing to a choice the renderer never made.
+ * **Read off the same resolution the renderer draws from**, so the count cannot drift from
+ * the picture. A part generated from the mark's purpose is not counted: it came from IALA,
+ * which is a source, and calling it a choice made here would confess to an invention that
+ * did not happen.
  */
-function assumedOf(mark: Mark): Choosable[] {
+function assumedOf(mark: Mark, region: BuoyageRegion | null): Choosable[] {
+  const drawn = drawnAppearance(mark, region);
   const chosen: Choosable[] = [];
-  if (mark.kind === "buoy" && mark.shape === undefined) chosen.push("shape");
-  if (mark.colour === undefined) chosen.push("colour");
+  const form = drawn.construction ?? drawn.shape;
+  if (form && decided(form.from)) chosen.push("form");
+  if (decided(drawn.pattern.from)) chosen.push("colours");
   if (mark.heightMetres === undefined) chosen.push("height");
   return chosen;
+}
+
+/** Whether this beacon's construction was left to this tool rather than stated. */
+function chosenForm(mark: Mark, region: BuoyageRegion | null): boolean {
+  return drawnAppearance(mark, region).construction?.from === "chosen here";
+}
+
+/**
+ * Both kinds of decision this tool makes, and neither kind of thing it was told.
+ *
+ * Picking the first of the shapes a purpose allows is a smaller decision than picking one
+ * with nothing to go on, but it is still this tool deciding - and the count is of what a
+ * reader cannot hold the source to.
+ */
+function decided(origin: Origin): boolean {
+  return origin === "chosen here" || origin === "chosen from what its purpose allows";
 }
 
 /**
@@ -1086,8 +1160,8 @@ function assumedOf(mark: Mark): Choosable[] {
  * beacon, or the beacon sentence over a fleet of buoys, is the picture and the page
  * disagreeing in prose - the failure `plans/done/antenna-offset-6.md` records.
  */
-function marksCaveat(marks: Mark[]): string[] {
-  const parts = [assumedNote(marks), lightNote(marks)];
+function marksCaveat(marks: Mark[], region: BuoyageRegion | null): string[] {
+  const parts = [assumedNote(marks, region), lightNote(marks, region)];
   if (marks.some((m) => m.kind === "buoy")) {
     parts.push(
       "A buoy is drawn riding the sea as the water is drawn beneath her, which past a few " +
@@ -1103,9 +1177,17 @@ function marksCaveat(marks: Mark[]): string[] {
         "past it, and the position given for it is the structure's own. Its height is the " +
         "part above the water; it is drawn carrying on below the surface onto a footing, " +
         "and how far down that goes is this tool standing it on something rather than a " +
-        "depth anybody stated. What kind of structure - a tower, a lattice, a column, a " +
-        "pile - is a vocabulary this format does not have either, so the one on screen is " +
-        "this tool's: issue #42.",
+        "depth anybody stated.",
+    );
+  }
+  // And only where a beacon's form was not stated. The format has the vocabulary now - a
+  // tower, a lattice, a column, a pile - so a page that called a stated lattice this tool's
+  // choice would contradict the cell above it, which says the file gave it.
+  if (marks.some((mark) => mark.kind === "beacon" && chosenForm(mark, region))) {
+    parts.push(
+      "How a beacon is built means nothing - a lattice tower and a concrete column can both " +
+        "be a north cardinal - but something has to be on the screen, and where the file does " +
+        "not say, the form drawn is this tool's.",
     );
   }
   return parts.filter((part) => part !== "");
@@ -1122,8 +1204,8 @@ const SHAPE_CLAUSE =
  * worked out: a page that explained an inference nobody made would be as misleading as one
  * that made an inference and never explained it.
  */
-function lightNote(marks: Mark[]): string {
-  const readings = marks.map(lightOf);
+function lightNote(marks: Mark[], region: BuoyageRegion | null): string {
+  const readings = marks.map((mark) => lightOf(mark, region));
   if (!readings.some((reading) => reading.known)) return "";
 
   const inferred = readings.filter((r) => r.known && r.timings === "inferred").length;
@@ -1160,8 +1242,8 @@ function lightNote(marks: Mark[]): string {
  * cannot have at all. The cells above are right and the sentence under them is not, which is
  * the page making the stronger claim, one layer down.
  */
-function assumedNote(marks: Mark[]): string {
-  const counted = CHOOSABLE.map((field) => ({ field, ...tally(marks, field) })).filter(
+function assumedNote(marks: Mark[], region: BuoyageRegion | null): string {
+  const counted = CHOOSABLE.map((field) => ({ field, ...tally(marks, field, region) })).filter(
     (entry) => entry.count > 0,
   );
   if (counted.length === 0) return "";
@@ -1169,8 +1251,19 @@ function assumedNote(marks: Mark[]): string {
   const list = andList(
     counted.map((entry) => `a ${entry.field} for ${entry.count} of ${entry.of}`),
   );
-  const shapes = counted.some((entry) => entry.field === "shape") ? SHAPE_CLAUSE : "";
-  return `Chosen here rather than taken from the source: ${list}${shapes}.`;
+  // The buoyage clause is about IALA body SHAPES - a can is port hand, a cone starboard - so
+  // it belongs to a buoy whose shape was chosen here and not to a beacon whose construction
+  // was. A beacon's form means nothing, and saying it does is the page overclaiming again.
+  const shapes = marks.some(
+    (mark) => mark.kind === "buoy" && assumedOf(mark, region).includes("form"),
+  )
+    ? SHAPE_CLAUSE
+    : "";
+  return (
+    `Decided here rather than stated: ${list}${shapes}. Each cell above says which kind of ` +
+    "decision it was - a value the buoyage fixes, one it allows several of, or one with " +
+    "nothing to go on at all."
+  );
 }
 
 /**
@@ -1179,11 +1272,14 @@ function assumedNote(marks: Mark[]): string {
  * **The denominator is not always every mark.** Only a buoy has an IALA shape, so counting
  * beacons into it would report a gap in marks that have no such field to fill.
  */
-function tally(marks: Mark[], field: Choosable): { count: number; of: number } {
-  const eligible = field === "shape" ? marks.filter((m) => m.kind === "buoy") : marks;
+function tally(
+  marks: Mark[],
+  field: Choosable,
+  region: BuoyageRegion | null,
+): { count: number; of: number } {
   return {
-    count: eligible.filter((m) => assumedOf(m).includes(field)).length,
-    of: eligible.length,
+    count: marks.filter((mark) => assumedOf(mark, region).includes(field)).length,
+    of: marks.length,
   };
 }
 

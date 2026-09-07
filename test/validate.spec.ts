@@ -118,10 +118,20 @@ describe("the schema on a mark's light", () => {
     expect(validateScenario(withLight({ character: "Fl(2) R 10s" })).valid).toBe(true);
   });
 
-  it("insists a light have a character, since a light with no rhythm identifies nothing", () => {
-    const result = validateScenario(withLight({ phases: [{ seconds: 1 }, { seconds: 3 }] }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.join(" ")).toContain("character");
+  /**
+   * A light with no character used to be refused, on the grounds that a rhythm is what
+   * identifies a mark. It is taken now, because `purpose` answers for it: a north cardinal
+   * shows VQ because it is a north cardinal, and a report that says a mark was lit without
+   * saying what it showed is the ordinary case rather than an invalid file.
+   *
+   * `test/mark-light.spec.ts` holds the other half - a light with neither a character nor a
+   * purpose is readable as a file and still gets nothing drawn.
+   */
+  it("takes a light with no character, since the mark's purpose can answer for it", () => {
+    expect(validateScenario(withLight({})).valid).toBe(true);
+    expect(validateScenario(withLight({ phases: [{ seconds: 1 }, { seconds: 3 }] })).valid).toBe(
+      true,
+    );
   });
 
   it("takes stated timings, with darkness written as a phase of no colour", () => {
@@ -154,6 +164,89 @@ describe("the schema on a mark's light", () => {
       phases: [{ seconds: 1, colour: "purple" }, { seconds: 3 }],
     });
     expect(validateScenario(purple).valid).toBe(false);
+  });
+});
+
+/**
+ * The fields the buoyage generates from, and the two the schema keeps on their own kinds.
+ */
+describe("the schema on what a mark means", () => {
+  const withMark = (mark: Record<string, unknown>): Record<string, unknown> => ({
+    ...scenario(),
+    marks: [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 }, ...mark }],
+  });
+
+  /**
+   * R1001 heads that column "Topmark (if any)", and notes an authority may leave them off in
+   * weather or ice. So "there was none" is a fact a report can state, not a gap in it.
+   */
+  it("takes a statement that a mark carried no topmark", () => {
+    expect(validateScenario(withMark({ topmark: false })).valid).toBe(true);
+    expect(validateScenario(withMark({ topmark: "none" })).valid).toBe(false);
+  });
+
+  it("takes a purpose, and refuses one that is not in the buoyage", () => {
+    expect(validateScenario(withMark({ purpose: "north-cardinal" })).valid).toBe(true);
+    expect(validateScenario(withMark({ purpose: "north-westerly" })).valid).toBe(false);
+  });
+
+  /**
+   * One colour is what SOLID means. Two would be drawn as bands by the renderer and printed
+   * as the first of them by the page - the same field read two ways, which is the fault the
+   * whole pattern field exists to close. `test/mark.spec.ts` holds the code's own clamp.
+   */
+  it("holds a solid pattern to one colour and a banded one to more than one", () => {
+    const solid = (colours: string[]): Record<string, unknown> =>
+      withMark({ pattern: { kind: "solid", colours } });
+    expect(validateScenario(solid(["red"])).valid).toBe(true);
+    expect(validateScenario(solid(["red", "green"])).valid).toBe(false);
+
+    const banded = (colours: string[]): Record<string, unknown> =>
+      withMark({ pattern: { kind: "horizontal bands", colours } });
+    expect(validateScenario(banded(["black", "yellow"])).valid).toBe(true);
+    expect(validateScenario(banded(["black"])).valid).toBe(false);
+  });
+
+  it("takes a pattern of bands and stripes, which one colour could never state", () => {
+    const banded = { kind: "horizontal bands", colours: ["black", "yellow"] };
+    expect(validateScenario(withMark({ pattern: banded })).valid).toBe(true);
+    expect(validateScenario(withMark({ pattern: { kind: "solid", colours: [] } })).valid).toBe(
+      false,
+    );
+    expect(
+      validateScenario(withMark({ pattern: { kind: "diagonal", colours: ["red"] } })).valid,
+    ).toBe(false);
+  });
+
+  /**
+   * How a mark is BUILT is a beacon's question - a tower, a lattice, a column, a pile - and
+   * it means nothing. A buoy's counterpart is its IALA shape, which means a great deal. The
+   * schema keeps each on its own kind so neither can be stated and then ignored.
+   */
+  it("puts construction on a beacon and shape on a buoy, and neither on the other", () => {
+    const beacon = (mark: Record<string, unknown>): Record<string, unknown> => ({
+      ...scenario(),
+      marks: [{ id: "shoal", kind: "beacon", at: { lat: 33.9, lon: 131.7 }, ...mark }],
+    });
+    expect(validateScenario(beacon({ construction: "lattice" })).valid).toBe(true);
+    expect(validateScenario(beacon({ shape: "can" })).valid).toBe(false);
+    expect(validateScenario(withMark({ construction: "lattice" })).valid).toBe(false);
+    expect(validateScenario(withMark({ shape: "can" })).valid).toBe(true);
+  });
+
+  /**
+   * An empty light says the mark WAS lit without saying what it showed - which is what a
+   * report usually gives, and what `purpose` then answers for.
+   */
+  it("takes a light with no character, since the purpose can answer for it", () => {
+    expect(validateScenario(withMark({ purpose: "north-cardinal", light: {} })).valid).toBe(true);
+  });
+
+  it("takes the buoyage region on the scenario, and only A or B", () => {
+    const inJapan = { ...scenario(), meta: { ...scenario().meta, buoyageRegion: "B" } };
+    const nowhere = { ...scenario(), meta: { ...scenario().meta, buoyageRegion: "C" } };
+    expect(validateScenario(inJapan).valid).toBe(true);
+    expect(validateScenario(nowhere).valid).toBe(false);
   });
 });
 
