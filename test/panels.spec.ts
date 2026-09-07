@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
+import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
 
 /** The reference case's instant and place, which is what makes the sky figures checkable. */
@@ -655,5 +656,36 @@ describe("the one class whose picture is the calmest sea it allows", () => {
     expect(html).toContain("The view draws 14 m, which here is the least the class allows");
     expect(html).toContain("a calmer picture is the stronger claim");
     expect(html).not.toContain("the view draws the rougher end");
+  });
+});
+
+describe("the buoy defaults the page names are the ones the view draws", () => {
+  /**
+   * Written out twice they drift, and when they do the page names a shape the picture is
+   * not drawing - a can where a pillar stands, which in the buoyage is a port-hand mark
+   * where a cardinal one is. The same fault as the masthead height, one file over.
+   */
+  it("takes the assumed shape, colour and height from the renderer's own", () => {
+    const subject = scenario();
+    subject.marks = [{ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } }];
+    const html = panelsFor(subject);
+
+    expect(html).toContain(`assumed ${ASSUMED_MARK.shape}`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.colour}`);
+    expect(html).toContain(`assumed ${ASSUMED_MARK.heightMetres} m`);
+  });
+
+  it("draws exactly what it named, so the two cannot come apart", () => {
+    const bare = buildMark({ id: "no-1", kind: "buoy", at: { lat: 33.9, lon: 131.7 } });
+    const named = buildMark({
+      id: "no-1",
+      kind: "buoy",
+      at: { lat: 33.9, lon: 131.7 },
+      shape: ASSUMED_MARK.shape,
+      colour: ASSUMED_MARK.colour,
+      heightMetres: ASSUMED_MARK.heightMetres,
+    });
+    expect(bare.heightMetres).toBe(named.heightMetres);
+    expect(bare.group.children.length).toBe(named.group.children.length);
   });
 });

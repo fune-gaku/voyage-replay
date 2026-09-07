@@ -26,12 +26,20 @@ import type { Mark, MarkColour, MarkShape } from "../core/types.js";
 
 /**
  * Where a report says nothing. A pillar is the commonest shape in open water, and 2.4 m of
- * body about the usual for one. Both are assumptions, and `ui/panels.ts` names them as
+ * body about the usual for one. All three are assumptions, and `ui/panels.ts` names them as
  * such beside the mark they were used for - on screen a chosen pillar and a stated one look
  * exactly alike, and a can is port hand where a cone is starboard.
+ *
+ * **Exported so the page reads them rather than repeating them.** Written out twice they
+ * drift: change the shape drawn here and the panel goes on naming the old one, which is the
+ * page and the picture disagreeing about the same buoy - the fault this whole object exists
+ * to declare away.
  */
-const ASSUMED_SHAPE: MarkShape = "pillar";
-const ASSUMED_HEIGHT_METRES = 2.4;
+export const ASSUMED_MARK: { shape: MarkShape; colour: MarkColour; heightMetres: number } = {
+  shape: "pillar",
+  colour: "yellow",
+  heightMetres: 2.4,
+};
 
 const COLOURS: Record<MarkColour, ColorRepresentation> = {
   green: 0x1f7a3d,
@@ -57,11 +65,11 @@ export interface MarkParts {
 }
 
 export function buildMark(mark: Mark): MarkParts {
-  const shape = mark.shape ?? ASSUMED_SHAPE;
-  const height = mark.heightMetres ?? ASSUMED_HEIGHT_METRES;
+  const shape = mark.shape ?? ASSUMED_MARK.shape;
+  const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres;
   const proportions = PROPORTIONS[shape];
   const material = new MeshStandardMaterial({
-    color: COLOURS[mark.colour ?? "yellow"],
+    color: COLOURS[mark.colour ?? ASSUMED_MARK.colour],
     roughness: 0.65,
     metalness: 0.05,
   });

@@ -14,6 +14,7 @@ import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodes
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
+import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
@@ -643,14 +644,22 @@ function marksSection(scenario: Scenario): string[] {
     mark.id,
     mark.name ?? "-",
     `${mark.at.lat.toFixed(5)}, ${mark.at.lon.toFixed(5)}`,
-    stated(mark.shape, "pillar"),
-    stated(mark.colour, "yellow"),
-    mark.heightMetres === undefined ? "assumed 2.4 m" : `${mark.heightMetres} m`,
+    stated(mark.shape, ASSUMED_MARK.shape),
+    stated(mark.colour, ASSUMED_MARK.colour),
+    mark.heightMetres === undefined
+      ? `assumed ${ASSUMED_MARK.heightMetres} m`
+      : `${mark.heightMetres} m`,
   ]);
   return [section(`Sea marks (${marks.length})`, dataTable(head, rows) + note(marksCaveat(marks)))];
 }
 
-/** What the file said, or what was drawn in its place - never the two looking alike. */
+/**
+ * What the file said, or what was drawn in its place - never the two looking alike.
+ *
+ * The fallbacks come from `render/mark.ts` rather than being written out again here. Two
+ * copies drift, and when they do the page names a shape the picture is not drawing, which
+ * is the exact thing this column exists to prevent.
+ */
 function stated(value: string | undefined, fallback: string): string {
   return value ?? `assumed ${fallback}`;
 }
