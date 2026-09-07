@@ -385,7 +385,9 @@ describe("whether the sea was in the way", () => {
 
     expect(html).not.toContain("no sea stated");
     expect(html).toContain("between 1.25 and 2.5 m");
-    expect(html).toContain("assumed from the height (7.9 s at the rough end)");
+    expect(html).toContain(
+      "assumed from the height, the file giving neither a period nor a wind speed",
+    );
   });
 
   /**
@@ -735,7 +737,7 @@ describe("the sea has a section of its own", () => {
     const html = panelsFor(subject);
 
     expect(html).toContain("1.25 to 2.5 m");
-    expect(html).toContain("(assumed)");
+    expect(html).toContain("(assumed from the height)");
     expect(html).toContain("assumed - nothing states it");
   });
 });
@@ -783,5 +785,457 @@ describe("a caveat only qualifies figures that are there", () => {
     const without = scenario();
     expect(panelsFor(without)).not.toContain("count crossings independently");
     expect(panelsFor(without)).toContain("The last column is empty rather than zero");
+  });
+});
+
+describe("the wind, printed whether or not there is a sea to go with it", () => {
+  const withWind = (
+    wind: Record<string, unknown>,
+    rest: Record<string, unknown> = {},
+  ): Scenario => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      wind: { derivation: "measured", ...wind },
+      ...rest,
+    };
+    return subject;
+  };
+
+  /**
+   * A wind with no stated sea is not nothing: it bounds how big the sea could have been,
+   * and it is the figure a deck log always carries where a wave height almost never is.
+   */
+  it("prints the wind even where the file states no sea", () => {
+    const html = panelsFor(withWind({ fromDegreesTrue: 250, speedKnots: 18 }));
+    expect(html).toContain("250 deg true");
+    expect(html).toContain("18 kn");
+    expect(html).toContain("the view therefore draws flat water");
+  });
+
+  it("shows a Beaufort force as its number and its whole class, never as a midpoint", () => {
+    const html = panelsFor(withWind({ beaufortForce: 5 }));
+    expect(html).toContain("force 5: 17 to 21 kn");
+    expect(html).not.toContain("19 kn");
+  });
+
+  /**
+   * Force 12 runs from 64 knots upward, so its two ends are the same number - and a version
+   * that tested them for equality before testing for openness printed "64 kn" over a storm
+   * with no ceiling. The sea state 9 fault, one field over.
+   */
+  it("says force 12 is open above, though both its ends are the same figure", () => {
+    const html = panelsFor(withWind({ beaufortForce: 12 }));
+    expect(html).toContain("force 12: 64 kn or more");
+    expect(html).not.toContain("<td>64 kn</td>");
+  });
+
+  /**
+   * The wind is what settles a direction a sea state cannot give, and the page has to say
+   * that is where it came from - it is still not an observation of the waves.
+   */
+  it("names the wind as the source of a wave direction taken from it", () => {
+    const html = panelsFor(withWind({ fromDegreesTrue: 250, speedKnots: 18 }, { seaState: 4 }));
+    expect(html).toContain("drawn from the stated wind");
+    expect(html).toContain("A swell runs from wherever its own storm was");
+    expect(html).toContain("from the stated wind");
+  });
+
+  it("names the wind as the source of a period taken from it", () => {
+    const html = panelsFor(withWind({ speedKnots: 22 }, { seaState: 4 }));
+    expect(html).toContain("taken forwards from the stated wind");
+    expect(html).not.toContain("assumed from the height, the file giving neither");
+  });
+
+  /**
+   * One-sided. A sea too big for its wind is a swell from elsewhere or a mistranscription;
+   * a sea too small is the ordinary case and is passed over in silence.
+   */
+  it("reports a sea too big for its wind, and stays quiet about one too small", () => {
+    const big = panelsFor(
+      withWind(
+        { speedKnots: 5 },
+        { waves: { significantHeightMetres: 4, derivation: "measured" } },
+      ),
+    );
+    expect(big).toContain("bigger than the stated wind can raise");
+    expect(big).toContain("a swell is running from another weather system");
+
+    const small = panelsFor(
+      withWind(
+        { speedKnots: 40 },
+        { waves: { significantHeightMetres: 0.5, derivation: "measured" } },
+      ),
+    );
+    expect(small).not.toContain("bigger than the stated wind can raise");
+  });
+
+  it("says nothing about a wind where the file gives none", () => {
+    expect(panelsFor(scenario())).not.toContain("Wind from");
+  });
+});
+
+describe("how the disagreement quotes the wind it is comparing against", () => {
+  /**
+   * A force is a class. Quoting its top as though the file had stated 21 knots hands the
+   * reader a figure nobody wrote down - inside the very note that exists to point at a
+   * figure being wrong.
+   */
+  it("names a force as a force, and a stated speed as stated", () => {
+    const fromForce = scenario();
+    fromForce.environment = {
+      wind: { beaufortForce: 3, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    expect(panelsFor(fromForce)).toContain("at the top of the stated force");
+
+    const fromSpeed = scenario();
+    fromSpeed.environment = {
+      wind: { speedKnots: 10, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    const html = panelsFor(fromSpeed);
+    expect(html).toContain("the stated 10 kn");
+    expect(html).not.toContain("at the top of the stated force");
+  });
+
+  it("says which end of each range it took, since both are ranges", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 2, derivation: "measured" },
+      seaState: 5,
+    };
+    expect(panelsFor(subject)).toContain(
+      "the calmest sea the file allows against the strongest wind it allows",
+    );
+  });
+});
+
+describe("a file that states a speed and a force that are not the same wind", () => {
+  /**
+   * Eighteen knots and force 9 in one file means one of them is wrong. The speed is used,
+   * being the narrower statement - but using it in silence leaves a reader with no way to
+   * know the file disagreed with itself, and the sea drawn from one is not the sea drawn
+   * from the other.
+   */
+  it("says so, and does not pretend to know which is right", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { speedKnots: 18, beaufortForce: 9, derivation: "measured" },
+      seaState: 4,
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the two are not the same wind");
+    expect(html).toContain("not something this tool can decide");
+    expect(html).toContain("<td>18 kn</td>");
+    // And the other side of the disagreement, which the reader has to be able to check.
+    expect(html).toContain("Beaufort force 9");
+    expect(html).toContain("41 to 47 kn");
+  });
+
+  it("stays quiet where the two agree, and where only one is stated", () => {
+    for (const wind of [
+      { speedKnots: 18, beaufortForce: 5 },
+      { speedKnots: 18 },
+      { beaufortForce: 5 },
+    ]) {
+      const subject = scenario();
+      subject.environment = { wind: { derivation: "measured" as const, ...wind }, seaState: 4 };
+      expect(panelsFor(subject)).not.toContain("not the same wind");
+    }
+  });
+});
+
+describe("a flat sea, which has no period and no direction", () => {
+  /**
+   * Sea state 0 with a calm wind printed "0.5 s (from the stated wind)" - the spectrum's
+   * lower clamp, presented as a measurement of water with no waves in it. The figures still
+   * exist on the `Seaway`, because its fields are numbers; the page must not present them.
+   */
+  it("reports no period and no direction rather than the spectrum's floor", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0, wind: { speedKnots: 0, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves to have one");
+    expect(html).toContain("no waves to come from anywhere");
+    expect(html).toContain("no period, so there is none to give");
+    expect(html).not.toContain("0.5 s");
+    expect(html).not.toContain("from the stated wind");
+  });
+
+  /**
+   * A decayed swell has a period and a bearing and a significant height that rounds to
+   * nothing, and the schema takes all three. The page said "no waves to have one" and "no
+   * waves to come from anywhere" over a file that stated both - denying figures it contained.
+   */
+  it("shows a period and a bearing the file states on a flat sea", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: {
+        significantHeightMetres: 0,
+        peakPeriodSeconds: 8,
+        fromDegreesTrue: 270,
+        derivation: "measured",
+      },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("8.0 s (stated)");
+    expect(html).toContain("270 deg true (stated)");
+    expect(html).not.toContain("no waves to have one");
+    expect(html).not.toContain("no waves to come from anywhere");
+  });
+
+  it("shows a stated bearing even where the period is the one thing missing", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: { significantHeightMetres: 0, fromDegreesTrue: 270, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves to have one");
+    expect(html).toContain("270 deg true (stated)");
+    expect(html).toContain("270 deg true (stated)");
+  });
+
+  it("still gives a period for the faintest sea that has one", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 1 };
+    const html = panelsFor(subject);
+    expect(html).not.toContain("no waves to have one");
+  });
+});
+
+describe("the disagreement note over a calm, whose class has no top to quote", () => {
+  /**
+   * `forceClass` models Beaufort 0 as "under 1 knot", and the speed row and the range both
+   * show it that way - but the note re-read every force as a closed interval and offered
+   * "the 1 kn at the top of the stated force". A knot is force 1. The comparison may use it
+   * as a supremum, which keeps the warning conservative; the sentence may not present it as
+   * a wind the file stated.
+   */
+  it("does not offer one knot as the wind it compared against", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 0, derivation: "measured" },
+      waves: { significantHeightMetres: 0.5, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("bigger than the stated wind can raise");
+    expect(html).toContain("anything under 1 kn could raise at most");
+    expect(html).not.toContain("at the top of the stated force");
+  });
+
+  it("still quotes the top for a class that has one", () => {
+    const subject = scenario();
+    subject.environment = {
+      wind: { beaufortForce: 3, derivation: "measured" },
+      waves: { significantHeightMetres: 4, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+    expect(html).toContain("10 kn at the top of the stated force");
+    expect(html).not.toContain("could raise at most");
+  });
+});
+
+describe("why the height had to supply the period", () => {
+  /**
+   * A reader who wrote "force 6" and is told the period was assumed "from the height, the
+   * file giving neither a period nor a wind speed" has been told something true and left
+   * wondering what happened to their wind. It was declined, and the reason is worth a clause.
+   */
+  it("says a force was declined because a force is a class", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("a force is a class");
+    expect(html).toContain("taking a speed out of the middle of it");
+    expect(html).not.toContain("giving neither a period nor a wind speed");
+  });
+
+  it("says a speed was declined because it was too light for the sea", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { speedKnots: 6, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("too light to have raised this sea");
+    expect(html).not.toContain("a force is a class");
+  });
+
+  it("says the file gave nothing where it gave nothing", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("giving neither a period nor a wind speed");
+    expect(html).not.toContain("too light to have raised");
+  });
+
+  it("says none of it where the wind did supply the period", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 5, wind: { speedKnots: 35, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("taken forwards from the stated wind");
+    expect(html).not.toContain("too light to have raised");
+    expect(html).not.toContain("a force is a class");
+  });
+});
+
+describe("naming the right refusal, of which there are four", () => {
+  /**
+   * A stated 150 knots against sea state 9 was reported as "too light". It raises 16.6 m
+   * with the margin, which is more than the 14 m the view draws. The class simply has no
+   * ceiling, and no finite wind can answer for one - so the page was making a false
+   * statement about the reader's own figure and sending them to correct the wrong one.
+   */
+  it("does not call a hundred and fifty knots too light for anything", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9, wind: { speedKnots: 150, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).not.toContain("too light to have raised");
+    expect(html).toContain("having no upper bound");
+    expect(html).toContain("no finite wind can answer for a class that runs past every height");
+  });
+
+  it("gives the open class as the reason even where a force was stated too", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9, wind: { beaufortForce: 11, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("having no upper bound");
+    expect(html).not.toContain("a force is a class");
+  });
+
+  it("keeps the other three where they belong", () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } }, "a force is a class"],
+      [
+        { seaState: 5, wind: { speedKnots: 6, derivation: "measured" } },
+        "too light to have raised",
+      ],
+      [{ seaState: 5 }, "giving neither a period nor a wind speed"],
+    ];
+    for (const [environment, expected] of cases) {
+      const subject = scenario();
+      subject.environment = environment;
+      expect(panelsFor(subject), expected).toContain(expected);
+    }
+  });
+});
+
+describe("naming the end a period belongs to", () => {
+  /**
+   * "The rough end" is the internal name, and it is wrong for the one class whose rough end
+   * is the calmest sea it allows. The page has just finished explaining that state 9's 14 m
+   * is a floor; calling it the rough end two lines later takes that back.
+   */
+  it("does not call the floor of an open class its rough end", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("for the 14 m drawn");
+    // The whole page, not one sentence. The first fix left the very next clause calling the
+    // same 14 m the rough end, and a test that negated only "s at the rough end" passed.
+    expect(html).not.toContain("rough end");
+  });
+
+  it("still names the rough end of a class that has one, in both sentences", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 4 };
+    const html = panelsFor(subject);
+    expect(html).toContain("s at the rough end");
+    expect(html).toContain("at the rough end the highest tenth");
+  });
+});
+
+describe("what the page says about a sea state with no width and no waves", () => {
+  /**
+   * Found by rendering every branch and reading them rather than picking one. State 0 is
+   * nought to nought, and the page called that a range, said the view drew "the rougher end"
+   * of it, and warned against measuring a height off a picture with no waves in it.
+   */
+  it("does not call nought to nought a range", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>0 m</td>");
+    expect(html).not.toContain("0 to 0 m");
+    expect(html).not.toContain("draws the rougher end");
+    expect(html).not.toContain("Do not measure a wave height");
+  });
+
+  /**
+   * And it said "no direction either" and then, two sentences later, that the view drew the
+   * sea from nought degrees. Nothing is drawn: `waveComponents` returns nothing at all for a
+   * sea of no height, so a warning about the picture's bearing described a wave that is not
+   * in it.
+   */
+  it("does not claim to draw a bearing on water with no waves", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves drawn, so no direction is drawn either");
+    expect(html).not.toContain("the view draws it from 0 degrees true");
+    expect(html).not.toContain("Do not read a wave direction off the picture");
+  });
+
+  it("quotes no tail for a sea that has none", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    expect(panelsFor(subject)).not.toContain("the highest tenth averages 0.00 m");
+  });
+
+  /**
+   * Only a sea state is silent about direction by its nature. A file that gives a height and
+   * omits a bearing simply omitted it, and explaining the wrong absence tells the reader
+   * their file has a property it does not.
+   */
+  it("does not blame a sea state where the file stated a height", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: { significantHeightMetres: 0.5, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the file giving a height and no bearing");
+    expect(html).not.toContain("a sea state does not carry a direction");
+  });
+
+  it("still blames the sea state where a sea state is what there was", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 4 };
+    expect(panelsFor(subject)).toContain("a sea state does not carry a direction");
+  });
+});
+
+describe("naming an end only where there are two", () => {
+  /**
+   * A stated height is one figure. Calling it "the rough end" implies a range the file did
+   * not give - the internal name for a class end leaking onto a sea that has no class.
+   */
+  it("does not put a stated height at the rough end of anything", () => {
+    const subject = scenario();
+    subject.environment = { waves: { significantHeightMetres: 0.5, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("The period is 3.5 s, assumed from the height");
+    expect(html).not.toContain("rough end");
+  });
+
+  it("says it once, not twice, that a flat sea has no direction", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+    const mentions = html.split("no direction").length - 1;
+    expect(mentions).toBe(1);
   });
 });

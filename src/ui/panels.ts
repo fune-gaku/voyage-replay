@@ -16,7 +16,14 @@ import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
 import { checkPlausibility, type Finding } from "../core/plausibility.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
-import { ASSUMED_DIRECTION_DEGREES_TRUE, meanOfHighest, type SeaEstimate } from "../core/seaway.js";
+import {
+  ASSUMED_DIRECTION_DEGREES_TRUE,
+  forceClass,
+  fullyDevelopedHeightMetres,
+  meanOfHighest,
+  type SeaEstimate,
+  type WindEstimate,
+} from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
 import { formatClock } from "../core/time.js";
 import {
@@ -445,33 +452,173 @@ interface Sighting {
  */
 function seaSection(scenario: Scenario): string {
   const at = Date.parse(scenario.meta.occurredAt) / 1000;
-  const { sea } = conditionsAt(scenario.origin, scenario.environment, at);
-  if (!sea) return `<p>${escapeHtml(NO_SEA)}</p>`;
+  const conditions = conditionsAt(scenario.origin, scenario.environment, at);
+  const { sea } = conditions;
+  const wind = windRows(conditions) + disagreementNote(conditions);
+  if (!sea) return wind + `<p>${escapeHtml(NO_SEA)}</p>`;
 
   const rows: [string, string][] = [
     ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
     ["Significant height", heightRange(sea)],
     [
       "Peak period",
-      `${sea.rough.peakPeriodSeconds.toFixed(1)} s${sea.periodAssumed ? " (assumed)" : ""}`,
+      sea.periodFrom === "none"
+        ? "no waves to have one"
+        : `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
     ],
     [
       "Coming from",
-      sea.fromDegreesTrue === null
-        ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
-        : `${sea.fromDegreesTrue.toFixed(0)} deg true`,
+      // Keyed on the DIRECTION's own provenance, not the period's. A file may state a
+      // bearing on a sea of no height - a decayed swell has one - and hiding it because the
+      // period is absent denies a figure the file contains.
+      sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0
+        ? "no waves to come from anywhere"
+        : sea.fromDegreesTrue === null
+          ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
+          : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
     ],
     ["Derivation", sea.derivation],
   ];
-  return keyValueTable(rows) + note(seaCaveat(sea));
+  return wind + keyValueTable(rows) + note(seaCaveat(sea));
+}
+
+/**
+ * The wind, where the file gives one - and it is printed whether or not there is a sea.
+ *
+ * A wind with no stated sea is not nothing: it bounds how big the sea could have been, and
+ * it is the figure a deck log always carries where the wave height almost never is. A force
+ * is shown as its class, never as a midpoint, for the same reason a sea state is.
+ */
+function windRows(conditions: Conditions): string {
+  const { wind } = conditions;
+  if (!wind) return "";
+  return (
+    keyValueTable([
+      [
+        "Wind from",
+        wind.fromDegreesTrue === null ? "not stated" : `${wind.fromDegreesTrue} deg true`,
+      ],
+      ["Wind speed", windSpeed(wind)],
+      ["Wind derivation", wind.derivation],
+    ]) + forceNote(wind)
+  );
+}
+
+/**
+ * Where a file states a speed AND a force that are not the same wind.
+ *
+ * The speed is what gets used, being the narrower statement - but eighteen knots and force
+ * 9 in one file means one of them is wrong, and using one in silence would leave a reader
+ * with no way to know the file disagreed with itself. Nothing here decides which is right.
+ */
+function forceNote(wind: WindEstimate): string {
+  if (wind.statedForceAgrees !== false || wind.statedForce === null) return "";
+  return note(
+    `The file also states Beaufort force ${wind.statedForce}, which is ` +
+      `${beaufortRange(wind.statedForce)}, and the two are not the same wind: the stated ` +
+      `${wind.fastestKnots} kn does not fall in it. The speed is used, being the narrower ` +
+      "statement, and which of the two is right is not something this tool can decide - but " +
+      "the sea drawn from one would not be the sea drawn from the other.",
+  );
+}
+
+/** A force written out as its class, so a reader can check a disagreement rather than take it. */
+function beaufortRange(force: number): string {
+  const band = forceClass(force);
+  if (!band) return "not a force on the scale";
+  if (band.topIsOpen) return `${band.slowestKnots} kn or more`;
+  // Calm is "less than 1 knot", not "nought to one": a knot is already force 1.
+  if (band.topIsExclusive) return `under ${band.fastestKnots} kn`;
+  return `${band.slowestKnots} to ${band.fastestKnots} kn`;
+}
+
+/**
+ * The speed, said as tightly as the file says it and no tighter.
+ *
+ * The open end is checked FIRST. Force 12 runs from 64 knots upward, so its two ends are
+ * the same number - and a version that tested them for equality before testing for openness
+ * printed "64 kn" over a storm with no ceiling, which is the sea state 9 fault again one
+ * field over.
+ */
+function windSpeed(wind: WindEstimate): string {
+  if (wind.source === "direction-only") return "not stated";
+  if (wind.source === "force" && wind.statedForce !== null) {
+    return `force ${wind.statedForce}: ${beaufortRange(wind.statedForce)}`;
+  }
+  return `${wind.fastestKnots} kn`;
+}
+
+/**
+ * The wind this was compared against, named the way the file gave it.
+ *
+ * A force is a class, and quoting its top as though the file had stated 21 knots would put a
+ * figure in the reader's hands that nobody wrote down. Calm is worse: its top is EXCLUSIVE -
+ * "under 1 knot", and a knot is force 1 - so calling 1 kn "the top of the stated force"
+ * offers a speed the class does not contain. The comparison may use it as a supremum, which
+ * keeps the warning conservative; the sentence may not present it as a wind.
+ *
+ * Force 12 cannot arrive here: its top is open, and `seaExceedsWind` declines to compare at
+ * all where the wind has no ceiling.
+ */
+function windCompared(wind: WindEstimate): string {
+  const raised = fullyDevelopedHeightMetres(wind.fastestKnots).toFixed(2);
+  const band = wind.statedForce === null ? null : forceClass(wind.statedForce);
+  if (wind.source === "force" && band?.topIsExclusive) {
+    return `the ${raised} m that anything under ${band.fastestKnots} kn could raise at most`;
+  }
+  const at =
+    wind.source === "force"
+      ? `the ${wind.fastestKnots} kn at the top of the stated force`
+      : `the stated ${wind.fastestKnots} kn`;
+  return `the ${raised} m a fully developed sea reaches at ${at}`;
+}
+
+/**
+ * The one comparison the wind and the sea can be held to, and only in one direction.
+ *
+ * A sea bigger than the wind can raise is either carrying a swell from another weather
+ * system or has been mistranscribed - both worth a reader's attention. A sea smaller than
+ * the wind supports is the ordinary case and says nothing, so nothing is said.
+ */
+function disagreementNote(conditions: Conditions): string {
+  if (conditions.seaExceedsWind !== true) return "";
+  const { wind, sea } = conditions;
+  if (!wind || !sea) return "";
+  return note(
+    `The stated sea is bigger than the stated wind can raise: ` +
+      `${sea.calm.significantHeightMetres} m against ${windCompared(wind)}. Either a swell is ` +
+      "running from another weather system - which no wind stated here can account for - or " +
+      "one of the two figures is wrong. Both sides are taken the way that makes this hard to " +
+      "say: the calmest sea the file allows against the strongest wind it allows. The reverse " +
+      "is never reported - a sea smaller than its wind is ordinary, since a sea needs both " +
+      "fetch and time to reach what the wind can give it.",
+  );
 }
 
 function heightRange(sea: SeaEstimate): string {
   const { calm, rough } = sea;
   if (sea.source === "stated") return `${calm.significantHeightMetres} m`;
   if (sea.roughEndIsOpen) return `${rough.significantHeightMetres} m or more`;
+  // Sea state 0 is nought to nought, which is not a range and must not be printed as one.
+  if (calm.significantHeightMetres === rough.significantHeightMetres) {
+    return `${calm.significantHeightMetres} m`;
+  }
   return `${calm.significantHeightMetres} to ${rough.significantHeightMetres} m`;
 }
+
+/** Where each derived figure came from, in the words the table shows. */
+const PERIOD_SOURCE: Record<SeaEstimate["periodFrom"], string> = {
+  stated: "stated",
+  wind: "from the stated wind",
+  height: "assumed from the height",
+  none: "none",
+};
+
+const DIRECTION_SOURCE: Record<SeaEstimate["directionFrom"], string> = {
+  stated: "stated",
+  wind: "from the stated wind",
+  assumed: "assumed",
+};
 
 const NO_SEA =
   "The file states no sea, and the view therefore draws flat water - which is not a " +
@@ -639,6 +786,9 @@ function heightSentence(sea: SeaEstimate): string {
       "picture is the stronger claim about what could be seen."
     );
   }
+  if (calm.significantHeightMetres === rough.significantHeightMetres) {
+    return `Sea state gives a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
+  }
   return (
     `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
     `${rough.significantHeightMetres} m (${derivation}), and the view draws the rougher end ` +
@@ -650,12 +800,80 @@ function heightSentence(sea: SeaEstimate): string {
 
 /** Only where the file left the period out, since then it is this project's guess and not hers. */
 function periodSentence(sea: SeaEstimate): string {
-  if (!sea.periodAssumed) return "";
+  if (sea.periodFrom === "none") {
+    // Nothing about the direction here: `directionSentence` follows immediately and says it,
+    // and the first version said it twice over.
+    return (
+      " The file states a flat sea and no period, so there is none to give. A `Seaway` still " +
+      "carries a figure because its fields are numbers, and that figure is not reported " +
+      "because it means nothing."
+    );
+  }
+  if (sea.periodFrom === "stated") return "";
+  const source =
+    sea.periodFrom === "wind" ? "taken forwards from the stated wind" : fromHeight(sea);
   return (
-    ` The period is assumed from the height (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the ` +
-    "rough end), which runs long in enclosed water and so errs towards saying she was visible."
+    ` The period is ${sea.rough.peakPeriodSeconds.toFixed(1)} s${end(sea)}, ${source}. ` +
+    "Either way it assumes a sea that has stopped growing, which runs long in enclosed " +
+    "water and so errs towards saying she was visible."
   );
 }
+
+/** `whichEnd` with the spacing, so a sea with no ends reads as a sentence and not a gap. */
+function end(sea: SeaEstimate): string {
+  const which = whichEnd(sea);
+  return which === "" ? "" : ` ${which}`;
+}
+
+/**
+ * Which end of the class that period belongs to.
+ *
+ * "The rough end" is the internal name and it is wrong for the one class where the rough end
+ * is the calmest sea allowed: state 9's 14 m is a floor, and the sentence above has just
+ * finished saying so. Naming it "the rough end" two lines later takes that back.
+ */
+function whichEnd(sea: SeaEstimate): string {
+  if (sea.roughEndIsOpen) return `for the ${sea.rough.significantHeightMetres} m drawn`;
+  // A stated height, or a class with no width, has no ends to choose between - and naming
+  // one implies a range the file did not give.
+  if (sea.calm.significantHeightMetres === sea.rough.significantHeightMetres) return "";
+  return "at the rough end";
+}
+
+/**
+ * Why the height had to supply the period, which depends on what the file withheld.
+ *
+ * A reader who wrote "force 6" and is told the period was assumed "from the height, the file
+ * giving neither a period nor a wind speed" has been told something true and left wondering
+ * what happened to their wind. It was declined, and for a reason worth one clause: a force
+ * is a class, and taking a period from one means taking a speed out of the middle of it.
+ */
+function fromHeight(sea: SeaEstimate): string {
+  const base = "assumed from the height";
+  // "none" cannot arrive: the wind supplied the period in that case and this branch is not
+  // taken. Narrowing it away rather than giving it prose keeps an impossible case from
+  // having words to say - the alternative was a line of apology in the reader's report.
+  return sea.periodDeclined === "none" ? base : `${base}, ${DECLINED[sea.periodDeclined]}`;
+}
+
+/**
+ * Why the wind was not used, in the reader's own terms.
+ *
+ * Four of them, and they were two until a stated 150 knots against sea state 9 came back as
+ * "too light" - it raises 16.6 m. The class simply has no ceiling, and no finite wind can
+ * cover one. Naming the wrong refusal is worse than naming none: it makes a false statement
+ * about the reader's own figure and sends them to correct it.
+ */
+const DECLINED: Record<Exclude<SeaEstimate["periodDeclined"], "none">, string> = {
+  "nothing-stated": "the file giving neither a period nor a wind speed",
+  "force-is-a-class":
+    "the file giving a Beaufort force and no speed - and a force is a class, so taking a " +
+    "period from one would mean taking a speed out of the middle of it",
+  "wind-too-light": "the stated wind being too light to have raised this sea",
+  "sea-has-no-ceiling":
+    "the stated sea state having no upper bound - one period is applied across a class, and " +
+    "no finite wind can answer for a class that runs past every height",
+};
 
 /**
  * Which way the sea runs, and whether anybody said so.
@@ -667,22 +885,50 @@ function periodSentence(sea: SeaEstimate): string {
  * not contain. A wind would settle it properly; the format has no field for one.
  */
 function directionSentence(sea: SeaEstimate): string {
-  if (sea.fromDegreesTrue !== null) {
-    return ` The file puts the sea as coming from ${sea.fromDegreesTrue.toFixed(0)} degrees true.`;
+  if (sea.directionFrom === "stated") {
+    return ` The file puts the sea as coming from ${String(sea.fromDegreesTrue)} degrees true.`;
   }
+  if (sea.directionFrom === "wind") {
+    return (
+      ` Nothing states which way the sea runs, so it is drawn from the stated wind - ` +
+      `${String(sea.fromDegreesTrue)} degrees true - because a wind sea runs with the wind. ` +
+      "A swell runs from wherever its own storm was, which no wind here can say."
+    );
+  }
+  // Nothing is drawn on a sea of no height - `waveComponents` returns nothing at all for it -
+  // so there is no bearing to warn anyone off, and claiming one would be the plainest kind of
+  // untruth: describing a wave the picture does not contain.
+  if (sea.rough.significantHeightMetres <= 0) {
+    return " There are no waves drawn, so no direction is drawn either.";
+  }
+  // Only a sea state is silent about direction BY ITS NATURE. A file that states a height
+  // and omits a bearing simply omitted it, and saying otherwise explains the wrong absence.
+  const why =
+    sea.source === "sea-state"
+      ? " - a sea state does not carry a direction -"
+      : ", the file giving a height and no bearing,";
   return (
-    ` Nothing states which way the sea runs - a sea state does not carry a direction - so ` +
+    ` Nothing states which way the sea runs${why} so ` +
     `the view draws it from ${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} degrees true, which ` +
     "is a bearing this tool chose and not one the source gives. Do not read a wave direction " +
     "off the picture unless this line says the file supplied it."
   );
 }
 
-/** Why the rough end is not the height of the waves. */
+/**
+ * Why the height quoted is not the height of the waves.
+ *
+ * Takes its end from `whichEnd` like the sentence before it. The first version said "at the
+ * rough end" unconditionally and sat immediately after a clause explaining that state 9's
+ * 14 m is a floor and the least the class allows - contradicting it in the next breath, and
+ * surviving a test that had negated the phrase only where it appeared earlier on the page.
+ */
 function tailNote(sea: SeaEstimate): string {
   const hs = sea.rough.significantHeightMetres;
+  // Nought has no tail, and "the highest tenth averages 0.00 m" says nothing to anybody.
+  if (hs <= 0) return "";
   return (
-    `Significant height is the mean of the highest third: at the rough end the highest tenth ` +
+    `Significant height is the mean of the highest third:${end(sea)} the highest tenth ` +
     `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
     `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
   );

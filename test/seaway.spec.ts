@@ -1,16 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import schema from "../spec/voyage.schema.json";
+import type { Environment } from "../src/core/types.js";
+import type { SeaEstimate } from "../src/core/seaway.js";
 
 import {
   assumedPeakPeriodSeconds,
+  BEAUFORT_KNOTS,
+  forceClass,
+  fullyDevelopedHeightMetres,
+  periodFromWindSeconds,
+  seaExceedsWind,
+  windFrom,
   HEIGHT_LIMIT_METRES,
   PERIOD_LIMITS_SECONDS,
   exceedanceProbability,
   highestExpectedMetres,
   meanOfHighest,
   SEA_STATE_HEIGHT_METRES,
+  seaStateClass,
   seawayFrom,
+  SPEED_LIMIT_KNOTS,
   seawayOf,
   SPREADING_EXPONENT,
   surfaceAt,
@@ -132,7 +142,7 @@ describe("what the file allows the sea to have been", () => {
     expect(estimate?.rough.significantHeightMetres).toBe(2.5);
     expect(estimate?.source).toBe("sea-state");
     expect(estimate?.derivation).toBe("inferred");
-    expect(estimate?.periodAssumed).toBe(true);
+    expect(estimate?.periodFrom).toBe("height");
   });
 
   it("collapses both ends onto a stated height and keeps its derivation", () => {
@@ -143,7 +153,7 @@ describe("what the file allows the sea to have been", () => {
     expect(estimate?.rough.significantHeightMetres).toBe(1.8);
     expect(estimate?.source).toBe("stated");
     expect(estimate?.derivation).toBe("measured");
-    expect(estimate?.periodAssumed).toBe(false);
+    expect(estimate?.periodFrom).toBe("stated");
   });
 
   it("prefers a stated height over the sea state when the file carries both", () => {
@@ -527,5 +537,520 @@ describe("the bounds the schema states and the ones the arithmetic enforces", ()
     expect(seawayOf(2, PERIOD_LIMITS_SECONDS.least / 10).peakPeriodSeconds).toBe(
       PERIOD_LIMITS_SECONDS.least,
     );
+  });
+});
+
+describe("the wind, which is the figure a deck log always has", () => {
+  const windy = (wind: Record<string, unknown>): Environment => ({
+    wind: { derivation: "measured", ...wind },
+  });
+
+  it("uses WMO's Beaufort ranges, and keeps them as ranges", () => {
+    expect(BEAUFORT_KNOTS).toHaveLength(13);
+    expect(BEAUFORT_KNOTS[4]).toEqual([11, 16]);
+    expect(BEAUFORT_KNOTS[5]).toEqual([17, 21]);
+    expect(BEAUFORT_KNOTS[8]).toEqual([34, 40]);
+
+    // Contiguous and rising from force 1 up: each class starts one knot above the last
+    // one's top. The 0-to-1 boundary is not a gap but an exclusive end - calm is "under one
+    // knot" and force 1 is "one to three" - and `forceClass` is what carries that, so the
+    // table is left as WMO writes it.
+    for (let force = 2; force < BEAUFORT_KNOTS.length - 1; force += 1) {
+      const previous = BEAUFORT_KNOTS[force - 1];
+      const here = BEAUFORT_KNOTS[force];
+      if (!previous || !here) throw new Error("the scale runs 0 to 12");
+      expect(here[0]).toBe(previous[1] + 1);
+      expect(here[1]).toBeGreaterThan(here[0]);
+    }
+  });
+
+  /**
+   * The two routes to a period are the same relation run in opposite directions - forwards
+   * from a wind, or backwards out of the height that wind would raise - so they have to
+   * land on the same answer. If they ever stop agreeing, one of the constants has drifted
+   * and the sea drawn from a stated wind is a different sea from the one drawn without.
+   */
+  it("gets the same period whichever way Pierson-Moskowitz is run", () => {
+    for (const knots of [8, 15, 22, 35]) {
+      const forwards = periodFromWindSeconds(knots);
+      const backwards = assumedPeakPeriodSeconds(fullyDevelopedHeightMetres(knots));
+      expect(forwards).toBeCloseTo(backwards, 9);
+    }
+  });
+
+  it("raises a fully developed sea as the square of the wind", () => {
+    expect(fullyDevelopedHeightMetres(20) / fullyDevelopedHeightMetres(10)).toBeCloseTo(4, 6);
+    // 0.21 U^2 / g, at 20 kn: a shade over two and a half metres.
+    expect(fullyDevelopedHeightMetres(20)).toBeCloseTo(2.27, 1);
+    expect(fullyDevelopedHeightMetres(0)).toBe(0);
+  });
+
+  it("takes a stated speed as stated, and a force as its whole class", () => {
+    expect(windFrom(windy({ speedKnots: 18 }))).toMatchObject({
+      slowestKnots: 18,
+      fastestKnots: 18,
+      source: "speed",
+    });
+    expect(windFrom(windy({ beaufortForce: 5 }))).toMatchObject({
+      slowestKnots: 17,
+      fastestKnots: 21,
+      source: "force",
+    });
+  });
+
+  /**
+   * The speed is used - it is the narrower statement - but eighteen knots and force 9 in one
+   * file means one of them is wrong, and dropping the force in silence takes that out of the
+   * reader's hands. This test used to fix the silence in place.
+   */
+  it("prefers the speed where a file gives both, and says when the two disagree", () => {
+    const disagreeing = windFrom(windy({ speedKnots: 18, beaufortForce: 9 }));
+    expect(disagreeing?.source).toBe("speed");
+    expect(disagreeing?.fastestKnots).toBe(18);
+    expect(disagreeing?.statedForceAgrees).toBe(false);
+
+    // Eighteen knots is inside force 5, which runs 17 to 21.
+    expect(windFrom(windy({ speedKnots: 18, beaufortForce: 5 }))?.statedForceAgrees).toBe(true);
+  });
+
+  it("has nothing to say about agreement where only one of the two is stated", () => {
+    expect(windFrom(windy({ speedKnots: 18 }))?.statedForceAgrees).toBeNull();
+    expect(windFrom(windy({ beaufortForce: 5 }))?.statedForceAgrees).toBeNull();
+    expect(windFrom(windy({ fromDegreesTrue: 90 }))?.statedForceAgrees).toBeNull();
+  });
+
+  it("counts force 12 as agreeing with any speed above its floor, having no ceiling", () => {
+    expect(windFrom(windy({ speedKnots: 90, beaufortForce: 12 }))?.statedForceAgrees).toBe(true);
+    expect(windFrom(windy({ speedKnots: 30, beaufortForce: 12 }))?.statedForceAgrees).toBe(false);
+  });
+
+  it("carries a direction with no speed rather than inventing one", () => {
+    const wind = windFrom(windy({ fromDegreesTrue: 250 }));
+    expect(wind?.source).toBe("direction-only");
+    expect(wind?.fromDegreesTrue).toBe(250);
+  });
+
+  it("marks force 12 as open above, since the scale ends there", () => {
+    expect(windFrom(windy({ beaufortForce: 12 }))?.fastestIsOpen).toBe(true);
+    expect(windFrom(windy({ beaufortForce: 11 }))?.fastestIsOpen).toBe(false);
+  });
+
+  it("is null where the file states no wind", () => {
+    expect(windFrom(undefined)).toBeNull();
+    expect(windFrom({ seaState: 4 })).toBeNull();
+  });
+});
+
+describe("what the wind settles about the sea, and what it does not", () => {
+  const stated = (extra: Record<string, unknown>): Environment => ({
+    seaState: 4,
+    wind: { derivation: "measured", ...extra },
+  });
+
+  /**
+   * A wind sea runs with the wind, and both are stated as where they come from - so the
+   * bearing carries across unchanged. But a swell runs from wherever its own storm was, so
+   * an observation of the waves themselves still wins.
+   */
+  it("takes the direction from the wind, unless the waves state their own", () => {
+    expect(seawayFrom(stated({ fromDegreesTrue: 250 }))).toMatchObject({
+      fromDegreesTrue: 250,
+      directionFrom: "wind",
+    });
+
+    const both = seawayFrom({
+      wind: { fromDegreesTrue: 250, derivation: "measured" },
+      waves: { significantHeightMetres: 2, fromDegreesTrue: 120, derivation: "measured" },
+    });
+    expect(both).toMatchObject({ fromDegreesTrue: 120, directionFrom: "stated" });
+  });
+
+  it("still has no direction at all where neither states one", () => {
+    expect(seawayFrom({ seaState: 4 })).toMatchObject({
+      fromDegreesTrue: null,
+      directionFrom: "assumed",
+    });
+  });
+
+  /**
+   * A force is a class. Choosing a period from one would mean choosing a speed out of the
+   * middle of it, which is the invention the sea state table refuses to make about heights.
+   */
+  it("takes the period from a stated speed, but never from a force alone", () => {
+    expect(seawayFrom(stated({ speedKnots: 22 }))?.periodFrom).toBe("wind");
+    expect(seawayFrom(stated({ beaufortForce: 6 }))?.periodFrom).toBe("height");
+    expect(seawayFrom({ seaState: 4 })?.periodFrom).toBe("height");
+  });
+
+  it("uses the period the file states over anything derived", () => {
+    const estimate = seawayFrom({
+      wind: { speedKnots: 22, derivation: "measured" },
+      waves: { significantHeightMetres: 2, peakPeriodSeconds: 5, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("stated");
+    expect(estimate?.rough.peakPeriodSeconds).toBe(5);
+  });
+
+  /**
+   * One-sided on purpose. A sea bigger than the wind can raise is a swell from elsewhere or
+   * a transcription error; a sea smaller is the ordinary case, because a sea needs fetch and
+   * time to reach what the wind can eventually give it. Flagging the ordinary case teaches a
+   * reader to ignore the column.
+   */
+  it("reports a sea too big for its wind, and says nothing about one too small", () => {
+    const tooBig = {
+      wind: { speedKnots: 5, derivation: "measured" as const },
+      waves: { significantHeightMetres: 4, derivation: "measured" as const },
+    };
+    expect(seaExceedsWind(seawayFrom(tooBig), windFrom(tooBig))).toBe(true);
+
+    const tooSmall = {
+      wind: { speedKnots: 40, derivation: "measured" as const },
+      waves: { significantHeightMetres: 0.5, derivation: "measured" as const },
+    };
+    expect(seaExceedsWind(seawayFrom(tooSmall), windFrom(tooSmall))).toBe(false);
+  });
+
+  it("declines to compare where either side is missing or open-ended", () => {
+    const noSpeed = { wind: { fromDegreesTrue: 90, derivation: "measured" as const }, seaState: 4 };
+    expect(seaExceedsWind(seawayFrom(noSpeed), windFrom(noSpeed))).toBeNull();
+
+    const open = { wind: { beaufortForce: 12, derivation: "measured" as const }, seaState: 4 };
+    expect(seaExceedsWind(seawayFrom(open), windFrom(open))).toBeNull();
+
+    const noSea = { wind: { speedKnots: 20, derivation: "measured" as const } };
+    expect(seaExceedsWind(seawayFrom(noSea), windFrom(noSea))).toBeNull();
+  });
+});
+
+describe("a wind that could not have raised the sea it is stated beside", () => {
+  /**
+   * A calm and a two-metre swell is a valid file and a common situation: the swell belongs
+   * to another weather system. Taking the period from that wind ran the clamp and produced
+   * 0.5 seconds - a two-metre sea 0.4 m from crest to crest - under a panel reading "from
+   * the stated wind". Absurd geometry behind a plausible label, which is the failure this
+   * project exists to catch.
+   */
+  it("does not take a period from a calm", () => {
+    const calm = seawayFrom({
+      wind: { speedKnots: 0, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    expect(calm?.periodFrom).toBe("height");
+    expect(calm?.rough.peakPeriodSeconds).toBeGreaterThan(4);
+    expect(calm?.rough.peakWavelengthMetres).toBeGreaterThan(20);
+  });
+
+  it("does not take one from a breeze too light for the stated sea either", () => {
+    const light = seawayFrom({
+      wind: { speedKnots: 6, derivation: "measured" },
+      waves: { significantHeightMetres: 3, derivation: "measured" },
+    });
+    expect(light?.periodFrom).toBe("height");
+  });
+
+  it("still takes one where the wind can account for the sea", () => {
+    const consistent = seawayFrom({
+      wind: { speedKnots: 25, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    expect(consistent?.periodFrom).toBe("wind");
+  });
+
+  /**
+   * The invariant, and it is not the one that was here before.
+   *
+   * A wind-derived period is applied to BOTH ends of a class, so it has to hold at the
+   * rough end - not merely at the calm one. Pinning it to `seaExceedsWind` instead pinned
+   * the wrong thing: that warning asks about the calm end on purpose, because a warning
+   * should be hard to raise, and a sea state of 1.25 to 2.5 m at fourteen knots therefore
+   * passed and labelled a 2.5 m sea's period "from the stated wind".
+   */
+  it("only takes a period from a wind that could raise the roughest sea allowed", () => {
+    // Every state, including 9 - which is open above, so no finite wind can answer for it.
+    for (let state = 0; state < SEA_STATE_HEIGHT_METRES.length; state += 1) {
+      for (const knots of [0, 5, 14, 40, 90, 150]) {
+        const environment = {
+          seaState: state,
+          wind: { speedKnots: knots, derivation: "measured" as const },
+        };
+        const estimate = seawayFrom(environment);
+        if (estimate?.periodFrom !== "wind") continue;
+        const raised = fullyDevelopedHeightMetres(knots) * 1.3;
+        expect(
+          estimate.rough.significantHeightMetres,
+          `state ${state}, ${knots} kn`,
+        ).toBeLessThanOrEqual(raised + 1e-9);
+      }
+    }
+    // Slow on purpose, and given room rather than thinned: each point builds two spectra,
+    // and each spectrum is twenty-odd four-thousand-step integrals. Cutting the sweep to
+    // fit five seconds would drop states, and it is the whole scale this property is about.
+  }, 30_000);
+
+  /**
+   * The case that found it. Fourteen knots raises 1.44 m with the margin, which clears the
+   * calm end of state 4 and comes nowhere near its rough end.
+   */
+  it("does not label a 2.5 m sea's period as coming from a fourteen-knot wind", () => {
+    const estimate = seawayFrom({
+      seaState: 4,
+      wind: { speedKnots: 14, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("height");
+  });
+
+  /**
+   * The class with no ceiling. The table's 14 is a sentinel, so a finite wind that clears it
+   * still cannot answer for the sea the class allows - the third time an open end has been
+   * read as a bound in this repository, after sea state 9 in the panels and Beaufort 12 in
+   * the wind's own display.
+   */
+  it("never takes a period from a wind for a sea state that has no ceiling", () => {
+    for (const knots of [30, 90, 150]) {
+      const estimate = seawayFrom({
+        seaState: 9,
+        wind: { speedKnots: knots, derivation: "measured" },
+      });
+      expect(estimate?.periodFrom, `${knots} kn`).toBe("height");
+    }
+  });
+
+  it("does not put a half-second period on the rough end of a nearly calm state", () => {
+    const estimate = seawayFrom({
+      seaState: 1,
+      wind: { speedKnots: 0, derivation: "measured" },
+    });
+    expect(estimate?.periodFrom).toBe("height");
+    expect(estimate?.rough.peakPeriodSeconds).toBeGreaterThan(PERIOD_LIMITS_SECONDS.least);
+  });
+});
+
+describe("keeping the figure a speed overrode", () => {
+  /**
+   * A page that reports a disagreement without naming the other side of it has hidden half
+   * the input while claiming to expose it: a reader cannot check "these are not the same
+   * wind" against a force they are never shown.
+   */
+  it("carries the stated force even where the speed is what gets used", () => {
+    const both = windFrom({ wind: { speedKnots: 18, beaufortForce: 9, derivation: "measured" } });
+    expect(both?.source).toBe("speed");
+    expect(both?.fastestKnots).toBe(18);
+    expect(both?.statedForce).toBe(9);
+  });
+
+  it("has no force to carry where the file gave none", () => {
+    expect(windFrom({ wind: { speedKnots: 18, derivation: "measured" } })?.statedForce).toBeNull();
+  });
+
+  it("carries it where the force is what the speed came from", () => {
+    expect(windFrom({ wind: { beaufortForce: 5, derivation: "measured" } })?.statedForce).toBe(5);
+  });
+});
+
+describe("the two Beaufort classes whose ends are not numbers", () => {
+  const wind = (speedKnots: number, beaufortForce: number): Environment => ({
+    wind: { speedKnots, beaufortForce, derivation: "measured" },
+  });
+
+  /**
+   * Calm is "less than 1 knot", not "nought to one": a knot is already force 1. Testing
+   * every class as a closed interval called one knot calm and dropped the disagreement note
+   * that is the whole point of comparing the two figures. The fourth time an end of a class
+   * has been read as a number in this repository, and the first at a bottom end.
+   */
+  it("does not call a one-knot wind calm", () => {
+    expect(windFrom(wind(0.9, 0))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(0, 0))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(1, 0))?.statedForceAgrees).toBe(false);
+    expect(windFrom(wind(1, 1))?.statedForceAgrees).toBe(true);
+  });
+
+  it("counts anything above force 12's floor as force 12, having no top", () => {
+    expect(windFrom(wind(64, 12))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(200, 12))?.statedForceAgrees).toBe(true);
+    expect(windFrom(wind(63, 12))?.statedForceAgrees).toBe(false);
+  });
+
+  it("treats every class between them as closed at both ends", () => {
+    for (let force = 1; force < BEAUFORT_KNOTS.length - 1; force += 1) {
+      const band = BEAUFORT_KNOTS[force];
+      if (!band) throw new Error("the scale runs 0 to 12");
+      expect(windFrom(wind(band[0], force))?.statedForceAgrees, `force ${force} bottom`).toBe(true);
+      expect(windFrom(wind(band[1], force))?.statedForceAgrees, `force ${force} top`).toBe(true);
+      expect(windFrom(wind(band[1] + 0.5, force))?.statedForceAgrees, `force ${force} over`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("has one place that knows how a class ends", () => {
+    expect(forceClass(0)).toMatchObject({ topIsExclusive: true, topIsOpen: false });
+    expect(forceClass(5)).toMatchObject({ topIsExclusive: false, topIsOpen: false });
+    expect(forceClass(12)).toMatchObject({ topIsExclusive: false, topIsOpen: true });
+    expect(forceClass(13)).toBeNull();
+  });
+});
+
+describe("the sea state's open end, known in one place like the wind's", () => {
+  /**
+   * The Beaufort scale taught this at its own two odd ends: scattering a special case is how
+   * the second one gets missed. Two functions knew separately that state 9 has no ceiling.
+   */
+  it("says which class has a ceiling and which has a floor", () => {
+    expect(seaStateClass(4)).toEqual({
+      calmestMetres: 1.25,
+      roughestMetres: 2.5,
+      topIsOpen: false,
+    });
+    expect(seaStateClass(9)).toMatchObject({ calmestMetres: 14, topIsOpen: true });
+    expect(seaStateClass(0)).toMatchObject({ topIsOpen: false });
+    expect(seaStateClass(10)).toBeNull();
+  });
+
+  it("agrees with what the estimate reports about its own ends", () => {
+    for (let state = 0; state < SEA_STATE_HEIGHT_METRES.length; state += 1) {
+      const estimate = seawayFrom({ seaState: state });
+      const band = seaStateClass(state);
+      expect(estimate?.roughEndIsOpen, `state ${state}`).toBe(band?.topIsOpen);
+      expect(estimate?.calm.significantHeightMetres).toBe(band?.calmestMetres);
+      expect(estimate?.rough.significantHeightMetres).toBe(band?.roughestMetres);
+    }
+  });
+});
+
+describe("what a calm is worth as a period", () => {
+  /**
+   * Nought, which is the relation's own answer and not a period. It used to hand back the
+   * spectrum's lower clamp - half a second - which is a plausible-looking figure for a
+   * question that has none, and is the shape of trap that had a calm drawing a two-metre sea
+   * 0.4 m from crest to crest.
+   */
+  it("gives a calm no period rather than the clamp", () => {
+    expect(periodFromWindSeconds(0)).toBe(0);
+    expect(periodFromWindSeconds(-5)).toBe(0);
+    expect(periodFromWindSeconds(0)).not.toBe(PERIOD_LIMITS_SECONDS.least);
+  });
+
+  it("still runs the relation for any wind that raises something", () => {
+    expect(periodFromWindSeconds(20)).toBeGreaterThan(PERIOD_LIMITS_SECONDS.least);
+    expect(periodFromWindSeconds(40) / periodFromWindSeconds(20)).toBeCloseTo(2, 9);
+  });
+});
+
+describe("a sea with no height in it", () => {
+  /**
+   * The reachable corner that survived two fixes. Sea state 0 has a roughest height of
+   * nought, a calm wind clears "could this raise it" on nought against nought, the relation
+   * hands back its own zero - and `seawayOf` clamps that straight to the spectrum's floor,
+   * so the page read "0.5 s (from the stated wind)" over water with no waves in it. Fixing
+   * the relation moved the lie one step down rather than removing it.
+   */
+  it("has no period from any source the tool could derive one from", () => {
+    for (const environment of [
+      { seaState: 0, wind: { speedKnots: 0, derivation: "measured" as const } },
+      { seaState: 0, wind: { speedKnots: 30, derivation: "measured" as const } },
+      { seaState: 0 },
+      { waves: { significantHeightMetres: 0, derivation: "measured" as const } },
+    ]) {
+      expect(seawayFrom(environment)?.periodFrom, JSON.stringify(environment)).toBe("none");
+    }
+  });
+
+  /**
+   * Unless the file states one. A flat sea with a period and a bearing is not a contradiction
+   * to be swallowed - a decayed swell has both, and a significant height that rounds to
+   * nothing. The page denied two figures the file contained until this was separated out.
+   */
+  it("keeps a period and a direction the file states on a sea of no height", () => {
+    const swell = seawayFrom({
+      waves: {
+        significantHeightMetres: 0,
+        peakPeriodSeconds: 8,
+        fromDegreesTrue: 270,
+        derivation: "measured",
+      },
+    });
+    expect(swell?.periodFrom).toBe("stated");
+    expect(swell?.rough.peakPeriodSeconds).toBe(8);
+    expect(swell?.directionFrom).toBe("stated");
+    expect(swell?.fromDegreesTrue).toBe(270);
+  });
+
+  it("still has a period on its Seaway, which is why nothing may print it unasked", () => {
+    const flat = seawayFrom({ seaState: 0 });
+    // The field is a number and the spectrum clamps whatever it is given, so a figure exists.
+    expect(flat?.rough.peakPeriodSeconds).toBeGreaterThan(0);
+    // It means nothing, which is what `periodFrom` is for.
+    expect(flat?.periodFrom).toBe("none");
+  });
+
+  it("keeps a period for the faintest sea that has any height at all", () => {
+    expect(seawayFrom({ seaState: 1 })?.periodFrom).toBe("height");
+    expect(
+      seawayFrom({ waves: { significantHeightMetres: 0.05, derivation: "measured" } })?.periodFrom,
+    ).toBe("height");
+  });
+});
+
+describe("which refusal the core recorded", () => {
+  /**
+   * One value rather than a pair of flags: a pair collapsed "the wind is too light" and
+   * "the class has no ceiling" into one, and the collapsed message was false for the second.
+   */
+  it("distinguishes all four, and reports none where the wind was used", () => {
+    const cases: [Environment, SeaEstimate["periodDeclined"]][] = [
+      [{ seaState: 5, wind: { speedKnots: 35, derivation: "measured" } }, "none"],
+      [{ seaState: 5, wind: { speedKnots: 6, derivation: "measured" } }, "wind-too-light"],
+      [{ seaState: 5, wind: { beaufortForce: 6, derivation: "measured" } }, "force-is-a-class"],
+      [{ seaState: 5 }, "nothing-stated"],
+      [{ seaState: 9, wind: { speedKnots: 150, derivation: "measured" } }, "sea-has-no-ceiling"],
+      [{ seaState: 5, wind: { fromDegreesTrue: 90, derivation: "measured" } }, "nothing-stated"],
+    ];
+    for (const [environment, expected] of cases) {
+      expect(seawayFrom(environment)?.periodDeclined, JSON.stringify(environment)).toBe(expected);
+    }
+  });
+
+  it("prefers the open class over any other true reason", () => {
+    for (const wind of [
+      { speedKnots: 150, derivation: "measured" as const },
+      { speedKnots: 1, derivation: "measured" as const },
+      { beaufortForce: 11, derivation: "measured" as const },
+    ]) {
+      expect(seawayFrom({ seaState: 9, wind })?.periodDeclined).toBe("sea-has-no-ceiling");
+    }
+  });
+});
+
+describe("the wind's bounds, held to the schema's like the sea's", () => {
+  /**
+   * The rule arrived two reviews earlier for the height and the period, and was not applied
+   * to the wind when the field was added: the schema bounds it, `windFrom` is exported, and
+   * a caller that has not been through `validateScenario` can reach it. Two copies in two
+   * languages, neither able to import the other.
+   */
+  it("bounds the speed the same in both", () => {
+    const wind = schema.properties.environment.properties.wind.properties;
+    expect(wind.speedKnots.maximum).toBe(SPEED_LIMIT_KNOTS);
+    expect(wind.speedKnots.minimum).toBe(0);
+    expect(wind.beaufortForce.maximum).toBe(BEAUFORT_KNOTS.length - 1);
+    expect(wind.beaufortForce.minimum).toBe(0);
+  });
+
+  it("clamps a speed past the end of the scale rather than carrying it", () => {
+    const absurd = windFrom({ wind: { speedKnots: 1e308, derivation: "measured" } });
+    expect(absurd?.fastestKnots).toBe(SPEED_LIMIT_KNOTS);
+    expect(windFrom({ wind: { speedKnots: -5, derivation: "measured" } })?.fastestKnots).toBe(0);
+  });
+
+  it("keeps every figure finite for a wind past the end of the scale", () => {
+    const estimate = seawayFrom({
+      wind: { speedKnots: 1e308, derivation: "measured" },
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    });
+    for (const value of Object.values(estimate?.rough ?? {})) {
+      expect(Number.isFinite(value)).toBe(true);
+    }
   });
 });

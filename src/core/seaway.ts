@@ -68,6 +68,18 @@ const CONVERGENCE_LIMIT_OVER_PEAK = 40;
 const SPECTRUM_STEPS = 4000;
 
 /**
+ * Steps for the correlation integral, which is run twenty times over by the bisection.
+ *
+ * Coarser than the moments and deliberately so: the moments set the periods and the
+ * wavenumber, where the fourth power of frequency makes the tail worth resolving, while the
+ * correlation is a smooth cosine transform whose answer is a length wanted to a per cent.
+ * At the moments' resolution one `seawayOf` costs 14 ms and a scenario builds several -
+ * fifty times more work than the figure justifies. The published ratio it is held against,
+ * 0.116 of a wavelength, is unchanged by the coarser grid.
+ */
+const CORRELATION_INTEGRAL_STEPS = 400;
+
+/**
  * How much of the surface's shape has to survive for it still to count as the same wave.
  *
  * `visibility.ts` needs a distance over which a floating vessel and the water under her move
@@ -107,6 +119,20 @@ const CORRELATION_STEPS = 20;
  */
 export const HEIGHT_LIMIT_METRES = 30;
 export const PERIOD_LIMITS_SECONDS = { least: 0.5, most: 30 };
+
+/**
+ * And the same for a wind, for the same reason and by the same argument.
+ *
+ * The schema bounds it; `windFrom` is exported and a caller that has not been through
+ * `validateScenario` can reach it. 150 knots is past the strongest surface wind ever
+ * recorded - 1996's 113 knots at Barrow Island, and 231 mph in a 1934 gust on Mount
+ * Washington, neither of them a sea a ship is under way in.
+ *
+ * The lesson from the height and the period took two reviews to arrive at and was not
+ * applied to this field when it was added, which is the whole of why it is written here
+ * next to them rather than somewhere of its own.
+ */
+export const SPEED_LIMIT_KNOTS = 150;
 
 /** Numbers that describe one sea. Everything here is derived; nothing is transcribed. */
 export interface Seaway {
@@ -153,8 +179,29 @@ export interface SeaEstimate {
   derivation: Derivation;
   /** Sea state 9 is "over 14 m": `rough` is then a floor and not a bound. */
   roughEndIsOpen: boolean;
-  /** The period was assumed from the height, the source having stated none. */
-  periodAssumed: boolean;
+  /**
+   * Where the peak period came from: the file, the stated wind, backwards out of the
+   * height - or nowhere, because a sea of no height has no period to have come from.
+   *
+   * Not a boolean, because there are four answers and a page has to name which. "none" is
+   * the one that matters most: `Seaway` still carries a number there, since its type is a
+   * number and the spectrum clamps whatever it is handed, and that number is a fiction.
+   * Anything printing a period has to ask this first.
+   */
+  periodFrom: "stated" | "wind" | "height" | "none";
+  /** Likewise for the direction: the file, the stated wind, or a bearing this tool chose. */
+  directionFrom: "stated" | "wind" | "assumed";
+  /**
+   * Why the wind did not supply the period, where it did not.
+   *
+   * One value rather than a pair of flags, because there turned out to be four answers and
+   * a pair collapsed two of them: a stated 150 knots against sea state 9 was reported as
+   * "too light", when it raises 16.6 m and the real reason is that the class runs past any
+   * height a finite wind can reach. A page that names the wrong refusal is worse than one
+   * that names none - it makes a false statement about the reader's own figure.
+   */
+  periodDeclined:
+    "none" | "force-is-a-class" | "wind-too-light" | "sea-has-no-ceiling" | "nothing-stated";
   /**
    * Where the sea comes from, or null where the source does not say - which is every sea
    * state, since the class carries no direction at all. Null rather than a default, so that
@@ -167,6 +214,31 @@ export interface SeaEstimate {
  * WMO code 3700. The upper bound of state 9 is open; 14 m stands in for it and
  * `roughEndIsOpen` says so rather than letting the number pass as a bound.
  */
+/**
+ * How one sea state class ends, which is the same question `forceClass` answers about the
+ * wind - and for the same reason.
+ *
+ * State 9 is "over 14 m" and the table's 14 is a floor. Two places knew that separately
+ * until the Beaufort scale taught the lesson at its own two odd ends: scattering a special
+ * case is how the second one gets missed. One function knows.
+ */
+export interface SeaStateClass {
+  calmestMetres: number;
+  /** A floor rather than a ceiling where `topIsOpen`. */
+  roughestMetres: number;
+  topIsOpen: boolean;
+}
+
+export function seaStateClass(seaState: number): SeaStateClass | null {
+  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  if (!band) return null;
+  return {
+    calmestMetres: band[0],
+    roughestMetres: band[1],
+    topIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
+  };
+}
+
 export const SEA_STATE_HEIGHT_METRES: readonly (readonly [number, number])[] = [
   [0, 0],
   [0, 0.1],
@@ -189,38 +261,191 @@ export const SEA_STATE_HEIGHT_METRES: readonly (readonly [number, number])[] = [
  * change exists to stop making.
  */
 export function seawayFrom(environment: Environment | undefined): SeaEstimate | null {
+  const wind = windFrom(environment);
   const waves = environment?.waves;
+  const direction = directionFor(waves, wind);
+  // The height first, because whether the wind can supply a period depends on whether it
+  // could have raised this sea - and it is the ROUGH end that has to be within reach, since
+  // one period is applied to both.
+  const roughest = roughestHeightMetres(waves, environment?.seaState);
+  const period = periodFor(waves, wind, roughest);
+
   if (waves?.significantHeightMetres !== undefined) {
-    const seaway = seawayOf(waves.significantHeightMetres, waves.peakPeriodSeconds);
+    const seaway = seawayOf(waves.significantHeightMetres, period.seconds);
     return {
       calm: seaway,
       rough: seaway,
       source: "stated",
       derivation: waves.derivation,
       roughEndIsOpen: false,
-      periodAssumed: waves.peakPeriodSeconds === undefined,
-      fromDegreesTrue: waves.fromDegreesTrue ?? null,
+      periodFrom: period.from,
+      periodDeclined: period.declined,
+      ...direction,
     };
   }
-  return fromSeaState(environment?.seaState);
+  return fromSeaState(environment?.seaState, period, direction);
 }
 
-function fromSeaState(seaState: number | null | undefined): SeaEstimate | null {
+/**
+ * The ROUGHEST sea the file allows, which is what a single derived period has to fit.
+ *
+ * Not the gentlest, and the difference is the whole of it: one period is worked out and
+ * then applied to both ends of the class. Testing the wind against the calm end passes a
+ * sea state of 1.25 to 2.5 m at fourteen knots - which raises 1.44 m with the margin - and
+ * then labels a 2.5 m sea's period "from the stated wind". At the bottom of the scale it is
+ * worse: state 1 runs from nought, so a flat calm clears the test and puts a half-second
+ * period on the rough end.
+ *
+ * `seaExceedsWind` still asks about the calm end, and that is not an inconsistency: it is a
+ * WARNING, and a warning should be hard to raise, so it fires only where even the gentlest
+ * reading is beyond the wind. This is a DERIVATION, and a derivation has to hold for every
+ * sea it will be applied to. Two questions, two ends.
+ */
+function roughestHeightMetres(
+  waves: Environment["waves"],
+  seaState: number | null | undefined,
+): number {
+  if (waves?.significantHeightMetres !== undefined) return waves.significantHeightMetres;
+  if (seaState === null || seaState === undefined) return 0;
+  const band = seaStateClass(seaState);
+  if (!band) return 0;
+  // Infinity is not a trick: where the class is open the roughest sea the file allows really
+  // is unbounded, and no finite wind can account for it - which is what the caller concludes.
+  return band.topIsOpen ? Infinity : band.roughestMetres;
+}
+
+/**
+ * Where the sea runs, in order of how much the source is actually saying.
+ *
+ * A stated wave direction wins outright: swell runs from wherever its storm was, which is
+ * the ordinary case, so the wind does not overrule an observation of the waves themselves.
+ * A wind sea runs WITH the wind, and both are stated as the direction they come from, so
+ * the bearing carries across unchanged.
+ *
+ * Adding a wind does not remove the assumption; it puts a step in front of it.
+ */
+function directionFor(
+  waves: Environment["waves"],
+  wind: WindEstimate | null,
+): { fromDegreesTrue: number | null; directionFrom: SeaEstimate["directionFrom"] } {
+  if (waves?.fromDegreesTrue !== undefined) {
+    return { fromDegreesTrue: waves.fromDegreesTrue, directionFrom: "stated" };
+  }
+  if (wind?.fromDegreesTrue !== null && wind?.fromDegreesTrue !== undefined) {
+    return { fromDegreesTrue: wind.fromDegreesTrue, directionFrom: "wind" };
+  }
+  return { fromDegreesTrue: null, directionFrom: "assumed" };
+}
+
+/**
+ * The peak period, taken from the most direct thing the file offers.
+ *
+ * A stated period first. Then a stated wind SPEED, which runs Pierson-Moskowitz the way it
+ * was derived rather than backwards out of a height. A Beaufort force does not qualify: it
+ * is a class, and picking a period from it would mean picking a speed out of the middle of
+ * one, which is the invention `SEA_STATE_HEIGHT_METRES` refuses to make about heights.
+ *
+ * The round trip disappears; **the bias does not**. Both routes assume a fully developed
+ * sea, so both run long in enclosed water.
+ *
+ * ## And only where the wind could have raised the sea
+ *
+ * A stated calm with a stated two-metre swell is a valid file and a common situation - the
+ * swell is another system's, running in from somewhere the wind here says nothing about.
+ * Taking the period from that wind gives 0.5 seconds, because the clamp catches it, which
+ * is a two-metre sea 0.4 m from crest to crest: absurd geometry under a panel reading
+ * "from the stated wind".
+ *
+ * So the wind supplies a period only when it could have raised the sea in the first place.
+ * Where it could not, the height route takes over and the page says the height was what it
+ * came from.
+ *
+ * The height asked about is the ROUGHEST the file allows - which for sea state 9 is no
+ * height at all, since that class has no ceiling and no finite wind can answer for it. `seaExceedsWind` asks about the calm end instead,
+ * and the two are answering different questions: a warning should be hard to raise, and a
+ * derivation has to hold everywhere it is used.
+ */
+function periodFor(
+  waves: Environment["waves"],
+  wind: WindEstimate | null,
+  heightMetres: number,
+): {
+  seconds: number | undefined;
+  from: SeaEstimate["periodFrom"];
+  declined: SeaEstimate["periodDeclined"];
+} {
+  // A file may state a period on a sea of no height, and that is not a contradiction to be
+  // swallowed: a decayed swell has a period and a direction and a significant height that
+  // rounds to nothing. What the file says comes first, whatever the height.
+  if (waves?.peakPeriodSeconds !== undefined) {
+    return { seconds: waves.peakPeriodSeconds, from: "stated", declined: "none" };
+  }
+  // With nothing stated, a sea of no height has no period, and every route into one is a
+  // fiction. A flat calm beside a calm wind cleared the "could this wind raise it" test on
+  // nought against nought, took the relation's own zero, and had it clamped straight back to
+  // the spectrum's floor - so the page read "0.5 s (from the stated wind)" over water with
+  // no waves in it. Fixing the relation alone moved the lie one step down; it stops here.
+  if (heightMetres <= 0) return { seconds: undefined, from: "none", declined: "none" };
+  const declined = whyNotTheWind(wind, heightMetres);
+  if (declined === "none" && wind) {
+    return { seconds: periodFromWindSeconds(wind.fastestKnots), from: "wind", declined };
+  }
+  return { seconds: undefined, from: "height", declined };
+}
+
+/**
+ * Which of the four refusals applies, in the order of how specific each one is.
+ *
+ * An open-ended sea state comes first even where a force was stated: both are true then, and
+ * "no finite wind can cover this class" is the fact that would still hold if the file gave a
+ * speed. Reporting the weaker of two true reasons sends a reader to fix the wrong figure.
+ */
+function whyNotTheWind(
+  wind: WindEstimate | null,
+  heightMetres: number,
+): SeaEstimate["periodDeclined"] {
+  if (!Number.isFinite(heightMetres)) return "sea-has-no-ceiling";
+  if (!wind || wind.source === "direction-only") return "nothing-stated";
+  if (wind.source === "force") return "force-is-a-class";
+  return windCouldRaise(wind, heightMetres) ? "none" : "wind-too-light";
+}
+
+/**
+ * Whether this wind can account for a sea of that height, asked before there is a
+ * `SeaEstimate` to ask it of.
+ *
+ * Only ever reached with a definite speed - a Beaufort force never supplies a period - so
+ * there is no open-ended wind to handle here. An open-ended SEA is handled, and by
+ * arithmetic rather than a branch: its height comes through as infinity and nothing finite
+ * clears it.
+ */
+function windCouldRaise(wind: WindEstimate, heightMetres: number): boolean {
+  return fullyDevelopedHeightMetres(wind.fastestKnots) * WIND_DISAGREEMENT_MARGIN >= heightMetres;
+}
+
+function fromSeaState(
+  seaState: number | null | undefined,
+  period: {
+    seconds: number | undefined;
+    from: SeaEstimate["periodFrom"];
+    declined: SeaEstimate["periodDeclined"];
+  },
+  direction: { fromDegreesTrue: number | null; directionFrom: SeaEstimate["directionFrom"] },
+): SeaEstimate | null {
   if (seaState === null || seaState === undefined) return null;
-  const band = SEA_STATE_HEIGHT_METRES[seaState];
+  const band = seaStateClass(seaState);
   if (!band) return null;
   return {
-    calm: seawayOf(band[0], undefined),
-    rough: seawayOf(band[1], undefined),
+    calm: seawayOf(band.calmestMetres, period.seconds),
+    rough: seawayOf(band.roughestMetres, period.seconds),
     source: "sea-state",
     // A sea state is somebody's estimate of the sea from its appearance, so the figures it
     // yields were reconstructed from a description rather than recorded.
     derivation: "inferred",
-    roughEndIsOpen: seaState === SEA_STATE_HEIGHT_METRES.length - 1,
-    periodAssumed: true,
-    // A sea state is a description of the water's appearance and says nothing about which
-    // way it is running.
-    fromDegreesTrue: null,
+    roughEndIsOpen: band.topIsOpen,
+    periodFrom: period.from,
+    periodDeclined: period.declined,
+    ...direction,
   };
 }
 
@@ -276,21 +501,38 @@ export function assumedPeakPeriodSeconds(significantHeightMetres: number): numbe
  * evenly spaced points either miss the peak or waste thousands on the tail.
  */
 function moment(peakRadiansPerSecond: number, order: number, from: number, to: number): number {
-  return weightedMoment(peakRadiansPerSecond, (w) => w ** order, from, to);
+  return weightedMoment(peakRadiansPerSecond, (w) => w ** order, {
+    from,
+    to,
+    steps: SPECTRUM_STEPS,
+  });
+}
+
+/**
+ * The band an integral is taken over and how finely.
+ *
+ * Named because the three travel together and because `max-params` said so - which is the
+ * rule doing its job: the alternative was a fifth loose argument nobody could read at the
+ * call site.
+ */
+interface Band {
+  from: number;
+  to: number;
+  steps: number;
 }
 
 /** The same integral with an arbitrary weight, which the correlation needs a cosine for. */
 function weightedMoment(
   peakRadiansPerSecond: number,
   weight: (w: number) => number,
-  from: number,
-  to: number,
+  band: Band,
 ): number {
-  const ratio = (to / from) ** (1 / SPECTRUM_STEPS);
+  const { from, to, steps } = band;
+  const ratio = (to / from) ** (1 / steps);
   let total = 0;
   let w = from;
-  for (let i = 0; i <= SPECTRUM_STEPS; i += 1) {
-    const ends = i === 0 || i === SPECTRUM_STEPS ? 0.5 : 1;
+  for (let i = 0; i <= steps; i += 1) {
+    const ends = i === 0 || i === steps ? 0.5 : 1;
     // d(omega) = omega * d(ln omega), and ln(ratio) is that constant step.
     total += ends * weight(w) * density(w, peakRadiansPerSecond) * w * Math.log(ratio);
     w *= ratio;
@@ -347,7 +589,8 @@ function correlationAt(peakPeriodSeconds: number, separationMetres: number): num
   const to = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
   const cosine = (w: number): number =>
     Math.cos(((w * w) / GRAVITY_METRES_PER_SECOND_SQUARED) * separationMetres);
-  return weightedMoment(peak, cosine, from, to) / moment(peak, 0, from, to);
+  const band = { from, to, steps: CORRELATION_INTEGRAL_STEPS };
+  return weightedMoment(peak, cosine, band) / weightedMoment(peak, () => 1, band);
 }
 
 /**
@@ -716,4 +959,209 @@ export function surfaceAt(
     point.slopeNorth += slope * north;
   }
   return point;
+}
+
+/**
+ * Beaufort, in knots. WMO's table, and the ranges are the point of it.
+ *
+ * A force is a class, not a figure - 5 is 17 to 21 knots - so it is kept as one, for the
+ * same reason `SEA_STATE_HEIGHT_METRES` is.
+ *
+ * **Two of the thirteen have an end that is not a number**, and both have been read as one
+ * here at some point. Force 12 is 64 knots and UP, so its top is a floor. Force 0 is
+ * "less than 1 knot" and not "nought to one", so its top is a limit the class never
+ * reaches - one knot is force 1. `forceClass` is the only place that knows either, because
+ * scattering the two special cases is how they get missed a fourth time.
+ */
+export const BEAUFORT_KNOTS: readonly (readonly [number, number])[] = [
+  [0, 1],
+  [1, 3],
+  [4, 6],
+  [7, 10],
+  [11, 16],
+  [17, 21],
+  [22, 27],
+  [28, 33],
+  [34, 40],
+  [41, 47],
+  [48, 55],
+  [56, 63],
+  [64, 64],
+];
+
+/**
+ * How far a stated sea may exceed what the wind can raise before it is worth reporting.
+ *
+ * Not a tolerance on the arithmetic but on the relation: the constant in `Hs = 0.21 U^2/g`
+ * is a fit with scatter - other fits give up to 0.24 - and a reported wind is a class or a
+ * rounded figure. Below this the disagreement says nothing; above it, the sea is either
+ * carrying a swell from somewhere else or somebody has mistranscribed.
+ */
+const WIND_DISAGREEMENT_MARGIN = 1.3;
+
+/** What the file says about the wind, and how tightly it says it. */
+export interface WindEstimate {
+  slowestKnots: number;
+  /** A floor rather than a bound where `fastestIsOpen`. */
+  fastestKnots: number;
+  fastestIsOpen: boolean;
+  /** Where it blows FROM, or null: a report may give a force and no direction. */
+  fromDegreesTrue: number | null;
+  derivation: Derivation;
+  /** Which figure the speed came out of, or that there was none. */
+  source: "speed" | "force" | "direction-only";
+  /**
+   * Where a file states BOTH a speed and a force, whether they are the same wind. Null
+   * where it states only one, which is the usual case.
+   *
+   * The speed is used either way - it is the narrower statement - but a file that says 18
+   * knots and force 9 in the same breath has one of them wrong, and dropping the force in
+   * silence takes the disagreement out of the reader's hands. Nothing here decides which is
+   * right; it only declines to hide that there is a question.
+   */
+  statedForceAgrees: boolean | null;
+  /**
+   * The Beaufort force the file gave, whatever the speed came out of.
+   *
+   * Carried even where a speed overrides it, because a page that reports a disagreement
+   * without naming the other side of it has hidden half the input while claiming to expose
+   * it. A reader cannot check "these are not the same wind" against a force they are never
+   * shown.
+   */
+  statedForce: number | null;
+}
+
+/**
+ * The wind the scenario states, or null where it states none.
+ *
+ * A speed is used as stated. A force gives its class. Both together take the speed, since
+ * it is the narrower statement, and no attempt is made to reconcile them - a file that
+ * disagrees with itself about the wind is a transcription problem and not this module's.
+ */
+export function windFrom(environment: Environment | undefined): WindEstimate | null {
+  const wind = environment?.wind;
+  if (!wind) return null;
+  const stated = {
+    fromDegreesTrue: wind.fromDegreesTrue ?? null,
+    derivation: wind.derivation,
+    statedForce: wind.beaufortForce ?? null,
+  };
+  if (wind.speedKnots !== undefined) {
+    const speed = clamp(wind.speedKnots, 0, SPEED_LIMIT_KNOTS);
+    return {
+      ...stated,
+      slowestKnots: speed,
+      fastestKnots: speed,
+      fastestIsOpen: false,
+      source: "speed",
+      statedForceAgrees: forceAgrees(speed, wind.beaufortForce),
+    };
+  }
+  return { ...stated, ...speedOfForce(wind.beaufortForce), statedForceAgrees: null };
+}
+
+/**
+ * Whether a stated speed falls inside a stated force's class. Null where one is missing.
+ *
+ * Both odd ends matter here. A knot is force 1 and not force 0, so calm's top is exclusive;
+ * force 12 has no top at all. Testing every class as a closed interval called one knot calm
+ * and quietly dropped the disagreement note that is the point of this comparison.
+ */
+function forceAgrees(speedKnots: number, force: number | undefined): boolean | null {
+  const band = force === undefined ? null : forceClass(force);
+  if (!band) return null;
+  if (speedKnots < band.slowestKnots) return false;
+  if (band.topIsOpen) return true;
+  return band.topIsExclusive ? speedKnots < band.fastestKnots : speedKnots <= band.fastestKnots;
+}
+
+/** How one Beaufort class ends, which is not the same question at both ends of the scale. */
+interface ForceClass {
+  slowestKnots: number;
+  fastestKnots: number;
+  /** Force 12: the top is a floor and the class runs past it. */
+  topIsOpen: boolean;
+  /** Force 0: the top is a limit the class stops short of, since calm is "less than 1 knot". */
+  topIsExclusive: boolean;
+}
+
+/** The one place that knows how a force's ends behave. */
+export function forceClass(force: number): ForceClass | null {
+  const band = BEAUFORT_KNOTS[force];
+  if (!band) return null;
+  return {
+    slowestKnots: band[0],
+    fastestKnots: band[1],
+    topIsOpen: force === BEAUFORT_KNOTS.length - 1,
+    topIsExclusive: force === 0,
+  };
+}
+
+/** A force is a class, so it comes back as one. No force at all comes back as no speed. */
+function speedOfForce(
+  force: number | undefined,
+): Omit<WindEstimate, "fromDegreesTrue" | "derivation" | "statedForceAgrees" | "statedForce"> {
+  const band = force === undefined ? null : forceClass(force);
+  if (!band) {
+    return { slowestKnots: 0, fastestKnots: 0, fastestIsOpen: false, source: "direction-only" };
+  }
+  return {
+    slowestKnots: band.slowestKnots,
+    fastestKnots: band.fastestKnots,
+    fastestIsOpen: band.topIsOpen,
+    source: "force",
+  };
+}
+
+const METRES_PER_SECOND_PER_KNOT = 0.514444;
+
+/**
+ * The significant height this wind raises once the sea has stopped growing.
+ *
+ * Pierson-Moskowitz, `Hs = 0.21 U^2 / g`, and it is an UPPER bound rather than a figure: a
+ * fully developed sea needs both fetch and duration, so a sea under a rising wind or in
+ * enclosed water is smaller than this. There is no corresponding lower bound, which is what
+ * makes the comparison below asymmetric.
+ */
+export function fullyDevelopedHeightMetres(speedKnots: number): number {
+  const speed = speedKnots * METRES_PER_SECOND_PER_KNOT;
+  return (0.21 * speed * speed) / GRAVITY_METRES_PER_SECOND_SQUARED;
+}
+
+/**
+ * The peak period of that same fully developed sea, taken forwards from the wind.
+ *
+ * A calm returns nought, which is the relation's own answer and not a period: a calm raises
+ * no waves and so has none. It used to return the spectrum's lower clamp instead, half a
+ * second, which is a plausible-looking figure for a question with no answer - the same
+ * shape of trap that had a calm drawing a two-metre sea 0.4 m from crest to crest. Nothing
+ * in the tool asks, because `periodFor` will not take a period from a wind that could not
+ * raise the sea; anything that does ask gets something visibly wrong rather than quietly so.
+ */
+export function periodFromWindSeconds(speedKnots: number): number {
+  const speed = Math.max(speedKnots, 0) * METRES_PER_SECOND_PER_KNOT;
+  return (2 * Math.PI * speed) / (0.877 * GRAVITY_METRES_PER_SECOND_SQUARED);
+}
+
+/**
+ * Whether the stated sea is bigger than the stated wind can account for.
+ *
+ * Only ever reported in that direction. A sea SMALLER than the wind supports is the
+ * ordinary case - the wind has not been blowing long enough, or the fetch is short - and
+ * flagging it would train a reader to ignore the column, which is the same argument
+ * `conditions.ts` makes about comparing a light condition to the sun on one axis only.
+ *
+ * Null where the two are not comparable: no wind, no speed in it, or no sea.
+ *
+ * **Both ends are taken the way that makes the flag hard to raise.** The sea's CALM end
+ * against the wind's FASTEST: a sea state spans a class, a Beaufort force spans a class, and
+ * reporting a disagreement that only exists at one corner of two ranges would be reporting
+ * the ranges rather than the sea. Only a sea whose gentlest reading still exceeds the most
+ * the wind could raise is worth a reader's attention.
+ */
+export function seaExceedsWind(sea: SeaEstimate | null, wind: WindEstimate | null): boolean | null {
+  if (!sea || !wind || wind.source === "direction-only") return null;
+  if (wind.fastestIsOpen) return null;
+  const supported = fullyDevelopedHeightMetres(wind.fastestKnots) * WIND_DISAGREEMENT_MARGIN;
+  return sea.calm.significantHeightMetres > supported;
 }

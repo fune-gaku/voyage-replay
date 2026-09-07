@@ -229,3 +229,83 @@ width of a sea state class.
 Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
 them at the same place left the zero-crossing period six per cent long, against the published
 JONSWAP ratio of 0.778 — an implementation detail passing itself off as a property of the sea.
+
+### The wind, and the one thing it settles
+
+A wind sea runs with the wind, and both are stated as the direction they come from, so a
+stated wind gives a wave direction a sea state cannot. That is why `environment.wind` exists:
+it is the figure a deck log always carries, where a wave height almost never is.
+
+**It does not settle the sea.** Swell runs from wherever its own storm was, which is the
+ordinary case and is what makes a real sea confused, so a stated wave direction still wins
+over anything derived from the wind. Adding a wind does not remove the assumption about
+direction; it puts a step in front of it.
+
+**Fully developed is an upper bound, not a figure.** `Hs = 0.21 U^2/g` is the sea that wind
+raises once it has stopped growing, which needs both fetch and duration. A sea under a rising
+wind, or in enclosed water, is smaller. There is no bound the other way — which is why the
+comparison between a stated sea and a stated wind is reported **only** when the sea is the
+bigger of the two. A sea smaller than its wind supports is ordinary and says nothing; a
+column that flagged it would teach a reader to ignore the column.
+
+| | wind | Hs if fully developed | Tp |
+|---|---:|---:|---:|
+| BF 4 | 6.7 m/s | 0.96 m | 4.9 s |
+| BF 5 | 9.3 m/s | 1.85 m | 6.8 s |
+| BF 6 | 12.3 m/s | 3.24 m | 9.0 s |
+| BF 7 | 15.5 m/s | 5.14 m | 11.3 s |
+
+**A Beaufort force is a class**, exactly as a sea state is: 5 is 17 to 21 knots. It is kept as
+one. A stated speed drives the period; a force alone does not, because taking a period from a
+force means taking a speed out of the middle of a class, which is the invention the sea state
+table refuses to make about heights. Force 12 is open above, and its two ends are the same
+number — anything displaying it has to test for openness before testing them for equality.
+
+The period now runs forwards from a wind where one is stated, rather than backwards out of a
+height. **The round trip disappears; the bias does not** — both routes assume a sea that has
+stopped growing, so both run long in enclosed water.
+
+**A wind cannot supply a period for a sea it could not have raised — and the sea it has to be
+able to raise is the ROUGHEST the file allows.** One period is worked out and then applied to
+both ends of a class, so testing the wind against the calm end passes a sea state of 1.25 to
+2.5 m at fourteen knots, which raises 1.44 m, and then labels a 2.5 m sea's period "from the
+stated wind". The warning that compares a stated sea against its wind asks about the calm end
+instead, and that is not an inconsistency: a warning should be hard to raise, and a derivation
+has to hold everywhere it is used. Two questions, two ends. A stated calm beside a
+stated two-metre swell is a valid file and an ordinary situation — the swell belongs to
+another weather system. Running Pierson-Moskowitz forwards from that wind hits the period
+clamp and returns half a second: a two-metre sea 0.4 m from crest to crest, drawn under a
+panel reading "from the stated wind". So the wind supplies a period only where it passes the
+same comparison the disagreement note reports, and the height route takes over otherwise.
+
+**Sea state 9 has no ceiling, so no finite wind can supply its period.** The table's 14 m is a
+sentinel and not a bound, and a derivation that has to hold across a class cannot hold across
+an unbounded one. That is the third time an open end has been read as a bound in this
+repository — the panel's own sea state 9, Beaufort force 12 in the wind's display, and this —
+so anything with a class in it should be asked, once, whether its top is a number or a floor.
+
+**A sea of no height has no period, and saying so takes three layers.** Sea state 0 is a flat
+calm. Beside a calm wind it cleared "could this wind raise it" on nought against nought, took
+the relation's own zero, and had it clamped straight back to the spectrum's floor — so the page
+read "0.5 s (from the stated wind)" over water with no waves in it. Fixing the relation moved
+the lie one step down; fixing the guard moved it into the clamp. It stops where a
+`SeaEstimate` can say the period came from *nowhere*, and the page prints that instead of a
+figure. The `Seaway` still carries numbers for period and direction, because its fields are
+numbers — which is precisely why nothing may print them without asking first.
+
+**A flat sea with a stated period is not a contradiction.** A decayed swell arriving from a
+storm long gone has a period and a direction and a significant height that rounds to nothing,
+and the format takes all three. The rule that a sea of no height has no period is about what
+can be *derived*; it must not swallow what the file *states*. Nor may the absence of one figure
+hide another — a stated bearing survives a missing period.
+
+**Two Beaufort classes have an end that is not a number.** Force 12 is 64 knots and up, so its
+top is a floor. Force 0 is "less than 1 knot" and not "nought to one" — a knot is already
+force 1 — so its top is a limit the class stops short of. Both have been read as plain numbers
+here at some point, which is why `forceClass` is the only thing that knows: scattering two
+special cases is how the second one gets missed.
+
+**A file may state both a speed and a force, and they may not be the same wind.** The speed is
+used, being the narrower statement, but eighteen knots beside force 9 means one of them is
+wrong and the page says so rather than choosing in silence. Which is right is not something
+this tool can settle — but the sea drawn from one is not the sea drawn from the other.
