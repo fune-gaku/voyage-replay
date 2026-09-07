@@ -971,13 +971,18 @@ export function surfaceAt(
     // **The lag is the point, not just the gain.** Applied to the phase, it lets the heave
     // and the tilt peak at different moments - which is most of what makes a floating body's
     // motion look irregular rather than metronomic, and cannot come out of scaling alone.
+    //
+    // **Added, not subtracted.** The phase above runs `kx - wt`, so it DECREASES with time:
+    // a body that answers late reaches a given phase later, which is a larger phase, not a
+    // smaller one. Subtracting draws a resonant buoy a quarter cycle AHEAD of the water -
+    // which looks like a buoy moving in a sea and is the motion running backwards.
     const rise = riding?.heave(wave.angularFrequencyPerSecond) ?? FOLLOWS;
     const lean = riding?.tilt(wave.angularFrequencyPerSecond) ?? FOLLOWS;
-    point.heightMetres += wave.amplitudeMetres * rise.gain * Math.sin(phase - rise.lagRadians);
+    point.heightMetres += wave.amplitudeMetres * rise.gain * Math.sin(phase + rise.lagRadians);
 
     const slope = wave.amplitudeMetres * wave.wavenumberPerMetre * lean.gain;
-    point.slopeEast += slope * Math.cos(phase - lean.lagRadians) * east;
-    point.slopeNorth += slope * Math.cos(phase - lean.lagRadians) * north;
+    point.slopeEast += slope * Math.cos(phase + lean.lagRadians) * east;
+    point.slopeNorth += slope * Math.cos(phase + lean.lagRadians) * north;
   }
   return point;
 }

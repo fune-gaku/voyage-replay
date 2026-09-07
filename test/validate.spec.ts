@@ -185,6 +185,13 @@ describe("the schema on what a mark means", () => {
     expect(validateScenario(withMark({ topmark: "none" })).valid).toBe(false);
   });
 
+  /** A draught is what her natural period rests on, and a source sometimes gives it. */
+  it("takes a stated draught, and refuses one that is not a depth", () => {
+    expect(validateScenario(withMark({ draughtMetres: 2.4 })).valid).toBe(true);
+    expect(validateScenario(withMark({ draughtMetres: 0 })).valid).toBe(false);
+    expect(validateScenario(withMark({ draughtMetres: -1 })).valid).toBe(false);
+  });
+
   it("takes a purpose, and refuses one that is not in the buoyage", () => {
     expect(validateScenario(withMark({ purpose: "north-cardinal" })).valid).toBe(true);
     expect(validateScenario(withMark({ purpose: "north-westerly" })).valid).toBe(false);

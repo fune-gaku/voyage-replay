@@ -129,11 +129,7 @@ export interface SceneParts {
    * out of waves - and a buoy riding the true field over visibly still water would be a
    * buoy hovering. One function, so the two cannot come apart.
    */
-  drawnSurfaceAt(
-    position: LocalPosition,
-    secondsFromStart: number,
-    riding?: Riding,
-  ): SurfacePoint;
+  drawnSurfaceAt(position: LocalPosition, secondsFromStart: number, riding?: Riding): SurfacePoint;
 }
 
 /**

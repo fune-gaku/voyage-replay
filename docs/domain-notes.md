@@ -583,6 +583,12 @@ leaning to every slope draws away the one thing the shape was chosen for. How fa
 leans is carried as a class rather than a calculation: the pitch period needs ballast, and
 nothing states it, but the shape implies the class.
 
+**"Computable" is not "computed".** The period rests on the draught alone, so where the file
+states no draught — and it usually does not — the proportion taken for her shape is a model of
+what a buoy of that shape looks like, and the whole period becomes this tool's figure rather
+than the source's. `marks[].draughtMetres` exists for the sources that do give it, and the page
+says which it had.
+
 ### The lag is the part that cannot be skipped
 
 A damped body's answer has two numbers, and taking only the gain leaves every motion peaking at
@@ -594,6 +600,13 @@ At resonance the gain is `1/(2ζ)` and the lag is exactly a quarter cycle; above
 on towards half a cycle, which is why it is computed with `atan2` and not `atan`. Folded back
 by `atan`, a body above its own period would be drawn early rather than late: plausible, and
 upside down.
+
+**And it is added to the phase, not subtracted.** The travelling wave runs `kx − ωt`, so its
+phase *decreases* with time: a body that answers late reaches a given phase later, which is a
+larger phase. Subtracting draws a resonant buoy a quarter cycle *ahead* of the water — which
+still looks like a buoy moving in a sea, and is the motion running backwards. The test for it
+counts the seconds between the water's crest and the body's, round the cycle, rather than
+recomputing the arithmetic that produced it.
 
 ### The damping is the one figure with no source
 

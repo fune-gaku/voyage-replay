@@ -724,7 +724,7 @@ function moorMarks(scenario: Scenario, sceneParts: SceneParts): Moored[] {
       // From the shape that was DRAWN, which for a mark with a purpose comes from the
       // buoyage rather than from a stated field - a safe-water sphere and a spar answer the
       // same sea very differently.
-      riding: shape ? ridingOf(shape, parts.heightMetres) : undefined,
+      riding: shape ? ridingOf(shape, parts.heightMetres, mark.draughtMetres) : undefined,
       light: lightOf(mark, region),
     };
   });

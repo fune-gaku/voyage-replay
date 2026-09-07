@@ -557,6 +557,29 @@ describe("the sea marks a scenario carries", () => {
   });
 
   /**
+   * How she answers the sea is worked out from her draught alone - and where that draught
+   * came from decides whether the period is a computed figure or this tool's model. The page
+   * has to say which, since the two look identical on screen.
+   */
+  it("says where the draught behind the period came from", () => {
+    const told = scenario();
+    told.marks = [buoy({ shape: "pillar", heightMetres: 3.2, draughtMetres: 2.4 })];
+    expect(panelsFor(told)).toContain("from the draught the file gives");
+
+    const modelled = scenario();
+    modelled.marks = [buoy({ shape: "pillar", heightMetres: 3.2 })];
+    expect(panelsFor(modelled)).toContain("a proportion of her height, chosen for her shape");
+  });
+
+  /** And the periods themselves, which is what a reader would check against a Light List. */
+  it("prints the natural period the buoys were given", () => {
+    const subject = scenario();
+    subject.marks = [buoy({ shape: "pillar", heightMetres: 3.2 })];
+    // 1.6 m of draught answers in 2 pi sqrt(1.6 / 9.81) = 2.5 s.
+    expect(panelsFor(subject)).toContain("natural period of 2.5 s");
+  });
+
+  /**
    * A buoy stops heaving at a few hundred metres because the water beneath her has, not
    * because the sea has - which the picture cannot say for itself.
    */

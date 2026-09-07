@@ -1161,12 +1161,19 @@ function ridingNote(marks: Mark[], region: BuoyageRegion | null): string {
       ? `${shortest.toFixed(1)} s`
       : `${shortest.toFixed(1)} to ${longest.toFixed(1)} s`;
 
+  const draughts = new Set(periods.map((riding) => riding.draughtFrom));
+  const where =
+    draughts.size === 1 && draughts.has("stated")
+      ? "from the draught the file gives"
+      : `from ${[...draughts].join(" and ")}`;
+
   return (
     `A buoy answers the sea rather than tracing it: her heave has a natural period of ` +
-    `${range} here, worked out from her draught alone - the waterplane cancels - so she ` +
-    "follows a long swell, moves further than a chop near that period, and falls behind a " +
-    "shorter one. Her lean is given twice that period, which is why the two do not peak " +
-    "together. **The damping is the one figure here with no source**: it depends on the hull " +
+    `${range} here, which rests on her draught alone - the waterplane cancels - taken ` +
+    `${where}. So she follows a long swell, moves further than a chop near that period, and ` +
+    "falls behind a shorter one. Her lean is given twice that period, which is why the two " +
+    "do not peak together. **The damping is the one figure here with no source**: it " +
+    "depends on the hull " +
     `and on whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per ` +
     "cent of critical is this tool's own figure. It weighs most at resonance, where the " +
     "response goes " +
@@ -1180,7 +1187,7 @@ function ridingNote(marks: Mark[], region: BuoyageRegion | null): string {
 function ridingFor(mark: Mark, region: BuoyageRegion | null): Riding {
   const drawn = drawnAppearance(mark, region);
   const height = mark.heightMetres ?? ASSUMED_MARK.heightMetres[mark.kind];
-  return ridingOf(drawn.shape?.value ?? CHOSEN.shape, height);
+  return ridingOf(drawn.shape?.value ?? CHOSEN.shape, height, mark.draughtMetres);
 }
 
 /** Whether this beacon's construction was left to this tool rather than stated. */

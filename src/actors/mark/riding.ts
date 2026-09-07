@@ -8,10 +8,15 @@
  *
  * **This is computable for a buoy where a ship's roll is not.** A ship's roll needs her
  * metacentric height, which no report contains, and that is why `plans/ship-motion-model.md`
- * is still a plan. A buoy's heave needs her draught, which is her geometry - the thing
- * `marks` already carries - and `core/response.ts` shows the waterplane area cancelling out
- * of the period entirely. Borrowing the ship's argument here would be borrowing a reason that
- * does not apply.
+ * is still a plan. A buoy's heave needs only her draught - `core/response.ts` shows the
+ * waterplane area cancelling out of the period entirely - and a draught is a thing a source
+ * can give. Borrowing the ship's argument here would be borrowing a reason that does not
+ * apply.
+ *
+ * **But "computable" is not "computed".** Where the file states no draught, it is taken as a
+ * proportion of her height chosen for her shape - a model of what a buoy of that shape looks
+ * like, not a measurement of this one - and since the period rests on the draught alone, that
+ * makes the whole period this tool's figure. `ui/panels.ts` says which it had.
  */
 
 import { answerTo, heavePeriodSeconds, type Answer } from "../../core/response.js";
@@ -20,10 +25,14 @@ import type { MarkShape } from "../../core/types.js";
 /**
  * How wide a body is against its height, and how much of it floats under.
  *
- * **In `actors/mark/` rather than in the renderer**, because a draught is a fact about a buoy
- * and not a drawing decision: `core/response.ts` turns it into a natural period, and
- * `render/mark.ts` happens to need the same numbers to draw her. The same move
- * `actors/vessel/heights.ts` made for a ship's freeboard.
+ * **In `actors/mark/` rather than in the renderer**, because these drive the motion as well as
+ * the picture: `core/response.ts` turns a draught into a natural period, and `render/mark.ts`
+ * happens to need the same numbers to draw her. The same move `actors/vessel/heights.ts` made
+ * for a ship's freeboard.
+ *
+ * **They are a model of a buoy, not measurements of one.** A file that states a draught
+ * overrides the second column outright, and where it does not, the period that follows is this
+ * tool's rather than the source's.
  */
 export const PROPORTIONS: Record<MarkShape, { width: number; draught: number }> = {
   pillar: { width: 0.55, draught: 0.5 },
@@ -66,13 +75,17 @@ const LEANS: Record<MarkShape, number> = {
   spherical: 1,
 };
 
+/** Where the draught came from, which decides how much of the period is anybody's figure. */
+export type DraughtFrom = "stated" | "a proportion of her height, chosen for her shape";
+
 export interface Riding {
   /** What she does with the water's height, component by component. */
   heave(angularFrequencyPerSecond: number): Answer;
   /** And with its slope, which peaks at a different moment because the period differs. */
   tilt(angularFrequencyPerSecond: number): Answer;
-  /** Her draught, which is what the period came out of. */
+  /** Her draught, which is what the period came out of - and where that came from. */
   draughtMetres: number;
+  draughtFrom: DraughtFrom;
   /** Her natural period in heave, for the page to print. */
   heavePeriodSeconds: number;
   /** How much of the water's slope she takes, at the long-wave limit. */
@@ -87,14 +100,22 @@ export interface Riding {
  * most of what makes a real buoy's motion look irregular rather than metronomic. Putting a
  * figure on the pitch period itself would need ballast, and nothing states that.
  */
-export function ridingOf(shape: MarkShape, heightMetres: number): Riding {
-  const draughtMetres = heightMetres * PROPORTIONS[shape].draught;
+export function ridingOf(shape: MarkShape, heightMetres: number, stated?: number): Riding {
+  // **A stated draught makes the period a computed figure; the fallback makes it a modelled
+  // one.** The proportions below are a model of what a buoy of each shape looks like, not a
+  // measurement of this buoy - and since the period comes out of the draught alone, saying
+  // "from her geometry" over a draught this tool invented would be the whole claim resting
+  // on the invented half.
+  const draughtMetres = stated ?? heightMetres * PROPORTIONS[shape].draught;
+  const draughtFrom: DraughtFrom =
+    stated === undefined ? "a proportion of her height, chosen for her shape" : "stated";
   const period = heavePeriodSeconds(draughtMetres);
   const natural = (2 * Math.PI) / period;
   const leans = LEANS[shape];
 
   return {
     draughtMetres,
+    draughtFrom,
     heavePeriodSeconds: period,
     leans,
     heave: (omega) => answerTo(omega / natural, CHOSEN_DAMPING),
