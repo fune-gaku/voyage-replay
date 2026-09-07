@@ -801,10 +801,23 @@ function periodSentence(sea: SeaEstimate): string {
   const source =
     sea.periodFrom === "wind" ? "taken forwards from the stated wind" : fromHeight(sea);
   return (
-    ` The period is ${source} (${sea.rough.peakPeriodSeconds.toFixed(1)} s at the rough end). ` +
+    ` The period is ${sea.rough.peakPeriodSeconds.toFixed(1)} s ${whichEnd(sea)}, ${source}. ` +
     "Either way it assumes a sea that has stopped growing, which runs long in enclosed " +
     "water and so errs towards saying she was visible."
   );
+}
+
+/**
+ * Which end of the class that period belongs to.
+ *
+ * "The rough end" is the internal name and it is wrong for the one class where the rough end
+ * is the calmest sea allowed: state 9's 14 m is a floor, and the sentence above has just
+ * finished saying so. Naming it "the rough end" two lines later takes that back.
+ */
+function whichEnd(sea: SeaEstimate): string {
+  return sea.roughEndIsOpen
+    ? `for the ${sea.rough.significantHeightMetres} m drawn`
+    : "at the rough end";
 }
 
 /**
@@ -816,7 +829,11 @@ function periodSentence(sea: SeaEstimate): string {
  * is a class, and taking a period from one means taking a speed out of the middle of it.
  */
 function fromHeight(sea: SeaEstimate): string {
-  return `assumed from the height, ${DECLINED[sea.periodDeclined]}`;
+  const base = "assumed from the height";
+  // "none" cannot arrive: the wind supplied the period in that case and this branch is not
+  // taken. Narrowing it away rather than giving it prose keeps an impossible case from
+  // having words to say - the alternative was a line of apology in the reader's report.
+  return sea.periodDeclined === "none" ? base : `${base}, ${DECLINED[sea.periodDeclined]}`;
 }
 
 /**
@@ -827,8 +844,7 @@ function fromHeight(sea: SeaEstimate): string {
  * cover one. Naming the wrong refusal is worse than naming none: it makes a false statement
  * about the reader's own figure and sends them to correct it.
  */
-const DECLINED: Record<SeaEstimate["periodDeclined"], string> = {
-  none: "which is not the refusal it looks like - report this",
+const DECLINED: Record<Exclude<SeaEstimate["periodDeclined"], "none">, string> = {
   "nothing-stated": "the file giving neither a period nor a wind speed",
   "force-is-a-class":
     "the file giving a Beaufort force and no speed - and a force is a class, so taking a " +

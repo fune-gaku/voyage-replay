@@ -1093,3 +1093,25 @@ describe("naming the right refusal, of which there are four", () => {
     }
   });
 });
+
+describe("naming the end a period belongs to", () => {
+  /**
+   * "The rough end" is the internal name, and it is wrong for the one class whose rough end
+   * is the calmest sea it allows. The page has just finished explaining that state 9's 14 m
+   * is a floor; calling it the rough end two lines later takes that back.
+   */
+  it("does not call the floor of an open class its rough end", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 9 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("for the 14 m drawn");
+    expect(html).not.toContain("s at the rough end");
+  });
+
+  it("still names the rough end of a class that has one", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 4 };
+    expect(panelsFor(subject)).toContain("s at the rough end");
+  });
+});
