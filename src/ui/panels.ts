@@ -599,6 +599,10 @@ function heightRange(sea: SeaEstimate): string {
   const { calm, rough } = sea;
   if (sea.source === "stated") return `${calm.significantHeightMetres} m`;
   if (sea.roughEndIsOpen) return `${rough.significantHeightMetres} m or more`;
+  // Sea state 0 is nought to nought, which is not a range and must not be printed as one.
+  if (calm.significantHeightMetres === rough.significantHeightMetres) {
+    return `${calm.significantHeightMetres} m`;
+  }
   return `${calm.significantHeightMetres} to ${rough.significantHeightMetres} m`;
 }
 
@@ -782,6 +786,9 @@ function heightSentence(sea: SeaEstimate): string {
       "picture is the stronger claim about what could be seen."
     );
   }
+  if (calm.significantHeightMetres === rough.significantHeightMetres) {
+    return `Sea state gives a significant height of ${calm.significantHeightMetres} m (${derivation}).`;
+  }
   return (
     `Sea state gives a significant height between ${calm.significantHeightMetres} and ` +
     `${rough.significantHeightMetres} m (${derivation}), and the view draws the rougher end ` +
@@ -794,24 +801,28 @@ function heightSentence(sea: SeaEstimate): string {
 /** Only where the file left the period out, since then it is this project's guess and not hers. */
 function periodSentence(sea: SeaEstimate): string {
   if (sea.periodFrom === "none") {
-    const direction =
-      sea.directionFrom === "stated"
-        ? "the direction it states is shown as given"
-        : "and no direction either";
+    // Nothing about the direction here: `directionSentence` follows immediately and says it,
+    // and the first version said it twice over.
     return (
-      ` The file states a flat sea and no period, so there is none to give - ${direction}. ` +
-      "A `Seaway` still carries a figure because its fields are numbers, and that figure is " +
-      "not reported because it means nothing."
+      " The file states a flat sea and no period, so there is none to give. A `Seaway` still " +
+      "carries a figure because its fields are numbers, and that figure is not reported " +
+      "because it means nothing."
     );
   }
   if (sea.periodFrom === "stated") return "";
   const source =
     sea.periodFrom === "wind" ? "taken forwards from the stated wind" : fromHeight(sea);
   return (
-    ` The period is ${sea.rough.peakPeriodSeconds.toFixed(1)} s ${whichEnd(sea)}, ${source}. ` +
+    ` The period is ${sea.rough.peakPeriodSeconds.toFixed(1)} s${end(sea)}, ${source}. ` +
     "Either way it assumes a sea that has stopped growing, which runs long in enclosed " +
     "water and so errs towards saying she was visible."
   );
+}
+
+/** `whichEnd` with the spacing, so a sea with no ends reads as a sentence and not a gap. */
+function end(sea: SeaEstimate): string {
+  const which = whichEnd(sea);
+  return which === "" ? "" : ` ${which}`;
 }
 
 /**
@@ -822,9 +833,11 @@ function periodSentence(sea: SeaEstimate): string {
  * finished saying so. Naming it "the rough end" two lines later takes that back.
  */
 function whichEnd(sea: SeaEstimate): string {
-  return sea.roughEndIsOpen
-    ? `for the ${sea.rough.significantHeightMetres} m drawn`
-    : "at the rough end";
+  if (sea.roughEndIsOpen) return `for the ${sea.rough.significantHeightMetres} m drawn`;
+  // A stated height, or a class with no width, has no ends to choose between - and naming
+  // one implies a range the file did not give.
+  if (sea.calm.significantHeightMetres === sea.rough.significantHeightMetres) return "";
+  return "at the rough end";
 }
 
 /**
@@ -882,8 +895,20 @@ function directionSentence(sea: SeaEstimate): string {
       "A swell runs from wherever its own storm was, which no wind here can say."
     );
   }
+  // Nothing is drawn on a sea of no height - `waveComponents` returns nothing at all for it -
+  // so there is no bearing to warn anyone off, and claiming one would be the plainest kind of
+  // untruth: describing a wave the picture does not contain.
+  if (sea.rough.significantHeightMetres <= 0) {
+    return " There are no waves drawn, so no direction is drawn either.";
+  }
+  // Only a sea state is silent about direction BY ITS NATURE. A file that states a height
+  // and omits a bearing simply omitted it, and saying otherwise explains the wrong absence.
+  const why =
+    sea.source === "sea-state"
+      ? " - a sea state does not carry a direction -"
+      : ", the file giving a height and no bearing,";
   return (
-    ` Nothing states which way the sea runs - a sea state does not carry a direction - so ` +
+    ` Nothing states which way the sea runs${why} so ` +
     `the view draws it from ${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} degrees true, which ` +
     "is a bearing this tool chose and not one the source gives. Do not read a wave direction " +
     "off the picture unless this line says the file supplied it."
@@ -900,8 +925,10 @@ function directionSentence(sea: SeaEstimate): string {
  */
 function tailNote(sea: SeaEstimate): string {
   const hs = sea.rough.significantHeightMetres;
+  // Nought has no tail, and "the highest tenth averages 0.00 m" says nothing to anybody.
+  if (hs <= 0) return "";
   return (
-    `Significant height is the mean of the highest third: ${whichEnd(sea)} the highest tenth ` +
+    `Significant height is the mean of the highest third:${end(sea)} the highest tenth ` +
     `averages ${meanOfHighest(hs, 0.1).toFixed(2)} m and the highest hundredth ` +
     `${meanOfHighest(hs, 0.01).toFixed(2)} m.`
   );

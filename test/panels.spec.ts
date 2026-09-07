@@ -997,7 +997,7 @@ describe("a flat sea, which has no period and no direction", () => {
 
     expect(html).toContain("no waves to have one");
     expect(html).toContain("270 deg true (stated)");
-    expect(html).toContain("the direction it states is shown as given");
+    expect(html).toContain("270 deg true (stated)");
   });
 
   it("still gives a period for the faintest sea that has one", () => {
@@ -1152,5 +1152,90 @@ describe("naming the end a period belongs to", () => {
     const html = panelsFor(subject);
     expect(html).toContain("s at the rough end");
     expect(html).toContain("at the rough end the highest tenth");
+  });
+});
+
+describe("what the page says about a sea state with no width and no waves", () => {
+  /**
+   * Found by rendering every branch and reading them rather than picking one. State 0 is
+   * nought to nought, and the page called that a range, said the view drew "the rougher end"
+   * of it, and warned against measuring a height off a picture with no waves in it.
+   */
+  it("does not call nought to nought a range", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("<td>0 m</td>");
+    expect(html).not.toContain("0 to 0 m");
+    expect(html).not.toContain("draws the rougher end");
+    expect(html).not.toContain("Do not measure a wave height");
+  });
+
+  /**
+   * And it said "no direction either" and then, two sentences later, that the view drew the
+   * sea from nought degrees. Nothing is drawn: `waveComponents` returns nothing at all for a
+   * sea of no height, so a warning about the picture's bearing described a wave that is not
+   * in it.
+   */
+  it("does not claim to draw a bearing on water with no waves", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("no waves drawn, so no direction is drawn either");
+    expect(html).not.toContain("the view draws it from 0 degrees true");
+    expect(html).not.toContain("Do not read a wave direction off the picture");
+  });
+
+  it("quotes no tail for a sea that has none", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    expect(panelsFor(subject)).not.toContain("the highest tenth averages 0.00 m");
+  });
+
+  /**
+   * Only a sea state is silent about direction by its nature. A file that gives a height and
+   * omits a bearing simply omitted it, and explaining the wrong absence tells the reader
+   * their file has a property it does not.
+   */
+  it("does not blame a sea state where the file stated a height", () => {
+    const subject = scenario();
+    subject.environment = {
+      waves: { significantHeightMetres: 0.5, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("the file giving a height and no bearing");
+    expect(html).not.toContain("a sea state does not carry a direction");
+  });
+
+  it("still blames the sea state where a sea state is what there was", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 4 };
+    expect(panelsFor(subject)).toContain("a sea state does not carry a direction");
+  });
+});
+
+describe("naming an end only where there are two", () => {
+  /**
+   * A stated height is one figure. Calling it "the rough end" implies a range the file did
+   * not give - the internal name for a class end leaking onto a sea that has no class.
+   */
+  it("does not put a stated height at the rough end of anything", () => {
+    const subject = scenario();
+    subject.environment = { waves: { significantHeightMetres: 0.5, derivation: "measured" } };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("The period is 3.5 s, assumed from the height");
+    expect(html).not.toContain("rough end");
+  });
+
+  it("says it once, not twice, that a flat sea has no direction", () => {
+    const subject = scenario();
+    subject.environment = { seaState: 0 };
+    const html = panelsFor(subject);
+    const mentions = html.split("no direction").length - 1;
+    expect(mentions).toBe(1);
   });
 });
