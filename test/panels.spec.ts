@@ -1292,6 +1292,18 @@ describe("the streaks the lamps lay", () => {
   });
 
   /**
+   * **Read the bearing off a streak, not the length.** Where it lies follows from the
+   * positions and Rule 21; how far it runs is the specular geometry of the lamp's height and
+   * the eye's, and neither of those is recorded - both are made from the ship's beam. Saying
+   * only the first puts an assumed figure beside a recorded one at the same confidence.
+   */
+  it("says the length rests on heights nobody recorded", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("read a bearing off a streak rather than a length");
+    expect(html).toContain("issue #8");
+  });
+
+  /**
    * **No sea, no streak** - and said rather than left as a paragraph about lamps on the water
    * standing over water with nothing on it. A reflection needs a surface with a slope.
    */

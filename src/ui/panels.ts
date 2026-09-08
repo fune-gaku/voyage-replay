@@ -329,10 +329,25 @@ function streakNote(scenario: Scenario, conditions: Conditions): string {
     "light. It fades out inside the range Rule 22 gives that light, because a reflection is " +
     "dimmer than its source and one that outlived the lamp would be inventing a detection. " +
     "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, and how " +
-    "much of a reflection reaches an eye depends on the sea and the air." +
+    `much of a reflection reaches an eye depends on the sea and the air. ${LENGTH_RESTS_ON_HEIGHTS}` +
     over
   );
 }
+
+/**
+ * **Read the bearing off a streak and not the length.**
+ *
+ * Where a streak lies follows from the clock, the positions and Rule 21, all of which the
+ * source gives or the arithmetic settles. How FAR it runs is the specular geometry of two
+ * heights - the lamp's above the water and the eye's - and neither is recorded: both are made
+ * from the ship's beam, which is issue #8. Saying only the first would put a figure that rests
+ * on an assumption beside one that rests on the record, at the same apparent confidence.
+ */
+const LENGTH_RESTS_ON_HEIGHTS =
+  "And read a bearing off a streak rather than a length: where it lies follows from the " +
+  "positions and Rule 21, but how far it runs is set by how high the lamp is and how high " +
+  "the eye is, and neither of those is recorded - both are made up from the ship's beam " +
+  "(issue #8).";
 
 const SKY_ONLY_IN_THE_WATER =
   "The sky is drawn nowhere but in the water: there is no dome over this scene, so the body " +
