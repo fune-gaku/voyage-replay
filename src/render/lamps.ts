@@ -26,8 +26,10 @@
  *   ahead of a ship seen from astern - the same 180-degree error `visibleLights` warns about,
  *   and just as plausible in a still frame.
  * - **The streak must die before the lamp does.** A reflection is dimmer than its source, so
- *   one that outlived the light would invent a detection. `core/illumination.ts` enforces the
- *   inequality at half the lamp's Rule 22 range.
+ *   one that outlived the light would invent a detection. The cut-off is applied to the whole
+ *   path - lamp to water to eye - which by the triangle inequality is never shorter than the
+ *   lamp's own range to that eye, so the rule holds at every geometry rather than at the ones
+ *   somebody thought of. `core/illumination.ts` sets it at half the Rule 22 range.
  * - **A mark's streak carries the rhythm.** A steady lane under a `Q(9)` is a worse claim
  *   than no lane at all, because the rhythm is what identifies the mark. The lamp's own
  *   on/off decides whether it is uploaded at all.
@@ -166,9 +168,15 @@ vec3 lampsTowards( vec3 reflected, vec3 at, float carried ) {
     vec4 lamp = uLamp[ i ];
     if ( lamp.w <= 0.0 ) continue;
     vec3 towards = lamp.xyz - at;
-    float range = length( towards );
+    // **The whole way round: lamp to water to eye.** A reflected ray takes two sides of a
+    // triangle where the direct one takes the third, so this is never shorter than the
+    // lamp's own range to the observer - and the cut-off below therefore puts the streak out
+    // before the lamp goes out, whatever the geometry. Measured on the first leg alone,
+    // water close under a lamp carries a streak to an eye standing beyond the light's own
+    // range, which is the picture inventing a detection.
+    float path = length( towards ) + distance( at, cameraPosition );
     float reach = uLampArc[ i ].w * ${STREAK_REACH_OF_NOMINAL.toFixed(2)};
-    if ( range >= reach ) continue;
+    if ( path >= reach ) continue;
 
     // The bearing of THIS WATER from the lamp, off the bow of the ship carrying it.
     float bearing = atan( at.x - lamp.x, -( at.z - lamp.z ) ) - uLampArc[ i ].x;
@@ -180,8 +188,8 @@ vec3 lampsTowards( vec3 reflected, vec3 at, float carried ) {
       : ( relative >= start || relative < end );
     if ( !inside ) continue;
 
-    float spread = min( 1.0, pow( ${STREAK_FULL_METRES.toFixed(1)} / max( range, 0.001 ), 2.0 ) );
-    float t = clamp( range / reach, 0.0, 1.0 );
+    float spread = min( 1.0, pow( ${STREAK_FULL_METRES.toFixed(1)} / max( path, 0.001 ), 2.0 ) );
+    float t = clamp( path / reach, 0.0, 1.0 );
     float fall = spread * ( 1.0 - t * t * ( 3.0 - 2.0 * t ) );
     float away = acos( clamp( dot( reflected, normalize( towards ) ), -1.0, 1.0 ) );
     sum += uLampColour[ i ] * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );

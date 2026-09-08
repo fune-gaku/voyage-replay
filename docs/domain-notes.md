@@ -877,6 +877,13 @@ RANGE and no candela, and how much of a reflection reaches an eye depends on the
 air. So the inequality is declared and enforced — the streak is gone by half the lamp's own
 Rule 22 range — rather than derived. Half is a choice; that it is less than one is not.
 
+**The cut-off is applied to the whole path: lamp to water to eye.** A reflected ray takes two
+sides of a triangle where the direct one takes the third, so the path is never shorter than the
+lamp's own range to that observer, and the rule then holds at every geometry rather than at the
+ones somebody thought of. Measured on the lamp-to-water leg alone — which is the obvious way to
+write it — water lying close under a lamp still carries a streak to an eye standing four miles
+off a three-mile light.
+
 The peak falls as the inverse square inside that, which is a point source's light on the water,
 and is held flat inside a hundred metres so that a lamp close aboard does not divide by nothing.
 

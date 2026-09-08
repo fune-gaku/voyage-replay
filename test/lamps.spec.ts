@@ -111,6 +111,33 @@ describe("how far a streak reaches", () => {
     expect(STREAK_REACH_OF_NOMINAL).toBeLessThan(1);
   });
 
+  /**
+   * **The rule holds at every geometry, not at the ones somebody thought of.** The figure
+   * handed in is the whole path - lamp to water to eye - and a reflected ray takes two sides
+   * of a triangle where the direct one takes the third. So no patch of water anywhere can
+   * carry a streak to an eye that is itself beyond the lamp's range: the path is never
+   * shorter than that range. Measured on the lamp-to-water leg alone, water close under a
+   * lamp would carry one to an eye four miles off a three-mile light.
+   */
+  it("cannot reach an eye standing beyond the lamp's own range", () => {
+    const lampAt = { x: 0, z: 0 };
+    const eyeAt = { x: 4 * METRES_PER_NAUTICAL_MILE, z: 0 };
+    const direct = Math.hypot(eyeAt.x - lampAt.x, eyeAt.z - lampAt.z);
+    expect(direct).toBeGreaterThan(nominal);
+
+    // Every patch of water between them, and a few off to the side.
+    for (let along = 0; along <= 1; along += 0.05) {
+      for (const off of [0, 500, 2000]) {
+        const water = { x: lampAt.x + along * (eyeAt.x - lampAt.x), z: off };
+        const path =
+          Math.hypot(water.x - lampAt.x, water.z - lampAt.z) +
+          Math.hypot(eyeAt.x - water.x, eyeAt.z - water.z);
+        expect(path).toBeGreaterThanOrEqual(direct - 1e-6);
+        expect(streakBrightness(path, nominal), `${along} ${off}`).toBe(0);
+      }
+    }
+  });
+
   it("falls away with range, as a point source's light on the water does", () => {
     let last = Infinity;
     for (const range of [50, 200, 400, 800, 1600, 2400]) {
@@ -187,6 +214,11 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("lobeWidth( carried, 0.0 )");
     // And draws nothing at all where no sea is stated, as the sky does.
     expect(LAMPS_GLSL).toContain("if ( uSeaSlope < 0.0 ) return sum;");
+  });
+
+  it("measures the reach over the whole path, lamp to water to eye", () => {
+    expect(LAMPS_GLSL).toContain("length( towards ) + distance( at, cameraPosition )");
+    expect(LAMPS_GLSL).toContain("if ( path >= reach ) continue;");
   });
 
   it("carries the same two figures the range rule uses", () => {

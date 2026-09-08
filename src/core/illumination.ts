@@ -199,23 +199,30 @@ export function glitterSpreadRadians(
 export const STREAK_REACH_OF_NOMINAL = 0.5;
 
 /**
- * How bright a lamp's streak is at this range, as a fraction of its brightest.
+ * How bright a lamp's streak is over this path, as a fraction of its brightest.
  *
- * Two things in it, and only the first is physics. A point source's irradiance on the water
- * falls as the inverse square, which is why a streak shortens as a ship draws off. The second
- * is the cut-off above: the fade is taken to zero inside the lamp's own reach, so that the
- * streak cannot outlive the light that casts it.
+ * **`pathMetres` is the whole way round: lamp to water to eye**, and that is what makes the
+ * rule hold rather than nearly hold. A reflected ray travels the two legs of a triangle where
+ * the direct one travels the third, so the path is never shorter than the lamp's own range to
+ * the observer - and a cut-off applied to it therefore puts the streak out before the lamp
+ * goes out, at every geometry rather than at the ones somebody thought of. Measured on the
+ * first leg alone, water close under a lamp would still carry a streak to an eye standing
+ * well beyond the range Rule 22 gives that light, which is the picture inventing a detection.
+ *
+ * Two things in it, and only the first is physics: a point source's irradiance falls as the
+ * inverse square, which is why a streak shortens as a ship draws off. The second is the
+ * cut-off above.
  *
  * `nominalRangeMetres` is Rule 22's, carried on the light itself.
  */
-export function streakBrightness(rangeMetres: number, nominalRangeMetres: number): number {
+export function streakBrightness(pathMetres: number, nominalRangeMetres: number): number {
   const reach = nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
-  if (rangeMetres >= reach) return 0;
+  if (pathMetres >= reach) return 0;
   // Full out to the reference range and inverse-square beyond it, so a lamp close aboard does
   // not divide by nothing.
-  const spread = Math.min(1, (STREAK_FULL_METRES / Math.max(rangeMetres, 1e-6)) ** 2);
+  const spread = Math.min(1, (STREAK_FULL_METRES / Math.max(pathMetres, 1e-6)) ** 2);
   // And smoothed to nothing at the reach, or the streak would end at a visible edge.
-  const t = Math.min(Math.max(rangeMetres / reach, 0), 1);
+  const t = Math.min(Math.max(pathMetres / reach, 0), 1);
   return spread * (1 - t * t * (3 - 2 * t));
 }
 
