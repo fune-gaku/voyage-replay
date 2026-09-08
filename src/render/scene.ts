@@ -43,6 +43,7 @@ import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
 import { setLamps, type LitLamp } from "./lamps.js";
+import { at, exposureFor } from "./tone.js";
 import { buildSkyDome, setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
@@ -128,6 +129,15 @@ export interface SceneParts {
    * still sea rather than as honesty.
    */
   setSeaClock(secondsFromStart: number): void;
+  /**
+   * What the renderer's tone curve should be exposed at, for the view showing now.
+   *
+   * **Read every frame rather than set once**, because it changes with the view: a chart is
+   * lit for reading and a bridge view is lit by the sky, and those are twenty-five million
+   * to one apart between a night and a day. `render/tone.ts` solves it from the one figure
+   * the palette declares.
+   */
+  exposure(): number;
   /** How much of the picture the shortest drawable wave has to fill - a property of the frame. */
   setPixelAngle(radians: number): void;
   /**
@@ -203,27 +213,51 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 5000
  * spends its time undoing. Issue #15.
  */
 const NIGHT = {
-  sky: 0x05080e,
-  zenith: 0x02030a,
+  sky: 0x6d8ec9,
+  zenith: 0x3d5ea8,
   water: 0x0a121d,
-  land: 0x03050a,
-  ambient: 0.28,
-  bodyLobe: 1,
-  streak: 1,
-  lampPool: 0.03,
-  luxToScreen: 4,
+  land: 0x2a2f38,
+  skyLuminance: 2e-4,
+  zenithLuminance: 1.1e-4,
+  skyLux: 0.002,
+  streak: 0.25,
+  lampPool: 0.012,
+  showsAt: 0.05,
 };
 const DAY = {
   sky: 0x9dc0e6,
   zenith: 0x3d7ac4,
   water: 0x1d4360,
   land: 0x6b7a5e,
-  ambient: 0.55,
-  bodyLobe: 0.6,
-  streak: 1,
-  lampPool: 0.03,
-  luxToScreen: 6e-6,
+  skyLuminance: 5000,
+  zenithLuminance: 2000,
+  skyLux: 20000,
+  streak: 0.25,
+  lampPool: 0.012,
+  showsAt: 0.62,
 };
+
+/**
+ * **The palette is albedos and luminances now, and the one chosen figure is the exposure.**
+ *
+ * `water` and `land` are what those surfaces reflect - albedo, which is what a standard
+ * material's colour has always meant - and they are lit by real illuminances: `skyLux` is
+ * what the sky puts on a horizontal surface, and the body's own comes out of
+ * `core/illumination.ts` rather than out of here.
+ *
+ * `sky` and `zenith` are hues, and `skyLuminance` and `zenithLuminance` are how bright they
+ * are in candela per square metre. A clear moonless night sky is about 2e-4 and a daylit one
+ * about 5000 - **twenty-five million to one**, which is why one set of numbers never served
+ * both and why every attempt to make it do so either whited out the day or hid the night.
+ *
+ * `streak` and `lampPool` are the two coefficients that remain: the geometry factor a
+ * specular reflection carries, and the sea's own diffuse reflectance over pi. Both are near
+ * their textbook values and neither is a brightness.
+ *
+ * `showsAt` is where the anchor lands on the screen - the sea for a night, the sky for a day -
+ * and `render/tone.ts` solves the exposure from it. **One declared figure per condition**,
+ * where there were four.
+ */
 
 /**
  * **How bright a reflection may draw, which is a property of the CONDITION and not of what is
@@ -305,7 +339,7 @@ export function buildScene(
   const scene = new Scene();
   // What shows where nothing is drawn. The dome below covers the bridge view; this is what
   // the plan view sees, and a chart is not a sky.
-  scene.background = new Color(palette.sky);
+  scene.background = at(new Color(palette.sky), palette.skyLuminance);
   const fog = buildFog(palette, environment?.visibilityMetres, extentMetres);
   scene.fog = fog;
 
@@ -395,8 +429,10 @@ function addWater(
   });
   applyCurvature(material, curvature);
   const waves = makeWaveUniforms();
-  waves.sky.uSkyHorizon.value.setHex(palette.sky);
-  waves.sky.uSkyZenith.value.setHex(palette.zenith);
+  // Hue from the palette, magnitude from the photometry: a night sky is 2e-4 cd/m2 and a
+  // daylit one 5000, and `render/tone.ts` is what makes both showable.
+  waves.sky.uSkyHorizon.value.copy(at(new Color(palette.sky), palette.skyLuminance));
+  waves.sky.uSkyZenith.value.copy(at(new Color(palette.zenith), palette.zenithLuminance));
   applyWaves(material, waves);
   const components = drawnSea(sea);
   setWaves(waves, components);
@@ -463,6 +499,26 @@ interface Switchable {
   grid: GridControl;
 }
 
+/**
+ * What a chart is lit by, which is nothing in the sky.
+ *
+ * A plan view is a diagram and is lit for reading - the judgement `setDiagramView` has been
+ * making about the lighting, the map's tint and the grid all along. With the bridge view on a
+ * photometric scale this needs a figure of its own, and it is a figure about legibility.
+ */
+const CHART_LUX = 12000;
+
+/** And where that lands on the screen: a chart is read, so it is drawn at reading brightness. */
+const CHART_SHOWS_AT = 0.72;
+
+/**
+ * A full moon puts about a quarter of a lux on a horizontal surface, and the sun about sixty
+ * thousand at the altitude these scenarios see. Both are the standard figures, and the moon's
+ * own phase is applied to the first out of `core/illumination.ts` rather than guessed here.
+ */
+const FULL_MOON_LUX = 0.25;
+const SUNLIGHT_LUX = 60000;
+
 /** The switches the view owns, wired to everything that answers to them. */
 /** Everything on `SceneParts` that is a switch rather than a thing: the whole of it but the scene. */
 type Controls = Omit<SceneParts, "scene" | "actors">;
@@ -474,6 +530,9 @@ function viewControls(
   frame: { extentMetres: number; palette: Palette },
 ): Controls {
   const { extentMetres, palette } = frame;
+  // Which view is showing, for the exposure - the one thing that has to answer to it outside
+  // of `setDiagram` itself.
+  let diagram = false;
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -488,8 +547,14 @@ function viewControls(
       centreSeaOn(parts, frame.centre);
     },
     setDiagramView: (on: boolean): void => {
+      diagram = on;
       setDiagram(scene, parts, lights.setDiagram, on);
     },
+    // A chart is exposed for reading and a bridge view for the sky it is under.
+    exposure: (): number =>
+      diagram
+        ? exposureFor(CHART_LUX, CHART_SHOWS_AT)
+        : exposureFor(palette.skyLuminance, palette.showsAt),
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
@@ -505,8 +570,8 @@ function viewControls(
  * not the band would be asking about a sea nobody is drawing.
  */
 /** What a lamp gives back off the water in this condition. See `Palette`. */
-function exposureOf(palette: Palette): { streak: number; pool: number; luxToScreen: number } {
-  return { streak: palette.streak, pool: palette.lampPool, luxToScreen: palette.luxToScreen };
+function exposureOf(palette: Palette): { streak: number; pool: number } {
+  return { streak: palette.streak, pool: palette.lampPool };
 }
 
 function seaControls(
@@ -533,7 +598,7 @@ function seaControls(
       // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
       // same flag the waves answer to, asked rather than worked out a second time.
       const drawnAsSea = parts.waves.uWaveScale.value > 0;
-      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null, palette.bodyLobe);
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null);
     },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
@@ -693,7 +758,7 @@ function buildFog(
   extentMetres: number,
 ): Fog {
   return new Fog(
-    palette.sky,
+    at(new Color(palette.sky), palette.skyLuminance),
     visibilityMetres ? visibilityMetres * 0.25 : extentMetres * 1.4,
     visibilityMetres ?? extentMetres * 3,
   );
@@ -724,11 +789,11 @@ interface Lights {
 }
 
 function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
-  const ambient = new AmbientLight(0xffffff, palette.ambient);
+  const ambient = new AmbientLight(0xffffff, palette.skyLux);
   // A clear day is directional: most of the light from one place, little of it diffuse. The
   // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
   // which is not warm, and tinting it would be inventing a sunset.
-  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, night ? 0.25 : 1.75);
+  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, 0);
   key.position.set(1, 2, 1);
   scene.add(ambient);
   scene.add(key);
@@ -739,14 +804,18 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   // How much of the full figure the body is worth: one for the sun and for a full moon, less
   // for every other phase, zero when nothing is up. The night's own 0.25 is therefore a FULL
   // moon's, which is the same declaration `BRIGHTEST_LOBE` makes about the water.
-  let share = 1;
+  // Nothing has said what is up yet, and a scene that assumed a full moon would light the
+  // hulls before anybody asked it to.
+  let share = 0;
   const apply = (): void => {
-    ambient.intensity = diagram ? Math.max(palette.ambient, 1.35) : palette.ambient;
-    // A chart is lit for reading and answers to nothing in the sky; a bridge view is lit by
-    // whatever is up there, and by nothing at all when nothing is.
-    key.intensity = diagram ? 0.8 : (night ? 0.25 : 1.75) * share;
+    // A chart is lit for reading and answers to nothing in the sky, so it keeps a figure of
+    // its own rather than a real one; a bridge view is lit by whatever is up there, in lux,
+    // and by nothing at all when nothing is.
+    ambient.intensity = diagram ? CHART_LUX : palette.skyLux;
+    key.intensity = diagram ? CHART_LUX : (night ? FULL_MOON_LUX : SUNLIGHT_LUX) * share;
   };
 
+  apply();
   return {
     setDiagram: (on: boolean): void => {
       diagram = on;

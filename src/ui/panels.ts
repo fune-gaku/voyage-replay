@@ -337,11 +337,15 @@ const WHAT_A_LAMP_DOES =
   "light, and both fade out inside the range Rule 22 gives that light, because a reflection " +
   "is dimmer than its source and one that outlived the lamp would be inventing a detection. " +
   "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
-  "gives each light a range, Annex I gives the candela that range was set from, and the rest " +
-  "is the inverse square with the incidence angle - so a six mile masthead light twenty " +
-  "metres up lays about 0.002 lux on the sea a hundred metres off, which is what the stars " +
-  "do and a tenth of what the moon did. What stays chosen is one figure per condition saying " +
-  "what a lux draws as, and it is set so that a lamp and the moon are on one scale. ";
+  "gives each light a range, Annex I gives the candela that range was set from and the beam " +
+  "profile that keeps it near the horizontal, and the rest is the inverse square with the " +
+  "incidence angle - so a six mile masthead light twenty metres up lays about half a " +
+  "thousandth of a lux on the sea a hundred metres off, which is a quarter of what the stars " +
+  "do. The whole picture is drawn on that scale: the sky, the moon and the lamps are in real " +
+  "units and a filmic curve is what turns them into a screen, which has a hundred to one " +
+  "where a moonlit night has fifteen hundred. **One figure per condition is chosen** - where " +
+  "the curve is exposed - and it is set by naming what has to be visible rather than by " +
+  "adjusting until it looks right. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

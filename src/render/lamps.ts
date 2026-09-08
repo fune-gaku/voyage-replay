@@ -119,12 +119,6 @@ export interface LampUniforms {
    * and the streak is the lamp seen in the water rather than light coming out of it.
    */
   uLampStreak: { value: number };
-  /**
-   * **What a lux draws as.** The one figure per condition that maps the computed illuminance
-   * onto the screen - and it is shared with the body's own exposure, so that a lamp and the
-   * moon are drawn on one scale. See `Palette.luxToScreen`.
-   */
-  uLampLux: { value: number };
 }
 
 export function makeLampUniforms(): LampUniforms {
@@ -134,7 +128,6 @@ export function makeLampUniforms(): LampUniforms {
     uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
     uLampPool: { value: 0 },
     uLampStreak: { value: 0 },
-    uLampLux: { value: 0 },
   };
 }
 
@@ -152,11 +145,10 @@ export function makeLampUniforms(): LampUniforms {
 export function setLamps(
   uniforms: LampUniforms,
   lamps: LitLamp[],
-  exposure: { streak: number; pool: number; luxToScreen: number },
+  exposure: { streak: number; pool: number },
 ): void {
   uniforms.uLampPool.value = exposure.pool;
   uniforms.uLampStreak.value = exposure.streak;
-  uniforms.uLampLux.value = exposure.luxToScreen;
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -228,7 +220,7 @@ export function lampLight(
   lamp: LitLamp,
   patch: { at: Point; up: Point },
   where: { eye: Point; lobeWidthRadians: number },
-  exposure: { streak: number; pool: number; luxToScreen: number },
+  exposure: { streak: number; pool: number },
 ): LampLight {
   const { at, up } = patch;
   const towards = { x: lamp.at.x - at.x, y: lamp.at.y - at.y, z: lamp.at.z - at.z };
@@ -244,12 +236,15 @@ export function lampLight(
   // How far below the lamp's own horizon this patch lies - geometry, not the facet's tilt.
   const spread = verticalSpread((Math.asin(Math.min(Math.max(toLamp.y, 0), 1)) * 180) / Math.PI);
   const t = Math.min(Math.max(path / reach, 0), 1);
-  const common =
-    exposure.luxToScreen * ((lamp.candela * spread) / (slant * slant)) * (1 - t * t * (3 - 2 * t));
+  const common = ((lamp.candela * spread) / (slant * slant)) * (1 - t * t * (3 - 2 * t));
 
   const away = Math.acos(Math.min(Math.max(dot(reflectedAt(patch, where.eye), toLamp), -1), 1));
+  const width = where.lobeWidthRadians;
+  // Illuminance into luminance: the slope density puts the same light into a narrower lobe
+  // when the sea is smoother, which is what makes a calm sea's reflections bright.
+  const density = Math.exp(-0.5 * (away / width) ** 2) / (2 * Math.PI * width * width);
   return {
-    streak: exposure.streak * common * Math.exp(-0.5 * (away / where.lobeWidthRadians) ** 2),
+    streak: exposure.streak * common * density,
     pool: exposure.pool * common * landing,
   };
 }
@@ -299,7 +294,6 @@ uniform vec3 uLampColour[${SHADER_LAMPS}];
 uniform vec4 uLampArc[${SHADER_LAMPS}];
 uniform float uLampPool;
 uniform float uLampStreak;
-uniform float uLampLux;
 
 // What the lamps do to this patch of water: its own image of each of them, and the light
 // each of them lands on it. The second comes back through the out parameter, because it is
@@ -367,12 +361,15 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // The reflection takes no incidence cosine - a mirror does not care how obliquely the
     // light arrives, only where it goes.
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * uLampLux * reaching * fall
-      * exp( -0.5 * pow( away / width, 2.0 ) );
+    // **A luminance, not an illuminance.** The lamp's light on this patch, turned into what
+    // leaves it towards the eye: the slope density puts the same light into a narrower lobe
+    // when the sea is smoother, which is what makes a calm sea's reflections bright.
+    float density = exp( -0.5 * pow( away / width, 2.0 ) ) / ( 6.2831853 * width * width );
+    sum += uLampColour[ i ] * uLampStreak * reaching * fall * density;
 
     // The pool does, because that is what Lambert's law is: light spread over the area it
     // falls on. There from every bearing, where the streak is only where the geometry lines up.
-    lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;
+    lit += uLampColour[ i ] * uLampPool * reaching * landing * fall;
   }
   return sum;
 }

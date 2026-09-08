@@ -21,9 +21,6 @@ function gradientSky(): ReturnType<typeof makeSkyUniforms> {
   return uniforms;
 }
 
-/** What a full moon's own peak is allowed to be, which the palette decides. See `Palette`. */
-const EXPOSURE = 1;
-
 const moon = (azimuthDegrees: number, altitudeDegrees: number): Lit => ({
   body: "moon",
   altitudeDegrees,
@@ -113,7 +110,7 @@ describe("the path a body lays", () => {
 
   it("is brightest towards the body and falls away from it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     const at = (azimuth: number): number =>
       skyColourAt(towardsBody(moon(azimuth, 41)), uniforms).getHSL({ h: 0, s: 0, l: 0 }).l;
@@ -131,7 +128,7 @@ describe("the path a body lays", () => {
    */
   it("leaves the far side of the sky where it found it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     const away = towardsBody(moon(11, 41));
     const withPath = skyColourAt(away, uniforms).r;
@@ -144,16 +141,26 @@ describe("the path a body lays", () => {
    * **A wider sea lays a wider path**, which is the whole reason the width is computed rather
    * than chosen: the lane's angular width IS a measurement of the surface's slope.
    */
-  it("widens with the spread it is given", () => {
+  /**
+   * **A wider sea spreads the same light over a wider path**, so the way to ask is what
+   * fraction of the middle is left twenty degrees off it - not which is brighter there. A
+   * broad lobe is dimmer everywhere near its own centre, because the light in it is the same
+   * light: that is what makes a calm sea's reflections hard and a rough sea's soft.
+   */
+  it("spreads the same light wider rather than adding any", () => {
     const narrow = gradientSky();
     const wide = gradientSky();
-    setSkyBody(narrow, moon(191, 41), 0.01, EXPOSURE);
-    setSkyBody(wide, moon(191, 41), 0.09, EXPOSURE);
+    setSkyBody(narrow, moon(191, 41), 0.01);
+    setSkyBody(wide, moon(191, 41), 0.09);
 
-    const off = towardsBody(moon(191 + 20, 41));
-    const lightness = (u: ReturnType<typeof makeSkyUniforms>): number =>
-      skyColourAt(off, u).getHSL({ h: 0, s: 0, l: 0 }).l;
-    expect(lightness(wide)).toBeGreaterThan(lightness(narrow));
+    const held = (u: ReturnType<typeof makeSkyUniforms>): number =>
+      skyColourAt(towardsBody(moon(191 + 20, 41)), u).r /
+      skyColourAt(towardsBody(moon(191, 41)), u).r;
+    expect(held(wide)).toBeGreaterThan(held(narrow));
+    // And the broad one's own middle is the dimmer of the two, for the same reason.
+    expect(skyColourAt(towardsBody(moon(191, 41)), wide).r).toBeLessThan(
+      skyColourAt(towardsBody(moon(191, 41)), narrow).r,
+    );
   });
 
   /**
@@ -163,7 +170,7 @@ describe("the path a body lays", () => {
    */
   it("draws no path at all where nothing states a sea", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), null, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), null);
 
     const towards = towardsBody(moon(191, 41));
     expect(skyColourAt(towards, uniforms).getHex()).toBe(
@@ -177,7 +184,7 @@ describe("the path a body lays", () => {
    */
   it("leaves a stated calm the body's own disc rather than nothing", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), 0, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), 0);
     expect((uniforms.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(0.265, 3);
     expect(uniforms.uSeaSlope.value).toBe(0);
   });
@@ -190,25 +197,26 @@ describe("the path a body lays", () => {
    */
   it("widens the lobe by exactly what the normals have stopped carrying", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), measured);
     const towards = towardsBody(moon(191, 41));
 
     // Near the eye the normals carry the drawn sea's own slope; far out they carry none.
     const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
-    // Dead centre both peak alike - a Gaussian's height does not depend on its width.
-    expect(skyColourAt(towards, uniforms, 0).r).toBeCloseTo(
-      skyColourAt(towards, uniforms, drawn).r,
-      12,
-    );
+    const held = (carried: number): number =>
+      skyColourAt(towardsBody(moon(191, 41 + 25)), uniforms, carried).r /
+      skyColourAt(towards, uniforms, carried).r;
 
-    // Twenty-five degrees off the middle, the far lobe is the wider - which is the point.
-    const off = towardsBody(moon(191, 41 + 25));
-    expect(skyColourAt(off, uniforms, 0).r).toBeGreaterThan(skyColourAt(off, uniforms, drawn).r);
+    // Where the normals have given up, the lobe holds more of its middle twenty-five degrees
+    // out - it is wider - and its middle is dimmer, because it is the same light spread.
+    expect(held(0)).toBeGreaterThan(held(drawn));
+    expect(skyColourAt(towards, uniforms, 0).r).toBeLessThan(
+      skyColourAt(towards, uniforms, drawn).r,
+    );
   });
 
   it("draws no path where no body is up", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, null, measured, EXPOSURE);
+    setSkyBody(uniforms, null, measured);
     expect(uniforms.uSkyBodyLobe.value.y).toBe(0);
   });
 
@@ -219,23 +227,25 @@ describe("the path a body lays", () => {
   it("dims the path with the body rather than only moving it", () => {
     const full = gradientSky();
     const crescent = gradientSky();
-    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, measured, EXPOSURE);
-    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, measured, EXPOSURE);
+    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, measured);
+    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, measured);
     expect(crescent.uSkyBodyLobe.value.x).toBeCloseTo(full.uSkyBodyLobe.value.x * 0.06, 9);
   });
 
-  /** The sun is not brighter than the ceiling; it is the ceiling. */
-  it("holds the sun at the same ceiling as a full moon rather than blowing past it", () => {
+  /**
+   * **The sun is not held at a ceiling any more; it is sixty thousand lux and a full moon is
+   * a quarter of one.** Nothing has to clamp them together now that a tone curve turns a
+   * luminance into a picture - and clamping them is what made a daylight path a white hole
+   * and a lamp's lane nothing at all.
+   */
+  it("carries each body's own illuminance rather than a shared ceiling", () => {
     const sun = gradientSky();
-    setSkyBody(
-      sun,
-      { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 },
-      measured,
-      EXPOSURE,
-    );
+    setSkyBody(sun, { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 }, measured);
+    expect(sun.uSkyBodyLobe.value.x).toBe(60_000);
+
     const full = gradientSky();
-    setSkyBody(full, moon(191, 41), measured, EXPOSURE);
-    expect(sun.uSkyBodyLobe.value.x).toBe(full.uSkyBodyLobe.value.x);
+    setSkyBody(full, moon(191, 41), measured);
+    expect(full.uSkyBodyLobe.value.x).toBeCloseTo(0.25, 9);
   });
 });
 
@@ -252,7 +262,7 @@ describe("the sky above the water", () => {
 
   it("meets the water's own reflection at the horizon", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     // A ray just above the horizon, and the same ray as the water would reflect it.
     const grazing = new Vector3(0.2, 0.004, -0.98).normalize();
@@ -271,7 +281,7 @@ describe("the sky above the water", () => {
    */
   it("shows the body over a sea nobody stated, where the water shows none", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), null, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), null);
     const towards = towardsBody(moon(191, 41));
 
     expect(skyDomeColourAt(towards, uniforms).b).toBeGreaterThan(
@@ -288,7 +298,7 @@ describe("the sky above the water", () => {
    */
   it("draws the body at its own size rather than the sea's", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     // Five degrees off it: well inside the sea's lobe, and far outside the disc.
     const off = towardsBody(moon(196, 41));
@@ -299,7 +309,7 @@ describe("the sky above the water", () => {
   /** And a sky with nothing up is the gradient and nothing else. */
   it("is the gradient alone when no body is up", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, null, measured, EXPOSURE);
+    setSkyBody(uniforms, null, measured);
     const towards = new Vector3(0, 0.5, -0.87).normalize();
     expect(skyDomeColourAt(towards, uniforms).getHex()).toBe(
       skyGradientAt(towards, uniforms).getHex(),

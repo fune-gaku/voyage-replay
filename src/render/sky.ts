@@ -69,8 +69,25 @@ export interface SkyUniforms {
  */
 const HORIZON_POWER = 2.5;
 
-/** Relative brightness at which a body draws at the full exposure. Anything above clamps. */
-const FULL_MOON_LOBE = 1;
+/**
+ * What each body puts on a horizontal surface, in lux, before the sea does anything with it.
+ *
+ * The standard figures. The moon's phase multiplies the first - a half moon is a ninth of a
+ * full one, which `core/illumination.ts` computes - and the sun does not need a second figure
+ * because nothing draws both at once.
+ */
+const FULL_MOON_LUX = 0.25;
+const SUNLIGHT_LUX = 60000;
+
+/**
+ * The quarter a specular reflection off a surface of small slopes carries.
+ *
+ * From the glitter radiance of a point source - the Jacobian between the slope distribution
+ * and the reflected direction - and it is a quarter for the same reason a facet tilted by an
+ * angle turns its ray by twice that. **The same figure the lamps use**, because the moon and
+ * a sidelight are reflected in the same water and by the same arithmetic.
+ */
+const SPECULAR_GEOMETRY = 0.25;
 
 /**
  * The sun and the moon are both about half a degree across, which is why eclipses work.
@@ -123,7 +140,8 @@ export function bodyGlowAt(towards: Vector3, uniforms: SkyUniforms, width: numbe
   const lobe = uniforms.uSkyBodyLobe.value;
   if (lobe.y <= 0 || uniforms.uSkyBody.value.lengthSq() === 0) return new Color(0, 0, 0);
   const away = Math.acos(Math.min(Math.max(towards.dot(uniforms.uSkyBody.value), -1), 1));
-  const glow = lobe.x * Math.exp(-0.5 * (away / width) ** 2);
+  const density = Math.exp(-0.5 * (away / width) ** 2) / (2 * Math.PI * width * width);
+  const glow = SPECULAR_GEOMETRY * lobe.x * density;
   return new Color(glow, glow, glow);
 }
 
@@ -311,7 +329,6 @@ export function setSkyBody(
   uniforms: SkyUniforms,
   lit: Lit | null,
   measuredSlopeVariance: number | null,
-  exposure: number,
 ): void {
   // **Each is set whether or not the other is there.** A moonless night is when a lamp's
   // streak is the whole picture and the lamps reflect in the same water; and a body is up
@@ -324,8 +341,12 @@ export function setSkyBody(
     return;
   }
   uniforms.uSkyBody.value.copy(towardsBody(lit));
+  // **The body's own illuminance, in lux**: a full moon puts a quarter of one on a
+  // horizontal surface and the sun about sixty thousand, and the phase between them comes
+  // out of `core/illumination.ts`. The shader turns it into the luminance of the path by the
+  // same slope density the lamps use, so the moon and a sidelight are on one scale.
   uniforms.uSkyBodyLobe.value.set(
-    exposure * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
+    lit.body === "sun" ? SUNLIGHT_LUX : FULL_MOON_LUX * lit.relativeBrightness,
     BODY_ANGULAR_RADIUS_RADIANS,
   );
 }

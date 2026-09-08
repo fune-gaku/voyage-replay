@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import type { LocalPosition } from "../src/core/geodesy.js";
 import { conditionsAt } from "../src/core/conditions.js";
+import { displayed } from "../src/render/tone.js";
 import { prepareTrack, sampleAt } from "../src/core/track.js";
 import type { Environment, Track } from "../src/core/types.js";
 import type { Frame } from "../src/render/basemap.js";
@@ -377,7 +378,8 @@ describe("the sky the water hands back", () => {
     parts.setDiagramView(false);
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
 
-    // A 41 per cent moon is a sixteenth of a full one by Allen's relation, not two fifths.
+    // A 41 per cent moon is a sixteenth of a full one by Allen's relation, not two fifths -
+    // and the light is in lux now, so a full moon is a quarter of one.
     parts.setSky(conditionsAt(suoNada, sea, collision));
     const crescent = key.intensity;
     expect(crescent).toBeGreaterThan(0);
@@ -389,7 +391,9 @@ describe("the sky the water hands back", () => {
     lit.setDiagramView(false);
     const sun = lit.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
     lit.setSky(conditionsAt(suoNada, day, Date.parse("2025-11-27T12:00:00+09:00") / 1000));
-    expect(sun.intensity).toBeCloseTo(1.75, 6);
+    // Sixty thousand lux, which is what the sun puts on a horizontal surface at these
+    // altitudes - not a figure chosen to look right against a chosen ambient.
+    expect(sun.intensity).toBeCloseTo(60_000, 0);
   });
 
   /**
@@ -398,10 +402,15 @@ describe("the sky the water hands back", () => {
    * daylight path came out at 3.1 where 1.0 is white - clipped flat across a cone fifty
    * degrees wide, which is a hole in the water rather than a path.
    */
-  it("keeps the middle of the path off white, in both conditions", () => {
-    for (const [light, when] of [
-      ["night", "2025-11-27T19:40:00+09:00"],
-      ["day", "2025-11-27T11:40:00+09:00"],
+  /**
+   * **The exposure is what keeps anything off white now, and it is solved rather than tuned.**
+   * A night sea is 2e-4 cd/m2 and a daylit sky 5000 - twenty-five million to one - so the
+   * check is not that a number is small but that the tone curve lands both where they belong.
+   */
+  it("lands the sea and the body where each condition needs them", () => {
+    for (const [light, when, sea_, path] of [
+      ["night", "2025-11-27T19:40:00+09:00", 0.1, 0.5],
+      ["day", "2025-11-27T11:40:00+09:00", 0.75, 0.5],
     ] as const) {
       const environment = { ...sea, lightCondition: light } satisfies Environment;
       const parts = buildScene(environment, 1000);
@@ -409,11 +418,15 @@ describe("the sky the water hands back", () => {
       parts.setSky(conditionsAt(suoNada, environment, Date.parse(when) / 1000));
 
       const uniforms = skyOf(parts);
+      const horizon = uniforms["uSkyHorizon"]?.value as { r: number };
       const lobe = uniforms["uSkyBodyLobe"]?.value as Vector3;
-      const horizon = uniforms["uSkyHorizon"]?.value as Color;
-      // The body's own peak, plus the brightest the sky under it gets.
-      expect(lobe.x + horizon.r, light).toBeLessThan(1);
-      expect(lobe.x, light).toBeGreaterThan(0);
+      const exposure = parts.exposure();
+
+      // The sky itself lands in the readable part of the curve rather than at either end.
+      expect(displayed(horizon.r, exposure), light).toBeGreaterThan(0.005);
+      expect(displayed(horizon.r, exposure), light).toBeLessThan(sea_);
+      // And the body over it is the brighter of the two, by a long way.
+      expect(displayed(lobe.x, exposure), light).toBeGreaterThan(path);
     }
   });
 
@@ -424,11 +437,12 @@ describe("the sky the water hands back", () => {
 
     parts.setDiagramView(true);
     parts.setSky(conditionsAt(suoNada, sea, collision + 9 * 3600));
-    expect(key.intensity).toBeCloseTo(0.8, 6);
+    const chart = key.intensity;
+    expect(chart).toBeGreaterThan(1000);
 
     parts.setSky(conditionsAt(suoNada, sea, collision));
     parts.setDiagramView(true);
-    expect(key.intensity).toBeCloseTo(0.8, 6);
+    expect(key.intensity).toBe(chart);
   });
 
   /**
@@ -661,17 +675,32 @@ describe("what a fine day and a night are made of", () => {
    * which is what this was - lights them alike and flattens any sea. Neither is in the
    * source, which is why the choice is written down rather than assumed.
    */
-  it("puts most of a day's light in one direction, and most of a night's nowhere", () => {
+  /**
+   * **The lights are in lux now, so the two conditions are apart by what they are apart by.**
+   * The sun puts about sixty thousand on a horizontal surface and a full moon a quarter of
+   * one - a quarter of a million to one - and the sky under each is 20 000 against 0.002.
+   * Neither figure is chosen to look right against the other any more.
+   */
+  it("lights each condition with what actually lights it", () => {
     const ambientOf = (scene: { children: { type: string }[] }): number =>
       (scene.children.find((c) => c.type === "AmbientLight") as AmbientLight).intensity;
     const keyOf = (scene: { children: { type: string }[] }): number =>
       (scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight).intensity;
 
-    const day = buildScene({ lightCondition: "day" }, 1000).scene;
-    expect(keyOf(day)).toBeGreaterThan(ambientOf(day) * 2);
+    const day = buildScene({ lightCondition: "day" }, 1000);
+    day.setDiagramView(false);
+    // Nine in the evening at the fixture's origin is the middle of its day: it sits on the
+    // prime meridian and the scenarios are written in Japanese time.
+    day.setSky(conditionsAt(ORIGIN, undefined, Date.parse("2025-11-27T21:00:00+09:00") / 1000));
+    expect(ambientOf(day.scene)).toBe(20_000);
+    expect(keyOf(day.scene)).toBeCloseTo(60_000, 0);
 
-    const night = buildScene({ lightCondition: "night" }, 1000).scene;
-    expect(keyOf(night)).toBeLessThan(ambientOf(night));
+    const night = buildScene({ lightCondition: "night" }, 1000);
+    night.setDiagramView(false);
+    expect(ambientOf(night.scene)).toBeCloseTo(0.002, 9);
+    // Until something says what is up, nothing has a direction: a scene that assumed a full
+    // moon would light the hulls before anybody asked it to.
+    expect(keyOf(night.scene)).toBe(0);
   });
 
   /**

@@ -4,7 +4,15 @@
  */
 
 import type { PerspectiveCamera } from "three";
-import { Color, Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
+import {
+  ACESFilmicToneMapping,
+  Color,
+  Group,
+  Vector3,
+  WebGLRenderer,
+  type Camera,
+  type OrthographicCamera,
+} from "three";
 
 import {
   hullCentreOffset,
@@ -294,6 +302,10 @@ export class Replay {
 
     this.renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // **The scene is in real units now**, and a display has about a hundred to one where a
+    // night with a moon in it has fifteen hundred. A filmic curve rolls the top off; without
+    // one, everything over the exposure is a flat white area rather than something bright.
+    this.renderer.toneMapping = ACESFilmicToneMapping;
     this.aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
     this.overhead = makeOverheadCamera();
     this.bridge = makeBridgeCamera(this.aspect);
@@ -489,6 +501,8 @@ export class Replay {
     }
     // After the lamps have been shown or hidden, since what is lit is what lays a streak.
     this.stage.sceneParts.setLamps(this.lampsLit(diagramMode));
+    // After the view is settled, because a chart and a bridge are exposed differently.
+    this.renderer.toneMappingExposure = this.stage.sceneParts.exposure();
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
     this.drawOverlay(diagramMode);
   }

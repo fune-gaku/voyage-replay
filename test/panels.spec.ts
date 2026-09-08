@@ -1291,7 +1291,8 @@ describe("the streaks the lamps lay", () => {
     expect(html).toContain("inside the lamp");
     expect(html).toContain("inventing a detection");
     expect(html).toContain("Annex I gives the candela");
-    expect(html).toContain("what the stars do");
+    expect(html).toContain("a quarter of what the stars");
+    expect(html).toContain("One figure per condition is chosen");
   });
 
   /**

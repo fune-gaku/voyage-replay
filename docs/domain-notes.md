@@ -1074,3 +1074,51 @@ A shader's array length is a constant, so the water reflects at most `SHADER_LAM
 The page counts the lamps a scenario can light against the same constant and says when there
 are more, because a picture missing streaks under a page that lists every light is the two
 disagreeing.
+
+## The picture is in real units, and a curve is what makes it showable
+
+Once a lamp's light is computed and the sea is a colour somebody chose, the computation
+disappears into the colour. `NIGHT.water` was `0x0a121d` — a dark sea to look at, and about
+fifty times brighter than starlight on water. The lamp lanes, correct to a fraction of a lux,
+sat at a tenth of it.
+
+So everything is on one scale now:
+
+| | luminance |
+|---|---:|
+| clear moonless night sky | 2e-4 cd/m² |
+| a masthead light's lane on it | ~5e-4 |
+| a 41 per cent moon's glitter path | ~6e-3 |
+| a full moon's | ~0.1 |
+| clear day sky | 5000 |
+
+**A display has about a hundred to one and a moonlit night has fifteen hundred**, so something
+has to compress. A filmic curve rolls the top off; a clip throws it away, and a clip is what
+made a daylight path a white hole and a lamp's lane nothing at all. `render/tone.ts` mirrors
+three's ACES so that a test can ask what the screen would show without a screen.
+
+### What is chosen, and what stopped being
+
+| | before | now |
+|---|---|---|
+| the sky's colour | a hex chosen to look right | a hue, at a stated luminance |
+| the ambient and key lights | 0.28 and 0.25, chosen against each other | 0.002 lx of starlight, 0.25 lx of full moon |
+| the body's path | an exposure per condition | its own illuminance, by the phase law |
+| a lamp's lane | an exposure per condition | its own candela, by Rule 22 and Annex I |
+| **the exposure** | four figures, per condition | **one, per condition** |
+
+The remaining figure is where the tone curve is exposed, and it is **solved from what has to
+be visible** rather than adjusted until it looks right: a night is anchored on its sea, a day
+on its sky, a chart on being readable. Move the anchor and the exposure follows.
+
+Two coefficients survive as coefficients: the quarter a specular reflection carries out of the
+glitter geometry, and the sea's own diffuse reflectance of a few per cent. Neither is a
+brightness.
+
+### The night has to stay dark by the new route
+
+This project treats a night's darkness as evidence rather than styling — it is why the plan
+view's map is not tinted down and why the bridge view is left dark. A filmic curve lifts
+shadows, so the check is not that the code changed but that the sea still lands where a dark
+sea lands: **0.016 in the red at the horizon, against a moon's path at 0.89 and a masthead's
+lane at 0.10.** Measured, after.

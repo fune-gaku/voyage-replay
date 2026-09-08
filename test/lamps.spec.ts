@@ -21,7 +21,7 @@ import {
 } from "../src/render/lamps.js";
 
 /** How brightly a streak and a pool may draw here, which the scene's palette decides. */
-const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
+const EXPOSURE = { streak: 0.25, pool: 0.012 };
 
 /** A lamp somewhere, with an arc and a range, for the claims below to be about. */
 function lamp(over: Partial<LitLamp> = {}): LitLamp {
@@ -245,7 +245,7 @@ describe("what reaches the shader", () => {
     expect(uniforms.uLamp.value[0]?.w).toBeCloseTo(12.1, 1);
     expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
     expect(uniforms.uLampStreak.value).toBe(EXPOSURE.streak);
-    expect(uniforms.uLampLux.value).toBe(EXPOSURE.luxToScreen);
+
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -291,7 +291,7 @@ describe("what reaches the shader", () => {
 describe("what each lamp puts on the water", () => {
   const EYE = { x: 0, y: 11, z: 0 };
   const UP = { x: 0, y: 1, z: 0 };
-  const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
+  const EXPOSURE = { streak: 0.25, pool: 0.012 };
   /** The lobe a 2 m sea gives, from `core/illumination.ts`. */
   const WHERE = { eye: EYE, lobeWidthRadians: Math.sqrt(2 * 0.0525) };
 
@@ -400,7 +400,7 @@ describe("the copy that runs on the card", () => {
     // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
     expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
     expect(LAMPS_GLSL).toContain(
-      "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;",
+      "lit += uLampColour[ i ] * uLampPool * reaching * landing * fall;",
     );
   });
 
@@ -412,15 +412,15 @@ describe("the copy that runs on the card", () => {
    */
   it("keeps the streak's exposure out of the pool's", () => {
     const uniforms = makeLampUniforms();
-    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.03, luxToScreen: 4 });
+    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.012 });
 
     // The lamp is still there and still lighting the water, with nothing mirrored in it.
     expect(uniforms.uLamp.value[0]?.w).toBeGreaterThan(0);
-    expect(uniforms.uLampPool.value).toBe(0.03);
+    expect(uniforms.uLampPool.value).toBe(0.012);
     expect(uniforms.uLampStreak.value).toBe(0);
     // Each is its own factor in the shader, so neither multiplies the other.
-    expect(LAMPS_GLSL).toContain("uLampStreak * uLampLux * reaching");
-    expect(LAMPS_GLSL).toContain("uLampPool * uLampLux * reaching");
+    expect(LAMPS_GLSL).toContain("uLampStreak * reaching");
+    expect(LAMPS_GLSL).toContain("uLampPool * reaching");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {
