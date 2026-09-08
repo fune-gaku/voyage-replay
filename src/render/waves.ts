@@ -317,6 +317,9 @@ const FADE = (near: Vector2): string =>
 const DISPLACEMENT = `
 #include <begin_vertex>
 vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+// The MEAN surface, and only the horizontal part of it is used from here: the phases below
+// and the ones in the fragment stage read .xz, which no vertical displacement touches. The
+// height is put back at DRAWN_SURFACE below, once everything that moves it has run.
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
@@ -330,6 +333,24 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
   }
   transformed.y += fade * height;
 }
+`;
+
+/**
+ * The world position of the water as it is actually DRAWN, for the reflection to start from.
+ *
+ * **At `project_vertex` rather than beside the displacement**, because two things move this
+ * surface and only one of them is in this file: the waves lift it here, and `curvature.ts`
+ * sinks it afterwards by the drop that puts a horizon in the picture. Taken before either,
+ * the reflected ray leaves the mean sea while the normal it bounces off belongs to the drawn
+ * one - a plausible pattern in the wrong place, which is this project's whole failure mode.
+ *
+ * Injecting here rather than recomputing the drop keeps the curvature's formula in one file.
+ * The horizontal part is unchanged by both, so the wave phases above and in the fragment
+ * stage are unaffected by the reassignment.
+ */
+const DRAWN_SURFACE = `
+vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+#include <project_vertex>
 `;
 
 /**
@@ -418,6 +439,7 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
+    shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", DRAWN_SURFACE);
     shader.fragmentShader = FRAGMENT_DECLARATIONS + shader.fragmentShader;
     // Every sky uniform by name, so adding one to `SkyUniforms` cannot leave it unregistered
     // - which compiles, runs, and draws a sky with nothing in it.

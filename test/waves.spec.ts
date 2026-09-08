@@ -1,4 +1,4 @@
-import { MeshStandardMaterial, type WebGLRenderer } from "three";
+import { MeshStandardMaterial, ShaderLib, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -31,7 +31,7 @@ function shaderStub(): {
 } {
   return {
     uniforms: {},
-    vertexShader: "void main() {\n#include <begin_vertex>\n}",
+    vertexShader: "void main() {\n#include <begin_vertex>\n#include <project_vertex>\n}",
     fragmentShader:
       "void main() {\n#include <normal_fragment_begin>\n#include <opaque_fragment>\n}",
   };
@@ -126,6 +126,16 @@ describe("patching the water's shader", () => {
     expect(shader.fragmentShader).toContain("vec3 skyTowards( vec3 towards )");
     expect(shader.fragmentShader).toContain("normal = normalize( mix( normal, waved, fade ) )");
     expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, skyTowards(");
+
+    // **The reflection starts from the water as DRAWN**, so the world position is taken
+    // again after everything that moves it - the waves here and the curvature's drop, which
+    // `curvature.ts` applies afterwards. Taken once at the top, the ray would leave the mean
+    // sea while the normal it bounces off belongs to the drawn one.
+    const first = shader.vertexShader.indexOf("vWaveWorld = ");
+    const again = shader.vertexShader.lastIndexOf("vWaveWorld = ");
+    expect(again).toBeGreaterThan(first);
+    expect(shader.vertexShader.indexOf("transformed.y +=")).toBeLessThan(again);
+    expect(shader.vertexShader.slice(again)).toContain("#include <project_vertex>");
     // The chunks are still there: the injections wrap them rather than replacing them.
     expect(shader.vertexShader).toContain("#include <begin_vertex>");
     expect(shader.fragmentShader).toContain("#include <opaque_fragment>");
@@ -235,6 +245,33 @@ describe("the shader carries the whole sea it was given", () => {
 
     const packed = uniforms.uWave.value.reduce((total, wave) => total + wave.z ** 2 / 2, 0);
     expect(Math.sqrt(packed)).toBeCloseTo(seaway.surfaceStdDevMetres, 6);
+  });
+});
+
+/**
+ * **The chunk names are three's, and a rename is a silent flat sea.**
+ *
+ * Every patch here is a string replacement on three's own shader. If a future three renames
+ * one of these includes, the replacement finds nothing, does nothing, and the water renders
+ * without the thing that was meant to be injected - which for the displacement is a flat sea,
+ * and for the reflection is water that hands back the mean surface. The stub above cannot
+ * catch that, because it is written here; this asks three.
+ */
+describe("the chunks three actually has", () => {
+  it("still contains every include this file replaces", () => {
+    const { vertexShader, fragmentShader } = ShaderLib.standard;
+    expect(vertexShader).toContain("#include <begin_vertex>");
+    expect(vertexShader).toContain("#include <project_vertex>");
+    expect(fragmentShader).toContain("#include <normal_fragment_begin>");
+    expect(fragmentShader).toContain("#include <opaque_fragment>");
+  });
+
+  /** And the order they come in, since the reflection has to be taken after the lift. */
+  it("puts the projection after the displacement it has to follow", () => {
+    const vertex = ShaderLib.standard.vertexShader;
+    expect(vertex.indexOf("#include <begin_vertex>")).toBeLessThan(
+      vertex.indexOf("#include <project_vertex>"),
+    );
   });
 });
 

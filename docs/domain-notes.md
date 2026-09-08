@@ -770,6 +770,22 @@ the normals already do comes out at the measured width.
 **Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not**, and the
 alternative is a number tuned until the picture looks right.
 
+### The ray has to leave the water that is drawn
+
+The reflection starts from the fragment's world position, and that position is moved twice:
+the waves lift it and `curvature.ts` sinks it by the drop that puts a horizon in the picture.
+Taken before either — which is where the varying was first assigned, at the top of the vertex
+chunk — the ray leaves the MEAN sea while the normal it bounces off belongs to the drawn one.
+
+The angles are small (about half a degree from a metre of wave height at a hundred metres, and
+under a tenth near the horizon, against a lobe tens of degrees wide) and that is not the
+point: it is a plausible pattern computed off a surface the picture does not have, which is
+this project's whole failure mode in miniature. The position is therefore taken again at
+`project_vertex`, after everything that moves it — rather than recomputing the drop, which
+would put the curvature's formula in a second file.
+
+Only the vertical part changes, so the wave phases, which read `.xz`, are untouched.
+
 ### Where a sea is not stated, no path is drawn
 
 No sea, no slope, no width — and a mirror-sharp body on dead flat water would assert a calm
