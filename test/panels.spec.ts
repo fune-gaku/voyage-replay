@@ -1271,6 +1271,61 @@ describe("the path on the water", () => {
   });
 });
 
+/**
+ * **The streaks a lamp lays are the one reflection a reader can use.** A hull mirrored in
+ * daylight is a broken column nobody reads anything off; a sidelight's colour on the water
+ * says which side of a ship an observer was on, at a range where the lamp is one point.
+ */
+describe("the streaks the lamps lay", () => {
+  function atNight(sea?: Environment["waves"]): Scenario {
+    const subject = scenario();
+    subject.environment = { lightCondition: "night", ...(sea ? { waves: sea } : {}) };
+    return subject;
+  }
+
+  it("names the arc, the range and the brightness it will not claim", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("Each lamp lays a streak on the water");
+    expect(html).toContain("inside the lamp");
+    expect(html).toContain("inventing a detection");
+    expect(html).toContain("Rule 22 states a range and no candela");
+  });
+
+  /**
+   * **Read the bearing off a streak, not the length.** Where it lies follows from the
+   * positions and Rule 21; how far it runs is the specular geometry of the lamp's height and
+   * the eye's, and neither of those is recorded - both are made from the ship's beam. Saying
+   * only the first puts an assumed figure beside a recorded one at the same confidence.
+   */
+  it("says the length rests on heights nobody recorded", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("read a bearing off a streak rather than a length");
+    expect(html).toContain("issue #8");
+  });
+
+  /**
+   * **No sea, no streak** - and said rather than left as a paragraph about lamps on the water
+   * standing over water with nothing on it. A reflection needs a surface with a slope.
+   */
+  it("says the lamps lay nothing over a sea nobody stated", () => {
+    const html = panelsFor(atNight());
+    expect(html).toContain("The lamps lay no streaks on the water");
+    expect(html).not.toContain("Each lamp lays a streak on the water");
+  });
+
+  /** A day has no navigation lights drawn, so it has nothing to say about their streaks. */
+  it("says nothing at all over a day", () => {
+    const day = scenario();
+    day.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    };
+    const html = panelsFor(day);
+    expect(html).not.toContain("lays a streak on the water");
+    expect(html).not.toContain("lay no streaks");
+  });
+});
+
 describe("which way the drawn sea runs", () => {
   /**
    * The waves are drawn from one direction with a narrow spread, so a reader can take a

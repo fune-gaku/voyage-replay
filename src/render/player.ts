@@ -4,7 +4,7 @@
  */
 
 import type { PerspectiveCamera } from "three";
-import { Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
+import { Color, Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
 
 import {
   hullCentreOffset,
@@ -15,6 +15,7 @@ import {
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import {
   distanceMetres,
+  METRES_PER_NAUTICAL_MILE,
   offsetAlongHeading,
   relativeBearingDegrees,
   toLocalPosition,
@@ -25,6 +26,7 @@ import { formatClock, formatDate } from "../core/time.js";
 import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import { BASEMAP_CREDIT } from "./basemap.js";
+import { BRIGHTEST_STREAK, type LitLamp } from "./lamps.js";
 import {
   frameOverheadCamera,
   makeBridgeCamera,
@@ -40,7 +42,7 @@ import { drawnAppearance } from "../actors/mark/appearance.js";
 import { floats } from "../actors/mark/mooring.js";
 import { buildHull } from "./hull.js";
 import { showingAt } from "../core/light-character.js";
-import { buildMark, LAMP_COLOURS, type MarkParts } from "./mark.js";
+import { ASSUMED_MARK, buildMark, LAMP_COLOURS, type MarkParts } from "./mark.js";
 import {
   buildNavigationLights,
   type LampAudience,
@@ -98,6 +100,15 @@ interface Cast {
   eyeHeightMetres: number;
   /** The bridge, forward of the HULL's centre - hull.ts's frame, not the reported one. */
   bridgeOffsetForwardMetres: number;
+  /**
+   * Which way she was pointed at the instant last drawn, or null where her track does not
+   * reach it.
+   *
+   * Written by `place` rather than worked out again, because the arcs her lamps lay on the
+   * water are measured off this bow: a second answer would put the streak and the lamp on
+   * different bearings by whatever `placementOf` decided differently.
+   */
+  headingDegreesTrue: number | null;
 }
 
 /**
@@ -475,6 +486,8 @@ export class Replay {
       this.float(mark, eye);
       this.shine(mark, diagramMode);
     }
+    // After the lamps have been shown or hidden, since what is lit is what lays a streak.
+    this.stage.sceneParts.setLamps(this.lampsLit(diagramMode));
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
     this.drawOverlay(diagramMode);
   }
@@ -599,11 +612,74 @@ export class Replay {
     if (showing !== null) lamp.material.color.set(LAMP_COLOURS[showing]);
   }
 
+  /**
+   * Every lamp lit over this water, for the streaks it lays on it.
+   *
+   * **Not only the lamps drawn.** Which lamps a viewer can SEE is a question about the
+   * observer's bearing and `showFor` answers it; which patch of water carries a lamp's colour
+   * is a question about that patch, measured off the bow of the ship carrying it. Her own
+   * sidelights colour the water alongside her, and a watchkeeper on her bridge sees that
+   * while never seeing the lamps themselves.
+   *
+   * A chart has no streaks on it and neither has a day, which is the judgement `setDiagramView`
+   * has already made about the lighting, the map and the glitter path.
+   */
+  private lampsLit(diagramMode: boolean): LitLamp[] {
+    if (diagramMode || !this.night) return [];
+    const lamps: LitLamp[] = [];
+    for (const member of this.stage.cast) {
+      const heading = member.headingDegreesTrue;
+      if (heading === null) continue;
+      for (const { light, at } of member.lights.lit()) {
+        lamps.push({
+          at,
+          colour: new Color(LAMP_COLOURS[light.colour]),
+          peak: BRIGHTEST_STREAK,
+          headingDegreesTrue: heading,
+          arcStartDegrees: light.arc.startDegrees,
+          arcEndDegrees: light.arc.endDegrees,
+          nominalRangeMetres: light.nominalRangeNauticalMiles * METRES_PER_NAUTICAL_MILE,
+        });
+      }
+    }
+    for (const mark of this.stage.marks) lamps.push(...this.markLamp(mark));
+    return lamps;
+  }
+
+  /**
+   * A mark's lamp, if it is showing at this instant.
+   *
+   * **The rhythm carries onto the water.** A steady lane under a `Q(9)` would be a worse
+   * claim than no lane at all, because the rhythm is the whole of what identifies the mark -
+   * so the streak is asked the same question the lamp was, at the same moment, and is absent
+   * for every dark phase.
+   */
+  private markLamp(mark: Moored): LitLamp[] {
+    const lamp = mark.parts.lamp;
+    if (!lamp?.visible) return [];
+    return [
+      {
+        at: lamp.getWorldPosition(new Vector3()),
+        colour: lamp.material.color.clone(),
+        peak: BRIGHTEST_STREAK,
+        // All-round: IALA marks show over the whole horizon, and this format carries no
+        // sectored lights to say otherwise.
+        headingDegreesTrue: 0,
+        arcStartDegrees: 0,
+        arcEndDegrees: 360,
+        nominalRangeMetres: ASSUMED_MARK.lightRangeNauticalMiles * METRES_PER_NAUTICAL_MILE,
+      },
+    ];
+  }
+
   /** One ship at the current instant, or hidden if her track does not reach it. */
   private place(member: Cast, diagramMode: boolean, eye: Eye | null): void {
     const state = sampleAt(member.track, this.currentSeconds);
     member.group.visible = state !== null;
-    if (!state) return;
+    if (!state) {
+      member.headingDegreesTrue = null;
+      return;
+    }
 
     // The reported position, which is the antenna. The hull hangs off this group at the
     // offset below, so what moves here is the point the source states. The height is the
@@ -614,6 +690,7 @@ export class Replay {
     // transponder transmits no heading - the course over ground stands in, because
     // something has to be drawn; the panel says so rather than hiding it.
     const { heading, offset } = placementOf(member, state);
+    member.headingDegreesTrue = heading;
     member.group.rotation.y = headingToRotationY(heading);
     member.onHull.position.set(offset.starboardMetres, 0, -offset.forwardMetres);
 
@@ -835,6 +912,8 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     ),
     eyeHeightMetres: hull.eyeHeightMetres,
     bridgeOffsetForwardMetres: hull.bridgeOffsetForwardMetres,
+    // Nothing has placed her yet, which is not the same as pointing her north.
+    headingDegreesTrue: null,
   };
 }
 

@@ -3,6 +3,7 @@ import type * as THREE from "three";
 import type {
   Group,
   Mesh,
+  Vector4,
   MeshStandardMaterial,
   Object3D,
   Points,
@@ -1059,6 +1060,91 @@ describe("the canvas", () => {
  * ground it marks and does neither, and a structure seen riding a swell would be the picture
  * asserting something no sea does.
  */
+/**
+ * **The streaks a lamp lays on the water**, which are the one reflection in this picture that
+ * is evidence rather than decoration - a sidelight's colour reaching an observer on a bearing.
+ */
+describe("what the water is given to reflect", () => {
+  /** The lamps handed to the shader on the frame just drawn. */
+  function lampsOn(replay: InstanceType<typeof Replay>): Vector4[] {
+    const water = lastFrame().scene.children.find((child: Object3D) => child.name === "water");
+    const uniforms: Record<string, { value: unknown }> = {};
+    const shader = {
+      uniforms,
+      vertexShader: "#include <begin_vertex>\n#include <project_vertex>",
+      fragmentShader: "#include <normal_fragment_begin>\n#include <opaque_fragment>",
+    };
+    const material = (water as Mesh).material as MeshStandardMaterial;
+    material.onBeforeCompile(
+      shader as unknown as Parameters<MeshStandardMaterial["onBeforeCompile"]>[0],
+      null as unknown as WebGLRenderer,
+    );
+    void replay;
+    return (uniforms["uLamp"]?.value as Vector4[]).filter((lamp) => lamp.w > 0);
+  }
+
+  function atNight(marks: Scenario["marks"] = []): Scenario {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    };
+    subject.marks = marks;
+    return subject;
+  }
+
+  /**
+   * **Her own lamps light the water alongside her.** `showFor` hides them from her own
+   * bridge because a watchkeeper cannot see her own lamps - but she can see what they do to
+   * the sea, so the streaks are gated on the arc at the water rather than on the lamp.
+   */
+  it("hands over every ship's lamps, her own included", () => {
+    const replay = replayOf(atNight());
+    replay.setView({ kind: "bridge", actorId: "A" });
+    // Nine: the 180 m ship carries a second masthead light and the 49 m one does not, which
+    // is Rule 23's threshold. Both ships are here, the observer's own among them.
+    expect(lampsOn(replay).length).toBe(9);
+  });
+
+  it("hands over none of it by day, and none of it on a chart", () => {
+    const day = scenario();
+    day.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    };
+    const lit = replayOf(day);
+    lit.setView({ kind: "bridge", actorId: "A" });
+    expect(lampsOn(lit)).toHaveLength(0);
+
+    const chart = replayOf(atNight());
+    expect(lampsOn(chart)).toHaveLength(0);
+  });
+
+  /**
+   * **A mark's streak carries its rhythm.** A steady lane under a `Q(9)` is a worse claim
+   * than no lane at all: the rhythm is the whole of what identifies the mark, and a light
+   * that flashes over water that glows steadily says two different things about one lamp.
+   */
+  it("puts a mark's lamp in and takes it out again with its own flash", () => {
+    const replay = replayOf(
+      atNight([
+        { id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3, light: { character: "Fl R 10s" } },
+      ]),
+    );
+    replay.setView({ kind: "bridge", actorId: "A" });
+
+    const ships = 9;
+    const counts = [0, 0.25, 1.5, 3, 5, 7, 9].map((offset) => {
+      replay.seek(replay.startSeconds + offset);
+      return lampsOn(replay).length;
+    });
+    // The ships' lamps throughout, and one more only while the buoy is showing.
+    expect(counts).toContain(ships + 1);
+    expect(counts).toContain(ships);
+    expect(counts.filter((n) => n === ships + 1).length).toBeLessThan(counts.length / 2);
+  });
+});
+
 describe("marks riding, or not riding, the sea", () => {
   function withMarks(seaState?: number): Scenario {
     const subject = scenario();

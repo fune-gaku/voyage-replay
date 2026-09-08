@@ -173,7 +173,7 @@ describe("the path a body lays", () => {
     const uniforms = gradientSky();
     setSkyBody(uniforms, moon(191, 41), 0);
     expect((uniforms.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(0.265, 3);
-    expect(uniforms.uSkyBodyLobe.value.z).toBe(0);
+    expect(uniforms.uSeaSlope.value).toBe(0);
   });
 
   /**
@@ -234,15 +234,18 @@ describe("the path a body lays", () => {
  * another in every test here.
  */
 describe("the copy that runs on the card", () => {
-  it("carries the same four uniforms and the same shape", () => {
+  it("declares every uniform it is given, and keeps the same shape", () => {
+    // Whatever type each is: a missed declaration compiles nothing and draws no sky.
     for (const name of Object.keys(makeSkyUniforms())) {
-      expect(SKY_GLSL, name).toContain(`uniform vec3 ${name};`);
+      expect(SKY_GLSL, name).toMatch(new RegExp(`uniform (vec2|vec3|float) ${name};`));
     }
     expect(SKY_GLSL).toContain("vec3 skyTowards( vec3 towards, float carried )");
     // The gradient, and the Gaussian lobe on top of it.
     expect(SKY_GLSL).toContain("mix( uSkyHorizon, uSkyZenith");
     expect(SKY_GLSL).toContain("exp( -0.5 * pow( away / width, 2.0 ) )");
-    // The same difference the TypeScript mirror takes, written the same way round.
-    expect(SKY_GLSL).toContain("max( uSkyBodyLobe.z - carried, 0.0 )");
+    // The same difference the TypeScript mirror takes, written the same way round - and in
+    // a function, since the lamps reflect in the same water and must share the width.
+    expect(SKY_GLSL).toContain("float lobeWidth( float carried, float radius )");
+    expect(SKY_GLSL).toContain("max( uSeaSlope - carried, 0.0 )");
   });
 });

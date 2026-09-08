@@ -125,12 +125,12 @@ describe("patching the water's shader", () => {
     expect(shader.vertexShader).toContain("transformed.y +=");
     expect(shader.fragmentShader).toContain("vec3 skyTowards( vec3 towards, float carried )");
     expect(shader.fragmentShader).toContain("normal = normalize( mix( normal, waved, fade ) )");
-    expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, skyTowards(");
+    expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, handed, sky )");
     // The lane's width is settled per fragment, from what these normals are still carrying.
     expect(shader.fragmentShader).toContain("gCarriedSlope +=");
-    expect(shader.fragmentShader).toContain(
-      "skyTowards( reflect( look, gWorldNormal ), gCarriedSlope )",
-    );
+    expect(shader.fragmentShader).toContain("skyTowards( back, gCarriedSlope )");
+    // And the lamps are reflected in the same water, added to the sky rather than over it.
+    expect(shader.fragmentShader).toContain("lampsTowards( back, vWaveWorld, gCarriedSlope )");
 
     // **The reflection starts from the water as DRAWN**, so the world position is taken
     // again after everything that moves it - the waves here and the curvature's drop, which

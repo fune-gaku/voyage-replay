@@ -42,6 +42,7 @@ import { sampleAt, type PreparedPoint, type PreparedTrack } from "../core/track.
 import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
+import { setLamps, type LitLamp } from "./lamps.js";
 import { setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
@@ -143,6 +144,14 @@ export interface SceneParts {
    * a moon from one bearing while the hulls are lit from another.
    */
   setSky(conditions: Conditions): void;
+  /**
+   * The lamps lit over this water, each of which lays a streak on it.
+   *
+   * Handed in rather than found, because what is lit is a question about the scenario's
+   * clock and its rhythms - `render/player.ts` already answers it for the lamps themselves,
+   * and asking twice is how a streak ends up under a light that is out.
+   */
+  setLamps(lamps: LitLamp[]): void;
   /**
    * The sea under a point, as the water is DRAWN there.
    *
@@ -420,8 +429,11 @@ function seaControls(
   parts: Switchable,
   lights: Lights,
   night: boolean,
-): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "drawnSurfaceAt"> {
+): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "setLamps" | "drawnSurfaceAt"> {
   return {
+    setLamps: (lamps: LitLamp[]): void => {
+      setLamps(parts.waves.lamps, lamps);
+    },
     setSky: (conditions: Conditions): void => {
       // The night the PICTURE is drawn in, not the one the sun is in: a file saying night
       // with the sun computed above the horizon is a transcription error, and a sun path

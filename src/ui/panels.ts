@@ -28,6 +28,8 @@ import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { lightingAt } from "../core/illumination.js";
+import { lightsForVessel } from "../actors/vessel/lights.js";
+import { SHADER_LAMPS } from "../render/lamps.js";
 import { isNight } from "../render/scene.js";
 import { drawable } from "../render/waves.js";
 import {
@@ -116,7 +118,7 @@ function sky(scenario: Scenario): string {
       ],
       ["Stated in the file", conditions.statedLight ?? "not stated"],
       ["Visibility", visibilityText(conditions)],
-    ]) + notes([skyCaveat(conditions), pathNote(conditions)])
+    ]) + notes([skyCaveat(conditions), pathNote(conditions), streakNote(scenario, conditions)])
   );
 }
 
@@ -287,6 +289,66 @@ const BRIGHTNESS_IS_A_BOUND =
  * There is no dome over this scene and no environment map: the water IS the sky here, so the
  * body appears in the reflection and never above the horizon.
  */
+/**
+ * The streaks the lamps lay, which are the only reflection here that a reader can use.
+ *
+ * **Direction is the whole of it.** A hull reflected in daylight is a broken column of light
+ * nobody reads anything off; a red sidelight laying a red path towards an observer says which
+ * side of a ship they were on, and says it at a range where the lamp is a single point.
+ *
+ * Three things have to be said with it. The arc is answered at the water, so a lamp's colour
+ * only reaches sea its own sector covers. The streak dies inside the lamp's Rule 22 range,
+ * because a reflection that outlived its source would be inventing a detection. And the
+ * brightness is nobody's figure: Rule 22 states a range and no candela.
+ */
+function streakNote(scenario: Scenario, conditions: Conditions): string {
+  if (!isNight(conditions.statedLight)) return "";
+  // **No sea, no streak either** - and said, rather than left for a reader to notice that a
+  // paragraph about lamps on the water sits over water with nothing on it. It is the same
+  // reason the body lays no path: a reflection needs a surface with a slope to lie on.
+  if (!conditions.sea) {
+    return (
+      "The lamps lay no streaks on the water for the same reason: a reflection needs a " +
+      "surface with a slope to lie on, and nothing states a sea. On a night that is most of " +
+      "what a lookout has to see a ship by, so the picture is quieter here than the night was."
+    );
+  }
+  const lamps = scenario.actors.reduce(
+    (total, actor) => total + (actor.vessel ? lightsForVessel(actor.vessel).length : 0),
+    0,
+  );
+  const marks = (scenario.marks ?? []).filter((mark) => mark.light).length;
+  const over =
+    lamps + marks > SHADER_LAMPS
+      ? ` More lamps can be lit at once here than the water can reflect - ${lamps + marks} against ${SHADER_LAMPS} - so some of them lay no streak.`
+      : "";
+  return (
+    "Each lamp lays a streak on the water, on the bearing it is reflected along, and that is " +
+    "the one reflection in this picture a reader can take anything off. It is laid only over " +
+    "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
+    "light. It fades out inside the range Rule 22 gives that light, because a reflection is " +
+    "dimmer than its source and one that outlived the lamp would be inventing a detection. " +
+    "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, and how " +
+    `much of a reflection reaches an eye depends on the sea and the air. ${LENGTH_RESTS_ON_HEIGHTS}` +
+    over
+  );
+}
+
+/**
+ * **Read the bearing off a streak and not the length.**
+ *
+ * Where a streak lies follows from the clock, the positions and Rule 21, all of which the
+ * source gives or the arithmetic settles. How FAR it runs is the specular geometry of two
+ * heights - the lamp's above the water and the eye's - and neither is recorded: both are made
+ * from the ship's beam, which is issue #8. Saying only the first would put a figure that rests
+ * on an assumption beside one that rests on the record, at the same apparent confidence.
+ */
+const LENGTH_RESTS_ON_HEIGHTS =
+  "And read a bearing off a streak rather than a length: where it lies follows from the " +
+  "positions and Rule 21, but how far it runs is set by how high the lamp is and how high " +
+  "the eye is, and neither of those is recorded - both are made up from the ship's beam " +
+  "(issue #8).";
+
 const SKY_ONLY_IN_THE_WATER =
   "The sky is drawn nowhere but in the water: there is no dome over this scene, so the body " +
   "appears in the reflection and not above the horizon.";

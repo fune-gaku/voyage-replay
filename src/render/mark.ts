@@ -71,11 +71,21 @@ export interface AssumedMark {
    * one assumption used twice but a second, worse one made silently.
    */
   heightMetres: Record<MarkKind, number>;
+  /**
+   * How far a mark's light carries, which **no part of this format states**.
+   *
+   * COLREG Rule 22 answers this for a ship and says nothing about a buoy, and IALA's ranges
+   * are per light rather than in general - so this is a middling figure for a lit buoy and
+   * it is chosen. It decides one thing: how far the streak on the water may reach before it
+   * has to be gone, which `core/illumination.ts` holds to half of it.
+   */
+  lightRangeNauticalMiles: number;
 }
 
 export const ASSUMED_MARK: AssumedMark = {
   shape: CHOSEN.shape,
   heightMetres: { buoy: 2.4, beacon: 8 },
+  lightRangeNauticalMiles: 4,
 };
 
 const COLOURS: Record<MarkColour, ColorRepresentation> = {
