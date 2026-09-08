@@ -214,11 +214,11 @@ const DAY = { sky: 0x9dc0e6, zenith: 0x3d7ac4, water: 0x1d4360, land: 0x6b7a5e, 
  * everything at a graze, which puts the paler end of the gradient exactly where the sea
  * meets the sky.
  *
- * And `sky` is what fills the frame ABOVE the horizon, where no sky is drawn at all: there
- * is no dome and no environment map here, only the flat background and what the water hands
- * back. Taking the horizon's colour for it is what keeps the join at the waterline from
- * showing. A body appears in the reflection and never in the sky above it, which
- * `ui/panels.ts` says rather than leaving a reader to wonder where the moon is.
+ * **`sky` is the HORIZON's colour, not the sky's.** The frame above the waterline is covered
+ * by the dome in `render/sky.ts`, drawn from this same pair, so what fills the background is
+ * only what neither the dome nor anything else covers - the plan view, where a chart is not a
+ * sky. Taking the horizon's colour for that fallback is what keeps the join at the waterline
+ * from showing if the dome is ever off.
  */
 
 /**

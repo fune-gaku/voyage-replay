@@ -131,8 +131,8 @@ function sky(scenario: Scenario): string {
  * computed is how bright it was: cloud decides that and no report states it, the same gap
  * this section already declares about moonlight.
  *
- * The sky itself is drawn nowhere else. There is no dome over this scene, so the body appears
- * in the water and not above it - which a reader would otherwise be left to wonder about.
+ * The body stands in the sky above the waterline as well, drawn from the same gradient, so the
+ * path in the water lies under something a reader can see rather than under nothing.
  */
 function pathNote(conditions: Conditions): string {
   const lit = lightingAt(conditions, isNight(conditions.statedLight));

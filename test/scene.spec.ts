@@ -233,9 +233,10 @@ describe("the sea under something floating", () => {
 });
 
 /**
- * **The sky is only ever seen in the water.** There is no dome and no environment map here,
- * so what the sea hands back IS the sky - and until it handed back a direction rather than a
- * colour, the reflection made the waves visible and said nothing about where the moon was.
+ * **The sky and its reflection are one gradient drawn twice.** Until the water handed back a
+ * direction rather than a colour the reflection made the waves visible and said nothing about
+ * where the moon was; until the dome went over it, the sky above the waterline said nothing
+ * either.
  */
 describe("the sky the water hands back", () => {
   const suoNada = { lat: 33.905, lon: 131.7116667 };
