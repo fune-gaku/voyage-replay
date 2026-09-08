@@ -1,4 +1,5 @@
 import { Box3, LineDashedMaterial } from "three";
+import type { Mesh, MeshStandardMaterial, Vector3, WebGLRenderer } from "three";
 import type {
   AmbientLight,
   Color,
@@ -11,6 +12,7 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import type { LocalPosition } from "../src/core/geodesy.js";
+import { conditionsAt } from "../src/core/conditions.js";
 import { prepareTrack, sampleAt } from "../src/core/track.js";
 import type { Environment, Track } from "../src/core/types.js";
 import type { Frame } from "../src/render/basemap.js";
@@ -227,6 +229,108 @@ describe("the sea under something floating", () => {
     // A 3 m sea has a surface standard deviation of Hs/4, and the swell that carries it is
     // hundreds of metres long - all of which the mesh under a 20 m point still holds.
     expect(riseAt(parts, { east: 0, north: 20 })).toBeGreaterThan(0.6);
+  });
+});
+
+/**
+ * **The sky is only ever seen in the water.** There is no dome and no environment map here,
+ * so what the sea hands back IS the sky - and until it handed back a direction rather than a
+ * colour, the reflection made the waves visible and said nothing about where the moon was.
+ */
+describe("the sky the water hands back", () => {
+  const suoNada = { lat: 33.905, lon: 131.7116667 };
+  /** The reference case: the moon 41 degrees up on 191, and 41 per cent lit. */
+  const collision = Date.parse("2025-11-27T18:13:30+09:00") / 1000;
+  const sea = {
+    lightCondition: "night",
+    waves: { significantHeightMetres: 3, derivation: "measured" },
+  } as const satisfies Environment;
+
+  function skyOf(parts: ReturnType<typeof buildScene>): Record<string, { value: unknown }> {
+    const water = parts.scene.children.find((child) => child.name === "water") as Mesh;
+    const uniforms: Record<string, { value: unknown }> = {};
+    const shader = {
+      uniforms,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <normal_fragment_begin>\n#include <opaque_fragment>",
+    };
+    const material = water.material as MeshStandardMaterial;
+    material.onBeforeCompile(
+      shader as unknown as Parameters<MeshStandardMaterial["onBeforeCompile"]>[0],
+      null as unknown as WebGLRenderer,
+    );
+    return uniforms;
+  }
+
+  it("puts the body where the almanac puts it, in the scene's own axes", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+
+    // Bearing 191 at 41 degrees up: south and a little west, well above the water.
+    const body = skyOf(parts)["uSkyBody"]?.value as Vector3;
+    expect(body.y).toBeCloseTo(Math.sin((41 * Math.PI) / 180), 1);
+    expect(body.z).toBeGreaterThan(0);
+    expect(body.x).toBeLessThan(0);
+  });
+
+  /**
+   * **One direction for the whole frame.** A sea handing back a moon on 191 degrees while
+   * the hulls are lit from somewhere else is one picture making two claims.
+   */
+  it("points the key light at the same body the water reflects", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+
+    const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+    const body = skyOf(parts)["uSkyBody"]?.value as Vector3;
+    expect(key.position.clone().normalize().dot(body)).toBeCloseTo(1, 6);
+  });
+
+  /**
+   * **No sea stated, no path.** There is then no slope to widen the body with, and a
+   * mirror-sharp moon on flat water would assert a calm nobody recorded - which is the
+   * reference case, whose file states a light condition and nothing else.
+   */
+  it("lays no path over a sea nobody stated", () => {
+    const parts = buildScene({ lightCondition: "night" }, 1000);
+    parts.setDiagramView(false);
+    parts.setSky(conditionsAt(suoNada, { lightCondition: "night" }, collision));
+    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBe(0);
+  });
+
+  /**
+   * A chart has never had a glitter path drawn on it - the same judgement the lighting, the
+   * map's tint and the grid have already made about the plan view.
+   */
+  it("draws no path on the plan view", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(true);
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBe(0);
+
+    parts.setDiagramView(false);
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBeGreaterThan(0);
+  });
+
+  /**
+   * **The sky moves while the scenario runs**, which is why it is set every frame rather
+   * than when the scene was built: the reference case is eighty-seven minutes long and
+   * nautical twilight ends eleven minutes before the collision.
+   */
+  it("follows the body across the length of a scenario", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    const early = (skyOf(parts)["uSkyBody"]?.value as Vector3).clone();
+    parts.setSky(conditionsAt(suoNada, sea, collision + 3 * 3600));
+    const later = skyOf(parts)["uSkyBody"]?.value as Vector3;
+
+    // Three hours is about 45 degrees of rotation; nothing subtle about it.
+    expect(early.dot(later)).toBeLessThan(0.9);
   });
 });
 

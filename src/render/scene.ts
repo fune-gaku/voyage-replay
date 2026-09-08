@@ -7,7 +7,7 @@
  * and a reconstruction whose scale you cannot read is a cartoon.
  */
 
-import type { Mesh } from "three";
+import type { Mesh, Vector3 } from "three";
 import {
   AmbientLight,
   BufferAttribute,
@@ -24,7 +24,9 @@ import {
   Scene,
 } from "three";
 
+import type { Conditions } from "../core/conditions.js";
 import type { LocalPosition } from "../core/geodesy.js";
+import { glitterSpreadRadians, lightingAt } from "../core/illumination.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
@@ -39,6 +41,7 @@ import { sampleAt, type PreparedPoint, type PreparedTrack } from "../core/track.
 import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
+import { setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
   applyWaves,
@@ -126,6 +129,20 @@ export interface SceneParts {
   /** How much of the picture the shortest drawable wave has to fill - a property of the frame. */
   setPixelAngle(radians: number): void;
   /**
+   * Which body is up, where, and how wide a path it lays on the water.
+   *
+   * **Takes `Conditions` rather than the scenario's own fields**, which is the rule this
+   * whole layer answers to - and it takes them at an INSTANT, because the sky is the one
+   * part of the environment that is never constant. This project's reference case runs for
+   * eighty-seven minutes and nautical twilight ends eleven minutes before the collision; a
+   * sky set once when the scene was built would freeze the moon where it stood at the
+   * opening frame.
+   *
+   * It moves the key light too. One direction for the whole frame, or the water hands back
+   * a moon from one bearing while the hulls are lit from another.
+   */
+  setSky(conditions: Conditions): void;
+  /**
    * The sea under a point, as the water is DRAWN there.
    *
    * Anything that floats has to ask this rather than the sea itself. The water's geometry
@@ -175,8 +192,24 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 5000
  * somewhere that flatters the picture instead would be the kind of thing this project
  * spends its time undoing. Issue #15.
  */
-const NIGHT = { sky: 0x05080e, water: 0x0a121d, land: 0x03050a, ambient: 0.28 };
-const DAY = { sky: 0x74a5dc, water: 0x1d4360, land: 0x6b7a5e, ambient: 0.55 };
+const NIGHT = { sky: 0x05080e, zenith: 0x02030a, water: 0x0a121d, land: 0x03050a, ambient: 0.28 };
+const DAY = { sky: 0x9dc0e6, zenith: 0x3d7ac4, water: 0x1d4360, land: 0x6b7a5e, ambient: 0.55 };
+
+/**
+ * `sky` is the HORIZON's colour and `zenith` is overhead, and which is which matters twice.
+ *
+ * A clear sky is deepest overhead and pales towards the horizon, because a grazing line of
+ * sight runs through far more air - so the pair is not decoration, it is the one thing a
+ * reflection off water mostly sees. Water reflects almost nothing head-on and almost
+ * everything at a graze, which puts the paler end of the gradient exactly where the sea
+ * meets the sky.
+ *
+ * And `sky` is what fills the frame ABOVE the horizon, where no sky is drawn at all: there
+ * is no dome and no environment map here, only the flat background and what the water hands
+ * back. Taking the horizon's colour for it is what keeps the join at the waterline from
+ * showing. A body appears in the reflection and never in the sky above it, which
+ * `ui/panels.ts` says rather than leaving a reader to wonder where the moon is.
+ */
 
 /**
  * What the tiles are multiplied by - and it does NOT follow the light condition.
@@ -216,7 +249,7 @@ export function buildScene(
   const curvature = makeCurvatureUniforms();
   const water = addWater(scene, palette, curvature, environment);
   const { terrain, basemap } = addGround(scene, palette, curvature, ground);
-  const setLighting = addLighting(scene, palette, night);
+  const lights = addLighting(scene, palette, night);
 
   // Before the grid, so the scene's children keep the order they had when this was one
   // function: water, lights, cast, grid.
@@ -234,7 +267,7 @@ export function buildScene(
     sea: water.sea,
     grid: addGrid(scene),
   };
-  return { scene, actors, ...viewControls(scene, parts, setLighting, extentMetres) };
+  return { scene, actors, ...viewControls(scene, parts, lights, { extentMetres, night }) };
 }
 
 /**
@@ -272,7 +305,8 @@ function addWater(
   applyCurvature(material, curvature);
 
   const waves = makeWaveUniforms();
-  waves.uSkyColour.value.setHex(palette.sky);
+  waves.sky.uSkyHorizon.value.setHex(palette.sky);
+  waves.sky.uSkyZenith.value.setHex(palette.zenith);
   applyWaves(material, waves);
   // Where the source states no direction the sea still has to run somewhere, so it runs the
   // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
@@ -335,15 +369,16 @@ interface Switchable {
 }
 
 /** The switches the view owns, wired to everything that answers to them. */
+/** Everything on `SceneParts` that is a switch rather than a thing: the whole of it but the scene. */
+type Controls = Omit<SceneParts, "scene" | "actors">;
+
 function viewControls(
   scene: Scene,
   parts: Switchable,
-  setLighting: (on: boolean) => void,
-  extentMetres: number,
-): Pick<
-  SceneParts,
-  "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"
-> {
+  lights: Lights,
+  frame: { extentMetres: number; night: boolean },
+): Controls {
+  const { extentMetres, night } = frame;
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -358,12 +393,12 @@ function viewControls(
       centreSeaOn(parts, frame.centre);
     },
     setDiagramView: (on: boolean): void => {
-      setDiagram(scene, parts, setLighting, on);
+      setDiagram(scene, parts, lights.setDiagram, on);
     },
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
-    ...seaControls(parts),
+    ...seaControls(parts, lights, night),
   };
 }
 
@@ -376,8 +411,27 @@ function viewControls(
  */
 function seaControls(
   parts: Switchable,
-): Pick<SceneParts, "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"> {
+  lights: Lights,
+  night: boolean,
+): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "drawnSurfaceAt"> {
   return {
+    setSky: (conditions: Conditions): void => {
+      // The night the PICTURE is drawn in, not the one the sun is in: a file saying night
+      // with the sun computed above the horizon is a transcription error, and a sun path
+      // over a night palette would report it in a picture instead of in a sentence.
+      const lit = lightingAt(conditions, night);
+      lights.pointAt(lit ? towardsBody(lit) : null);
+      // **The width of the path is the sea's, and the sea is the one that is DRAWN.** Its
+      // slope is a third of a real one, so the missing roughness goes into the body's own
+      // lobe - measured off the components the water is made of, not off the spectrum they
+      // were cut from. See `core/illumination.ts`.
+      // **No path on a chart**, which is the judgement the lighting, the map tint and the
+      // grid have all already made: a plan view is a diagram, and a glitter path drawn on
+      // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
+      // same flag the waves answer to, asked rather than worked out a second time.
+      const drawnAsSea = parts.waves.uWaveScale.value > 0;
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? spreadOver(parts.sea) : null);
+    },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
     },
@@ -415,6 +469,24 @@ function setDiagram(
  * The sea under a point, damped by the same fade the shader uses and switched off wherever
  * the shader's is - so a chart, which has no waves, floats nothing.
  */
+/**
+ * How much wider than the drawn surface the reflected body has to be, for this sea.
+ *
+ * Null where nothing is drawn: no components, no slope, no width - and a mirror-sharp moon
+ * on flat water would assert a calm nobody recorded, which is the strongest claim this
+ * renderer can make about a sea it was told nothing about.
+ */
+function spreadOver(sea: WaveComponent[]): number | null {
+  if (sea.length === 0) return null;
+  let height = 0;
+  let slope = 0;
+  for (const wave of sea) {
+    height += wave.amplitudeMetres ** 2 / 2;
+    slope += (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2;
+  }
+  return glitterSpreadRadians(4 * Math.sqrt(height), slope);
+}
+
 /**
  * The sea as the mesh draws it HERE, which is less of it the further out the point is.
  *
@@ -518,8 +590,24 @@ function buildFog(
   );
 }
 
-/** Adds the two lights and hands back the switch described on `setDiagramLighting`. */
-function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boolean) => void {
+/** The two lights, the switch described on `setDiagramLighting`, and where the key points. */
+interface Lights {
+  setDiagram: (on: boolean) => void;
+  /**
+   * Point the key light at the body the water is reflecting.
+   *
+   * **One direction for the whole frame.** A sea handing back a moon on 191 degrees while
+   * the hulls are lit from somewhere else is one picture making two claims - the failure
+   * this project keeps meeting - and the direction has been computable all along:
+   * `core/celestial.ts` has had it since the panels started printing it.
+   *
+   * Below the horizon there is no body and the light stays where it was rather than being
+   * driven under the sea, which would light the hulls from beneath.
+   */
+  pointAt: (towards: Vector3 | null) => void;
+}
+
+function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   const ambient = new AmbientLight(0xffffff, palette.ambient);
   // A clear day is directional: most of the light from one place, little of it diffuse. The
   // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
@@ -529,9 +617,16 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): (on: boole
   scene.add(ambient);
   scene.add(key);
 
-  return (on: boolean): void => {
-    ambient.intensity = on ? Math.max(palette.ambient, 1.35) : palette.ambient;
-    key.intensity = on ? 0.8 : night ? 0.25 : 1.75;
+  return {
+    setDiagram: (on: boolean): void => {
+      ambient.intensity = on ? Math.max(palette.ambient, 1.35) : palette.ambient;
+      key.intensity = on ? 0.8 : night ? 0.25 : 1.75;
+    },
+    // A directional light in three shines from its position towards the origin, so the
+    // position IS the direction to the body - scaled up only to keep it clear of the scene.
+    pointAt: (towards: Vector3 | null): void => {
+      if (towards) key.position.copy(towards).multiplyScalar(1000);
+    },
   };
 }
 

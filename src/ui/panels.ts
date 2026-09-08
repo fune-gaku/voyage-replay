@@ -27,14 +27,17 @@ import { CHOSEN_DAMPING, ridingOf, type Riding } from "../actors/mark/riding.js"
 import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
+import { lightingAt } from "../core/illumination.js";
 import { isNight } from "../render/scene.js";
 import { drawable } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
+  coxMunkSlopeVariance,
   forceClass,
   fullyDevelopedHeightMetres,
   meanOfHighest,
   waveComponents,
+  windRaisingMetresPerSecond,
   type SeaEstimate,
   type WaveComponent,
   type WindEstimate,
@@ -113,9 +116,94 @@ function sky(scenario: Scenario): string {
       ],
       ["Stated in the file", conditions.statedLight ?? "not stated"],
       ["Visibility", visibilityText(conditions)],
-    ]) + note(skyCaveat(conditions))
+    ]) + notes([skyCaveat(conditions), pathNote(conditions)])
   );
 }
+
+/**
+ * The path a body lays on the water, which is the one part of the sky that is evidence.
+ *
+ * **A glitter path is directional.** A target on its bearing is seen against it or lost in
+ * it, and that is the kind of thing a report argues about - so where it lies and how wide it
+ * is are computed, from the clock, the place, and Cox and Munk's measured slope. What is not
+ * computed is how bright it was: cloud decides that and no report states it, the same gap
+ * this section already declares about moonlight.
+ *
+ * The sky itself is drawn nowhere else. There is no dome over this scene, so the body appears
+ * in the water and not above it - which a reader would otherwise be left to wonder about.
+ */
+function pathNote(conditions: Conditions): string {
+  const lit = lightingAt(conditions, isNight(conditions.statedLight));
+  // **The absence of a path is a fact about the night, not a gap in the page.** A moonless
+  // watch is darker than a moonlit one by more than an order of magnitude, and a reader who
+  // saw nothing here would be left to work out from the altitudes above whether the water
+  // should have carried a lane of light.
+  if (!lit) return NOTHING_IS_UP;
+
+  const drawn = conditions.sea
+    ? drawable(
+        waveComponents(
+          conditions.sea.rough,
+          conditions.sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE,
+        ),
+      )
+    : [];
+  const where =
+    `The ${lit.body} stands ${lit.altitudeDegrees.toFixed(0)} degrees up on ` +
+    `${lit.azimuthDegrees.toFixed(0)} degrees, so its reflection lies on that bearing. `;
+  return where + widthSentence(drawn) + BRIGHTNESS_IS_A_BOUND;
+}
+
+/**
+ * How wide the drawn path is, or why there is none.
+ *
+ * The width is the sea's own slope doubled - tilt a facet and the ray it reflects turns by
+ * twice as much - so a path measures the surface directly. The drawn sea is flatter than a
+ * real one, and what is missing is put into the body rather than left out, which is a
+ * decision to declare rather than a number to tune.
+ */
+function widthSentence(drawn: WaveComponent[]): string {
+  if (drawn.length === 0) {
+    return (
+      "No path is drawn, because nothing states a sea: the width of one is the water's own " +
+      "slope and there is none to take. A body mirrored off flat water would assert a calm " +
+      "nobody recorded. "
+    );
+  }
+  const heights = drawn.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
+  const measured = coxMunkSlopeDegrees(4 * Math.sqrt(heights));
+  return (
+    `It is drawn about ${(2 * measured).toFixed(0)} degrees wide - twice the sea's rms slope, ` +
+    "since a facet tilted by an angle turns the ray it reflects by twice that. The drawn " +
+    `surface is flatter than the measured one (${rmsSlopeDegrees(drawn).toFixed(1)} degrees ` +
+    `against ${measured.toFixed(1)}), so the difference is put into the body's own spread ` +
+    "rather than left out of the picture. "
+  );
+}
+
+/**
+ * Neither body is up - which is worth a sentence, because it is a fact about the watch.
+ *
+ * A moonless night is darker than a moonlit one by more than an order of magnitude, and the
+ * water carries no lane of light to see a hull against. Saying nothing here would leave a
+ * reader to work that out from two altitudes in the table above.
+ */
+const NOTHING_IS_UP =
+  "Neither the sun nor the moon is above the horizon at this moment, so nothing lays a path " +
+  "on the water and the sea reflects only the sky's own colour. On a night that is the whole " +
+  "difference between a hull seen against a lane of light and one seen against nothing.";
+
+/**
+ * Said once, under every path. The renderer is not photometrically calibrated, so the only
+ * honest brightnesses here are ratios: one phase of the moon against another, and either
+ * against the sun.
+ */
+const BRIGHTNESS_IS_A_BOUND =
+  "How bright it was is not drawn from anything: cloud decides that and the source does not " +
+  "state it, so the path is drawn at a readable brightness rather than a measured one. What " +
+  "does carry is the RATIO between phases - a half moon is about a ninth of a full one, not " +
+  "half of it. The sky is drawn nowhere but in the water: there is no dome over this scene, " +
+  "so the body appears in the reflection and not above the horizon.";
 
 /**
  * What sky the view put over this scenario, which is a claim of its own.
@@ -581,18 +669,15 @@ function slopeNote(drawn: WaveComponent[]): string {
 /**
  * Cox and Munk's clean-surface slope for the wind that would raise this sea, in degrees.
  *
- * The wind comes back out of the fully developed relation `Hs = 0.21 U^2 / g`, the same
- * inversion `assumedPeakPeriodSeconds` makes to get a period - so this says "a sea this size
- * belongs to about this wind, and that wind's surface is this steep". A stated wind is not
- * used: the sea drawn came from the height, and a slope quoted for some other wind would be
- * about a surface nobody is looking at.
+ * Both halves come from `core/seaway.ts` rather than being written again here: the sea's
+ * physics is not the page's, and `render/sky.ts` needs the same number to set the width of
+ * the glitter path. Two copies would put a figure on the page and a different one in the
+ * water.
  */
 function coxMunkSlopeDegrees(significantHeightMetres: number): number {
-  const windSpeed = Math.sqrt((significantHeightMetres * GRAVITY) / 0.21);
-  return (Math.atan(Math.sqrt(0.003 + 0.00512 * windSpeed)) * 180) / Math.PI;
+  const variance = coxMunkSlopeVariance(windRaisingMetresPerSecond(significantHeightMetres));
+  return (Math.atan(Math.sqrt(variance)) * 180) / Math.PI;
 }
-
-const GRAVITY = 9.81;
 
 /**
  * The wind, where the file gives one - and it is printed whether or not there is a sea.

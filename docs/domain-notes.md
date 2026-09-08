@@ -704,3 +704,88 @@ the page says so.
 
 It weighs most at resonance, where the response goes as one over twice it — which is to say
 **the choice matters most exactly where a one-degree-of-freedom model is least trustworthy**.
+
+## The sky, and the path a body lays on the water
+
+The water reflects the sky — Schlick's approximation of Fresnel, about two per cent head-on and
+one at a graze — and that reflection is most of why a sea looks like a sea. Until #37 it
+reflected **one colour**, so it made the waves visible and said nothing about the sky or where
+the moon was.
+
+There is no sky in this scene: no dome, no environment map, no extra pass. **The only place a
+sky appears is in the water**, so a body shows up in the reflection and never above the horizon,
+and `ui/panels.ts` says so rather than leaving a reader to wonder.
+
+### The path is evidence; the brightness is not
+
+Where a body is reflected off a wavy sea it lays a lane of light, and the lane is directional: a
+target on its bearing is seen against it or lost in it, which is the kind of thing a report
+argues about.
+
+- **Where it lies** is the body's own azimuth, computed from the clock and the position.
+- **How wide it is** is about twice the sea's rms slope — tilt a facet by an angle and the ray
+  it reflects turns by twice that — so a glitter path is a direct measurement of the surface.
+- **How bright it was** is not computable from anything in a report. Cloud decides it and no
+  source this project has met states it, and this renderer is not photometrically calibrated
+  anyway. What carries is the RATIO: one phase of the moon against another, and either against
+  the sun.
+
+### A half moon is a ninth of a full one, not half
+
+The lit fraction is geometry and the brightness is not. At full the moon is seen at zero phase
+angle, where the shadows between the regolith grains hide behind the grains casting them and the
+disc surges — the opposition effect. Allen's relation, as fitted by Krisciunas and Schaefer
+(*PASP* 103, 1991, 1033), adds `0.026 a + 4e-9 a⁴` magnitudes at phase angle `a`:
+
+| lit | phase angle | against a full moon |
+|---:|---:|---:|
+| 100% | 0° | 1.00 |
+| 50% | 90° | 0.091 |
+| 41% | 100° | 0.062 |
+| 25% | 120° | 0.026 |
+| 10% | 143° | 0.007 |
+
+Scaling light by the lit fraction is out by an order of magnitude at the crescent.
+
+### The width is declared, not read off the drawn sea
+
+This is why #37 waited for #36, and why widening the band was not enough on its own. Cox and
+Munk photographed sun glitter off Maui in 1951–52 and fitted `mss = 0.003 + 0.00512 U` (*JOSA*
+44, 1954, 838) — the whole surface's slope, capillary-gravity ripples included.
+
+| Hs | wind that raises it | mss | rms slope | path width |
+|---:|---:|---:|---:|---:|
+| 1 m | 6.8 m/s | 0.038 | 11.0° | 22.1° |
+| 2 m | 9.7 m/s | 0.053 | 12.9° | 25.8° |
+| 3 m | 11.8 m/s | 0.064 | **14.2°** | **28.3°** |
+| 5 m | 15.3 m/s | 0.081 | 15.9° | 31.8° |
+
+The drawn sea's slope is 5.4° at Hs 3 after #36, so reflecting a point body off the drawn
+normals alone lays a path 11° wide where the sea lays one of 28: **water sharper than any that
+exists, asserted by a picture**. So the missing roughness goes into the body's own lobe.
+Slopes add in quadrature, so what is missing is `measured − drawn` as variances and the extra
+spread of the reflected ray is twice its root — 26.3° for a 3 m sea, which convolved with what
+the normals already do comes out at the measured width.
+
+**Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not**, and the
+alternative is a number tuned until the picture looks right.
+
+### Where a sea is not stated, no path is drawn
+
+No sea, no slope, no width — and a mirror-sharp body on dead flat water would assert a calm
+nobody recorded, which is the same failure as drawing a flat sea in the first place. The
+gradient stays and the lane does not appear; the page says why.
+
+### One direction for the whole frame
+
+The key light was fixed at an arbitrary `(1, 2, 1)` and deliberately so, with the reasoning
+recorded and issue #15 named. A sea handing back a moon on 191° while the hulls are lit from
+somewhere else is one picture making two claims, so #37 takes that piece of #15 with it: the sky
+and the key light are driven from the same computed direction.
+
+**Which body may light the picture follows the picture, not the almanac.** The renderer draws
+night or day from the light condition the FILE states, because that is a witness's word about
+the dark. Where the two disagree — a file saying night with the sun computed above the horizon,
+which is what a mistyped date or time zone looks like — the water must not hand back a sun over
+a night palette. That would report the disagreement wordlessly, in a picture, where the panel
+reports it in a sentence a reader can check.

@@ -123,9 +123,9 @@ describe("patching the water's shader", () => {
 
     expect(shader.vertexShader).toContain("uniform vec4 uWave");
     expect(shader.vertexShader).toContain("transformed.y +=");
-    expect(shader.fragmentShader).toContain("uniform vec3 uSkyColour");
+    expect(shader.fragmentShader).toContain("vec3 skyTowards( vec3 towards )");
     expect(shader.fragmentShader).toContain("normal = normalize( mix( normal, waved, fade ) )");
-    expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, uSkyColour");
+    expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, skyTowards(");
     // The chunks are still there: the injections wrap them rather than replacing them.
     expect(shader.vertexShader).toContain("#include <begin_vertex>");
     expect(shader.fragmentShader).toContain("#include <opaque_fragment>");
@@ -140,7 +140,8 @@ describe("patching the water's shader", () => {
     expect(shader.uniforms["uWave"]).toBe(uniforms.uWave);
     expect(shader.uniforms["uWaveTime"]).toBe(uniforms.uWaveTime);
     expect(shader.uniforms["uWaveScale"]).toBe(uniforms.uWaveScale);
-    expect(shader.uniforms["uSkyColour"]).toBe(uniforms.uSkyColour);
+    expect(shader.uniforms["uSkyHorizon"]).toBe(uniforms.sky.uSkyHorizon);
+    expect(shader.uniforms["uSkyBody"]).toBe(uniforms.sky.uSkyBody);
   });
 
   /**

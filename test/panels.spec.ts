@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareActor } from "../src/core/track.js";
-import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
+import type { Actor, Environment, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
 import { seawayFrom, waveComponents } from "../src/core/seaway.js";
 import { drawable } from "../src/render/waves.js";
@@ -1168,6 +1168,67 @@ describe("the band the sea is drawn from", () => {
     // barely moves, because the wavelengths grow with the sea as well. Both are stated.
     expect(panelsFor(gentle)).toContain("10 degrees rms");
     expect(panelsFor(heavy)).toContain("16 degrees rms");
+  });
+});
+
+/**
+ * **The path a body lays is the one part of the sky that is evidence.** It is directional: a
+ * target on its bearing is seen against it or lost in it, which is the kind of thing a report
+ * argues about. Where it lies and how wide it is are computed; how bright it was is not.
+ */
+describe("the path on the water", () => {
+  /** A night at the fixture's position with the moon well up, and a stated 3 m sea. */
+  function moonlit(sea?: Environment["waves"]): Scenario {
+    const subject = scenario();
+    subject.meta = { ...subject.meta, occurredAt: "2025-11-28T02:30:00+09:00" };
+    subject.environment = { lightCondition: "night", ...(sea ? { waves: sea } : {}) };
+    return subject;
+  }
+
+  it("names the bearing it lies on and the width it is drawn at", () => {
+    const html = panelsFor(moonlit({ significantHeightMetres: 3, derivation: "measured" }));
+    expect(html).toContain("The moon stands 77 degrees up on 166 degrees");
+    // Twice the measured rms slope of the sea a 3 m wind raises: Cox and Munk's 14.2.
+    expect(html).toContain("drawn about 28 degrees wide");
+    expect(html).toContain("put into the body");
+  });
+
+  /**
+   * **No sea stated, no path** - and the reason said rather than left as a silence. A body
+   * mirrored off flat water would assert a calm nobody recorded.
+   */
+  it("says why there is no path over a sea nobody stated", () => {
+    const html = panelsFor(moonlit());
+    expect(html).toContain("The moon stands 77 degrees up");
+    expect(html).toContain("nothing states a sea");
+    expect(html).toContain("assert a calm nobody recorded");
+    expect(html).not.toContain("degrees wide");
+  });
+
+  /**
+   * A moonless watch is darker than a moonlit one by more than an order of magnitude. Saying
+   * nothing would leave a reader to work that out from two altitudes in the table above.
+   */
+  it("says when nothing is up to lay one", () => {
+    const subject = scenario();
+    subject.meta = { ...subject.meta, occurredAt: "2025-11-27T18:13:30+09:00" };
+    subject.environment = { lightCondition: "night" };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("Neither the sun nor the moon is above the horizon");
+    expect(html).not.toContain("so its reflection lies on that bearing");
+  });
+
+  /**
+   * The brightness is a bound and the page says so, the same way the occlusion figures do -
+   * cloud decides how much light reached the sea and no report this project has met states it.
+   */
+  it("holds the brightness out as a bound rather than a reading", () => {
+    const html = panelsFor(moonlit());
+    expect(html).toContain("readable brightness rather than a measured one");
+    expect(html).toContain("a half moon is about a ninth of a full one");
+    // And where the sky is: nowhere but in the water, since there is no dome over the scene.
+    expect(html).toContain("drawn nowhere but in the water");
   });
 });
 
