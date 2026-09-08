@@ -43,7 +43,7 @@ import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
 import { setLamps, type LitLamp } from "./lamps.js";
-import { setSkyBody, towardsBody } from "./sky.js";
+import { buildSkyDome, setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
   applyWaves,
@@ -252,13 +252,15 @@ export function buildScene(
   const palette = night ? NIGHT : DAY;
 
   const scene = new Scene();
+  // What shows where nothing is drawn. The dome below covers the bridge view; this is what
+  // the plan view sees, and a chart is not a sky.
   scene.background = new Color(palette.sky);
   const fog = buildFog(palette, environment?.visibilityMetres, extentMetres);
   scene.fog = fog;
 
   const curvature = makeCurvatureUniforms();
   // Split rather than spread whole: the mesh is the scene's, the rest is the sea's.
-  const { mesh: water, ...sea } = addWater(scene, palette, curvature, environment);
+  const { mesh: water, sky, ...sea } = addWater(scene, palette, curvature, environment);
   const { terrain, basemap } = addGround(scene, palette, curvature, ground);
   const lights = addLighting(scene, palette, night);
 
@@ -271,6 +273,7 @@ export function buildScene(
   const parts: Switchable = {
     ...sea,
     water,
+    sky,
     basemap,
     terrain,
     fog,
@@ -300,38 +303,61 @@ export function buildScene(
  * shading is almost pure ambient diffuse, a perturbed normal moves it by a few per cent,
  * and a correct wave field renders as a flat sheet - measured before this was changed.
  */
+/**
+ * The components the water is built out of, or none where nothing states a sea.
+ *
+ * Where the source states no direction the sea still has to run somewhere, so it runs the
+ * assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the bearing
+ * plainly readable off the picture, which is exactly why it cannot go undeclared.
+ *
+ * Filtered here rather than in the shader, so the geometry, the shading and anything floating
+ * are all given the same set - and so that `ui/panels.ts`, which reports the band, reports the
+ * components the water is actually made of.
+ */
+function drawnSea(sea: SeaEstimate | null): WaveComponent[] {
+  if (!sea) return [];
+  return drawable(waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE));
+}
+
+/** The water, the sky over it, and everything either of them answers to. */
+interface Sea {
+  mesh: Mesh;
+  sky: Mesh;
+  waves: WaveUniforms;
+  sea: WaveComponent[];
+  estimate: SeaEstimate | null;
+}
+
 function addWater(
   scene: Scene,
   palette: Palette,
   curvature: CurvatureUniforms,
   environment: Environment | undefined,
-): { mesh: Mesh; waves: WaveUniforms; sea: WaveComponent[]; estimate: SeaEstimate | null } {
+): Sea {
   const sea = seawayFrom(environment);
+  // Rougher where nothing states a sea: with no waves to break it up, a glassy surface would
+  // be one more thing claiming a calm.
   const material = new MeshStandardMaterial({
     color: palette.water,
     roughness: sea ? 0.34 : 0.95,
     metalness: 0.1,
   });
   applyCurvature(material, curvature);
-
   const waves = makeWaveUniforms();
   waves.sky.uSkyHorizon.value.setHex(palette.sky);
   waves.sky.uSkyZenith.value.setHex(palette.zenith);
   applyWaves(material, waves);
-  // Where the source states no direction the sea still has to run somewhere, so it runs the
-  // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
-  // bearing plainly readable off the picture, which is exactly why it cannot go undeclared.
-  // Filtered here rather than in the shader, so that the geometry, the shading and anything
-  // floating are all given the same set - and so that `ui/panels.ts`, which reports the band,
-  // is reporting the components the water is actually made of.
-  const components = sea
-    ? drawable(waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE))
-    : [];
+  const components = drawnSea(sea);
   setWaves(waves, components);
 
+  // The sky goes in with the water because it IS the same sky: one set of uniforms, so the
+  // two cannot come to describe different ones - which would show first at the waterline,
+  // where water at a graze hands back very nearly the sky just above it.
   const mesh = buildWater(material);
+  const sky = buildSkyDome(waves.sky);
   scene.add(mesh);
-  return { mesh, waves, sea: components, estimate: sea };
+  scene.add(sky);
+  return { mesh, sky, waves, sea: components, estimate: sea };
 }
 
 /**
@@ -368,6 +394,8 @@ function addTerrain(
 
 /** What the view switches between, as opposed to what it leaves alone. */
 interface Switchable {
+  /** The sky above the waterline. Drawn from a bridge and never over a chart. */
+  sky: Mesh;
   basemap: Basemap | null;
   terrain: Terrain | null;
   water: Mesh;
@@ -475,6 +503,9 @@ function setDiagram(
   // A chart has never had waves drawn on it - the same decision this function already makes
   // about the lighting, the map's tint and the grid.
   parts.waves.uWaveScale.value = on ? 0 : 1;
+  // A chart has never had a sky drawn over it - the same judgement this function already
+  // makes about the lighting, the map's tint and the grid.
+  parts.sky.visible = !on;
   if (parts.basemap) parts.basemap.group.visible = on;
   parts.grid.setVisible(on);
   // Fog is weather seen from a bridge; a chart is not drawn through it. Leaving it on
@@ -577,6 +608,10 @@ function standAt(parts: Switchable, eye: LocalPosition | null, heading: number):
 function centreSeaOn(parts: Switchable, at: LocalPosition): void {
   parts.curvature.uEye.value.set(at.east, 0, -at.north);
   parts.water.position.set(at.east, 0, -at.north);
+  // The sky goes with them. A dome left at the origin turns as the eye crosses a scenario -
+  // fifty kilometres of radius against a few of travel is a visible parallax in a sky, which
+  // nothing in the world has.
+  parts.sky.position.set(at.east, 0, -at.north);
 }
 
 /**

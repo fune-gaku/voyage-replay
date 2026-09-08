@@ -712,9 +712,33 @@ one at a graze — and that reflection is most of why a sea looks like a sea. Un
 reflected **one colour**, so it made the waves visible and said nothing about the sky or where
 the moon was.
 
-There is no sky in this scene: no dome, no environment map, no extra pass. **The only place a
-sky appears is in the water**, so a body shows up in the reflection and never above the horizon,
-and `ui/panels.ts` says so rather than leaving a reader to wonder.
+**One gradient, drawn twice from one set of uniforms.** The water takes it through the
+reflected ray; the frame above the waterline takes it through the view ray, off the inside of
+a dome centred on the eye. No environment map and no extra pass.
+
+Drawn once — which is how #37 left it — the water gained a gradient and the sky above it kept
+one flat colour, and that colour had just been redefined from "the sky" to "the sky at the
+HORIZON" and lightened to suit. So the upper half of every daylight frame was the palest end of
+a gradient it was not part of, which reads as haze. A 55 degree window puts the top of the
+picture 27 degrees up, where a clear sky is markedly deeper than at the waterline. That was #53.
+
+Three things follow from drawing it twice:
+
+- **The gradient must be one function.** Water at a grazing angle hands back very nearly the sky
+  just above the horizon, so a second definition shows as a seam along the waterline — the join
+  is where a mismatch appears first and where nobody would fail to see it.
+- **The body is not.** The sea spreads a reflection by its own slope; the sky shows the disc at
+  its own half degree. So the gradient and the body are separate functions, and each caller asks
+  for the width it is entitled to.
+- **The guard belongs to the water alone.** A body is dropped from the REFLECTION where no sea
+  is stated, because a mirror-sharp one on water this tool decided to draw flat would assert a
+  calm nobody recorded. There is no such argument about the sky: the moon is up whether or not
+  anybody wrote down a sea.
+
+The dome is unfogged, and that is a simplification worth naming rather than hiding. `buildFog`
+puts its far plane at three times the view where nothing states a visibility, so a fogged dome
+would be one flat fog colour in every scenario and nothing would be fixed — but a fog you can
+see a clear sky above is not a fog, and the page says so.
 
 ### The path is evidence; the brightness is not
 

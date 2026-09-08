@@ -6,6 +6,9 @@ import {
   makeSkyUniforms,
   setSkyBody,
   skyColourAt,
+  skyDomeColourAt,
+  skyGradientAt,
+  SKY_DOME_GLSL,
   SKY_GLSL,
   towardsBody,
 } from "../src/render/sky.js";
@@ -229,11 +232,90 @@ describe("the path a body lays", () => {
 });
 
 /**
+ * **The sky above the waterline and the sky in the water are the same sky.**
+ *
+ * Water at a grazing angle hands back very nearly the sky just above the horizon, so a second
+ * definition of the gradient would show as a seam along the waterline - the join is where a
+ * mismatch appears first and where nobody would fail to see it.
+ */
+describe("the sky above the water", () => {
+  /** The slope variance a 2 m sea has to add up to, as in the block above. */
+  const measured = 0.0636;
+
+  it("meets the water's own reflection at the horizon", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, moon(191, 41), measured);
+
+    // A ray just above the horizon, and the same ray as the water would reflect it.
+    const grazing = new Vector3(0.2, 0.004, -0.98).normalize();
+    const dome = skyDomeColourAt(grazing, uniforms);
+    const water = skyColourAt(grazing, uniforms, 0);
+    // Both are the same gradient plus a body of different widths, and the body is 130 degrees
+    // away from this ray - so what is left at the waterline is the gradient, twice.
+    expect(Math.abs(dome.b - water.b)).toBeLessThan(0.01);
+    expect(dome.b).toBeCloseTo(skyGradientAt(grazing, uniforms).b, 6);
+  });
+
+  /**
+   * **The body is in the sky whether or not a sea is stated.** The guard that keeps it out of
+   * the reflection is about not asserting a calm nobody recorded, which is an argument about
+   * water; the moon is up regardless of what anybody wrote down about the sea.
+   */
+  it("shows the body over a sea nobody stated, where the water shows none", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, moon(191, 41), null);
+    const towards = towardsBody(moon(191, 41));
+
+    expect(skyDomeColourAt(towards, uniforms).b).toBeGreaterThan(
+      skyGradientAt(towards, uniforms).b,
+    );
+    expect(skyColourAt(towards, uniforms, 0).getHex()).toBe(
+      skyGradientAt(towards, uniforms).getHex(),
+    );
+  });
+
+  /**
+   * In the sky the body is its own half degree across. It is the sea that spreads a
+   * reflection, and there is no sea up there.
+   */
+  it("draws the body at its own size rather than the sea's", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, moon(191, 41), measured);
+
+    // Five degrees off it: well inside the sea's lobe, and far outside the disc.
+    const off = towardsBody(moon(196, 41));
+    expect(skyDomeColourAt(off, uniforms).b).toBeCloseTo(skyGradientAt(off, uniforms).b, 6);
+    expect(skyColourAt(off, uniforms, 0).b).toBeGreaterThan(skyGradientAt(off, uniforms).b);
+  });
+
+  /** And a sky with nothing up is the gradient and nothing else. */
+  it("is the gradient alone when no body is up", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, null, measured);
+    const towards = new Vector3(0, 0.5, -0.87).normalize();
+    expect(skyDomeColourAt(towards, uniforms).getHex()).toBe(
+      skyGradientAt(towards, uniforms).getHex(),
+    );
+  });
+});
+
+/**
  * The GLSL and `skyColourAt` are one function written twice, because nothing in Node can
  * compile a shader to ask it what it draws. Drifting apart would put one sky in the water and
  * another in every test here.
  */
 describe("the copy that runs on the card", () => {
+  /**
+   * The dome's fragment shader is the mirror of `skyDomeColourAt`, and what must not creep
+   * into it is the water's guard: a body is up whether or not anybody stated a sea.
+   */
+  it("draws the dome from the gradient and the body's own size, with no sea in it", () => {
+    expect(SKY_DOME_GLSL).toContain("skyGradient( towards ) + bodyGlow( towards, uSkyBodyLobe.y )");
+    expect(SKY_DOME_GLSL).not.toContain("uSeaSlope");
+    // And the water keeps it, which is exactly where the two differ.
+    expect(SKY_GLSL).toContain("if ( uSeaSlope < 0.0 ) return sky;");
+  });
+
   it("declares every uniform it is given, and keeps the same shape", () => {
     // Whatever type each is: a missed declaration compiles nothing and draws no sky.
     for (const name of Object.keys(makeSkyUniforms())) {

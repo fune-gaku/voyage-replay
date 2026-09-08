@@ -297,7 +297,9 @@ describe("the sky the water hands back", () => {
     const parts = buildScene({ lightCondition: "night" }, 1000);
     parts.setDiagramView(false);
     parts.setSky(conditionsAt(suoNada, { lightCondition: "night" }, collision));
-    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBe(0);
+    // The water is told there is no sea to reflect in; the body itself stays, because the
+    // sky above the waterline shows it either way.
+    expect(skyOf(parts)["uSeaSlope"]?.value).toBeLessThan(0);
   });
 
   /**
@@ -308,11 +310,39 @@ describe("the sky the water hands back", () => {
     const parts = buildScene(sea, 1000);
     parts.setDiagramView(true);
     parts.setSky(conditionsAt(suoNada, sea, collision));
-    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBe(0);
+    expect(skyOf(parts)["uSeaSlope"]?.value).toBeLessThan(0);
 
     parts.setDiagramView(false);
     parts.setSky(conditionsAt(suoNada, sea, collision));
-    expect((skyOf(parts)["uSkyBodyLobe"]?.value as Vector3).y).toBeGreaterThan(0);
+    expect(skyOf(parts)["uSeaSlope"]?.value).toBeGreaterThan(0);
+  });
+
+  /**
+   * **The sky is drawn above the waterline as well now**, from the same uniforms - so the
+   * gradient the water hands back and the one over it cannot come apart, which would show as
+   * a seam along the horizon.
+   */
+  it("puts a sky over the water and moves it with the eye", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+    const dome = parts.scene.getObjectByName("sky");
+    expect(dome).toBeDefined();
+    expect(dome?.visible).toBe(true);
+
+    parts.setEye({ east: 4000, north: -2500 }, 0);
+    expect(dome?.position.x).toBeCloseTo(4000, 6);
+    expect(dome?.position.z).toBeCloseTo(2500, 6);
+  });
+
+  /** A chart has never had a sky drawn over it, whichever call came last. */
+  it("takes the sky off the plan view", () => {
+    const parts = buildScene(sea, 1000);
+    const dome = parts.scene.getObjectByName("sky");
+
+    parts.setDiagramView(true);
+    expect(dome?.visible).toBe(false);
+    parts.setDiagramView(false);
+    expect(dome?.visible).toBe(true);
   });
 
   /**
