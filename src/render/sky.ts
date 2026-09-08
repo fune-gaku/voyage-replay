@@ -25,7 +25,7 @@
  * the shape `displacedFraction` and `meshCarries` already use in `waves.ts`.
  */
 
-import { Color, Vector3 } from "three";
+import { Color, Vector2, Vector3 } from "three";
 
 import type { Lit } from "../core/illumination.js";
 
@@ -33,15 +33,24 @@ export interface SkyUniforms {
   /** Towards the body, in world axes. Zero length where no body is up. */
   uSkyBody: { value: Vector3 };
   /**
-   * The body's lobe, in three parts: its peak radiance against the sky's own, its own angular
-   * radius, and the slope variance the sea's reflection has to add up to.
+   * The body's lobe: its peak radiance against the sky's own, and its own angular radius.
+   * A radius of zero draws no body at all.
    *
    * **The width is not in here, because it is not the same everywhere.** The normals carry
    * some of the sea's slope and how much depends on the range - the shading band-limits each
    * component and then fades the lot to flat past a few kilometres - so what the lobe has to
-   * make up is a per-fragment quantity. A radius of zero draws no body at all.
+   * make up is a per-fragment quantity. See `uSeaSlope`.
    */
-  uSkyBodyLobe: { value: Vector3 };
+  uSkyBodyLobe: { value: Vector2 };
+  /**
+   * The slope variance the sea's reflections have to add up to, or **-1 where no sea is
+   * stated** and nothing may be mirrored at all.
+   *
+   * Its own uniform rather than a third component of the lobe, because it is a fact about
+   * the water and not about the body: the lamps reflect in the same sea, and a moonless
+   * night - which is when a lamp's streak is the whole picture - has no body to hang it on.
+   */
+  uSeaSlope: { value: number };
   /** What the sky is at the horizon, and what it is overhead. */
   uSkyHorizon: { value: Color };
   uSkyZenith: { value: Color };
@@ -107,32 +116,51 @@ export function skyColourAt(
 
   const lobe = uniforms.uSkyBodyLobe.value;
   const body = uniforms.uSkyBody.value;
-  if (lobe.y <= 0 || body.lengthSq() === 0) return sky;
+  if (lobe.y <= 0 || body.lengthSq() === 0 || uniforms.uSeaSlope.value < 0) return sky;
 
   // A Gaussian in the angle between the two, which is what a slope distribution convolved
   // with a small disc comes to. `acos` of the dot product rather than the chord, since the
   // lobe is tens of degrees wide and the two part company well inside that.
   const away = Math.acos(Math.min(Math.max(towards.dot(body), -1), 1));
-  const glow = lobe.x * Math.exp(-0.5 * (away / lobeWidth(lobe, carriedSlopeVariance)) ** 2);
+  const width = lobeWidth(uniforms.uSeaSlope.value, carriedSlopeVariance, lobe.y);
+  const glow = lobe.x * Math.exp(-0.5 * (away / width) ** 2);
   return sky.add(new Color(glow, glow, glow));
 }
 
 /**
- * How wide the lobe is HERE: whatever the normals under this fragment are not carrying.
+ * How wide anything reflected in this sea is spread, HERE: whatever the normals under this
+ * fragment are not carrying.
  *
  * **The mirror of `glitterSpreadRadians`, and the reason it is not simply called.** The
  * shading drops each wave component where the range or the frame runs out of pixels for it,
  * and fades the lot to flat past a few kilometres - so a lane computed against the whole
  * drawn spectrum would narrow with distance and with the size of somebody's window, and end
  * as a mirror spot where the sea is drawn flat. The sea's total slope is held instead, and
- * what the normals no longer supply is given back to the body.
+ * what the normals no longer supply is given back to whatever is being reflected.
  *
- * The body's own radius is under it, so a sea stated calm still mirrors a disc.
+ * The source's own angular radius is under it, so a sea stated calm still mirrors a disc -
+ * and a lamp, whose disc is nothing, still gets a floor rather than a division by zero.
+ *
+ * **Shared with `render/lamps.ts`**, because the spread belongs to the water and not to what
+ * is being reflected in it. Two copies would draw a moon and a sidelight in different seas.
  */
-function lobeWidth(lobe: Vector3, carriedSlopeVariance: number): number {
-  const missing = Math.max(lobe.z - carriedSlopeVariance, 0);
-  return Math.hypot(Math.sqrt(2 * missing), lobe.y);
+export function lobeWidth(
+  seaSlopeVariance: number,
+  carriedSlopeVariance: number,
+  sourceRadiusRadians: number,
+): number {
+  const missing = Math.max(seaSlopeVariance - carriedSlopeVariance, 0);
+  return Math.hypot(Math.sqrt(2 * missing), Math.max(sourceRadiusRadians, NARROWEST_LOBE));
 }
+
+/**
+ * The narrowest a reflection is drawn, whatever it is a reflection of.
+ *
+ * A hundredth of a radian is half a degree - about a pixel at the widths this renders at -
+ * and it is a floor against dividing by zero rather than a claim about anything. A lamp's
+ * filament at two miles subtends a millionth of that.
+ */
+const NARROWEST_LOBE = 0.001;
 
 /**
  * The same, for the fragment shader. `skyTowards` takes a unit world direction.
@@ -142,16 +170,24 @@ function lobeWidth(lobe: Vector3, carriedSlopeVariance: number): number {
  */
 export const SKY_GLSL = `
 uniform vec3 uSkyBody;
-uniform vec3 uSkyBodyLobe;
+uniform vec2 uSkyBodyLobe;
+uniform float uSeaSlope;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSkyZenith;
+
+// The spread of anything reflected in this water, given what these normals still carry.
+// Shared with the lamps below: the width belongs to the sea, not to what is in it.
+float lobeWidth( float carried, float radius ) {
+  float missing = max( uSeaSlope - carried, 0.0 );
+  float floored = max( radius, ${NARROWEST_LOBE.toFixed(4)} );
+  return sqrt( 2.0 * missing + floored * floored );
+}
 
 vec3 skyTowards( vec3 towards, float carried ) {
   float up = max( towards.y, 0.0 );
   vec3 sky = mix( uSkyHorizon, uSkyZenith, pow( up, ${(1 / HORIZON_POWER).toFixed(4)} ) );
-  if ( uSkyBodyLobe.y <= 0.0 || dot( uSkyBody, uSkyBody ) == 0.0 ) return sky;
-  float missing = max( uSkyBodyLobe.z - carried, 0.0 );
-  float width = sqrt( 2.0 * missing + uSkyBodyLobe.y * uSkyBodyLobe.y );
+  if ( uSkyBodyLobe.y <= 0.0 || dot( uSkyBody, uSkyBody ) == 0.0 || uSeaSlope < 0.0 ) return sky;
+  float width = lobeWidth( carried, uSkyBodyLobe.y );
   float away = acos( clamp( dot( towards, uSkyBody ), -1.0, 1.0 ) );
   float glow = uSkyBodyLobe.x * exp( -0.5 * pow( away / width, 2.0 ) );
   return sky + vec3( glow );
@@ -161,7 +197,8 @@ vec3 skyTowards( vec3 towards, float carried ) {
 export function makeSkyUniforms(): SkyUniforms {
   return {
     uSkyBody: { value: new Vector3() },
-    uSkyBodyLobe: { value: new Vector3() },
+    uSkyBodyLobe: { value: new Vector2() },
+    uSeaSlope: { value: -1 },
     uSkyHorizon: { value: new Color(0x000000) },
     uSkyZenith: { value: new Color(0x000000) },
   };
@@ -182,16 +219,18 @@ export function setSkyBody(
   lit: Lit | null,
   measuredSlopeVariance: number | null,
 ): void {
+  // **The sea's own figure is set whether or not a body is up.** A moonless night is when a
+  // lamp's streak is the whole picture, and the lamps reflect in the same water.
+  uniforms.uSeaSlope.value = measuredSlopeVariance ?? -1;
   if (!lit || measuredSlopeVariance === null) {
     uniforms.uSkyBody.value.set(0, 0, 0);
-    uniforms.uSkyBodyLobe.value.set(0, 0, 0);
+    uniforms.uSkyBodyLobe.value.set(0, 0);
     return;
   }
   uniforms.uSkyBody.value.copy(towardsBody(lit));
   uniforms.uSkyBodyLobe.value.set(
     BRIGHTEST_LOBE * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
     BODY_ANGULAR_RADIUS_RADIANS,
-    measuredSlopeVariance,
   );
 }
 

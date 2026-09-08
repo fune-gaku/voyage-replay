@@ -28,6 +28,7 @@
 import { Vector2, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
+import { LAMPS_GLSL, makeLampUniforms, type LampUniforms } from "./lamps.js";
 import { makeSkyUniforms, SKY_GLSL, type SkyUniforms } from "./sky.js";
 import { DISC } from "./water.js";
 
@@ -161,6 +162,8 @@ export interface WaveUniforms {
    * all, since there is no dome and no environment map. See `render/sky.ts`.
    */
   sky: SkyUniforms;
+  /** The lamps reflected in the same water, each laying its own streak. See `render/lamps.ts`. */
+  lamps: LampUniforms;
   /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
@@ -231,6 +234,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWaveScale: { value: 0 },
     uPixelAngle: { value: pixelAngle(55, 1080) },
     sky: makeSkyUniforms(),
+    lamps: makeLampUniforms(),
   };
 }
 
@@ -279,6 +283,7 @@ varying vec3 vWaveWorld;
 const FRAGMENT_DECLARATIONS = `${DECLARATIONS}
 uniform vec3 uEye;
 ${SKY_GLSL}
+${LAMPS_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
 `;
@@ -421,7 +426,11 @@ const REFLECTION = `
   float towards = clamp( dot( normalize( vViewPosition ), normal ), 0.0, 1.0 );
   float sky = mix( ${WATER_REFLECTANCE_HEAD_ON}, 1.0, pow( 1.0 - towards, 5.0 ) );
   vec3 look = normalize( vWaveWorld - cameraPosition );
-  outgoingLight = mix( outgoingLight, skyTowards( reflect( look, gWorldNormal ), gCarriedSlope ), sky );
+  vec3 back = reflect( look, gWorldNormal );
+  // The sky, and whatever lamps are lit over the same water. A lamp's streak is added to the
+  // sky rather than replacing it: a light on the water does not take the night out of it.
+  vec3 handed = skyTowards( back, gCarriedSlope ) + lampsTowards( back, vWaveWorld, gCarriedSlope );
+  outgoingLight = mix( outgoingLight, handed, sky );
 }
 #include <opaque_fragment>
 `;
@@ -453,6 +462,9 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     // - which compiles, runs, and draws a sky with nothing in it.
     for (const name of Object.keys(uniforms.sky) as (keyof SkyUniforms)[]) {
       shader.uniforms[name] = uniforms.sky[name];
+    }
+    for (const name of Object.keys(uniforms.lamps) as (keyof LampUniforms)[]) {
+      shader.uniforms[name] = uniforms.lamps[name];
     }
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <normal_fragment_begin>",

@@ -28,6 +28,7 @@ import {
   MeshBasicMaterial,
   Points,
   PointsMaterial,
+  Vector3,
   type ColorRepresentation,
 } from "three";
 
@@ -65,6 +66,16 @@ export interface NavigationLightGroup {
   sectors: Group;
   /** Light the lamps this audience can actually see. */
   showFor(audience: LampAudience): void;
+  /**
+   * Every lamp she carries, wherever it has ended up in the world, and what Rule 21 and 22
+   * say about it.
+   *
+   * **All of them, and not only the ones drawn.** What decides whether a lamp lays a streak
+   * is where the water is, measured from her bow - not where the observer is. Her own
+   * sidelights colour the water alongside her even though a watchkeeper on her bridge never
+   * sees the lamps themselves, which is why `showFor` is the wrong question to ask here.
+   */
+  lit(): { light: NavigationLight; at: Vector3 }[];
 }
 
 /** Where on the hull each lamp sits, as fractions of length and beam. */
@@ -146,6 +157,11 @@ export function buildNavigationLights(vessel: Vessel, freeboard: number): Naviga
     showFor: (audience) => {
       showFor(lamps, audience);
     },
+    // Asked of the object rather than recomputed from the hull's dimensions: the lamps hang
+    // off groups the player moves and rotates, and a second answer would drift from the first
+    // by whatever the antenna offset is.
+    lit: () =>
+      lamps.map(({ light, points }) => ({ light, at: points.getWorldPosition(new Vector3()) })),
   };
 }
 

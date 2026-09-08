@@ -1,0 +1,191 @@
+/**
+ * The streaks a lamp lays on the water, which are the one reflection in this picture that is
+ * evidence rather than decoration.
+ *
+ * A hull reflected in daylight is a broken column of light nobody reads anything off. A red
+ * sidelight at two miles laying a red path towards an observer is a signature: it extends the
+ * light's reach, and it arrives on a bearing.
+ *
+ * ## The same machinery as the moon, with the distance put back
+ *
+ * `render/sky.ts` compares the reflected ray against the DIRECTION of a body, because a body
+ * is at infinity. A lamp is not, so it is compared against the direction from this fragment
+ * to the lamp - which is the specular condition itself. That the streak then lies between the
+ * observer's feet and the lamp's, and stretches towards whoever is looking, falls out of where
+ * that condition is satisfied. No geometry of its own.
+ *
+ * The spread is the sea's and comes from `lobeWidth` in `render/sky.ts`, shared rather than
+ * copied: the moon and a sidelight are reflected in the same water, and two widths would be
+ * two seas.
+ *
+ * ## The three ways this could lie
+ *
+ * - **The arc is tested at the WATER, not at the eye.** A lamp lights only its own sector, so
+ *   what decides whether a patch of sea carries its colour is where that patch is, measured
+ *   from the bow of the ship carrying the lamp. Testing the eye instead lays a red streak
+ *   ahead of a ship seen from astern - the same 180-degree error `visibleLights` warns about,
+ *   and just as plausible in a still frame.
+ * - **The streak must die before the lamp does.** A reflection is dimmer than its source, so
+ *   one that outlived the light would invent a detection. `core/illumination.ts` enforces the
+ *   inequality at half the lamp's Rule 22 range.
+ * - **A mark's streak carries the rhythm.** A steady lane under a `Q(9)` is a worse claim
+ *   than no lane at all, because the rhythm is what identifies the mark. The lamp's own
+ *   on/off decides whether it is uploaded at all.
+ */
+
+import { Color, Vector4 } from "three";
+
+import { STREAK_FULL_METRES, STREAK_REACH_OF_NOMINAL } from "../core/illumination.js";
+
+/**
+ * How many lamps the water can reflect at once.
+ *
+ * A shader's array length is a constant, so this is one. Sixteen holds the reference case
+ * several times over - two ships of five lights and the marks between them - and what does
+ * not fit is dropped, which `ui/panels.ts` reports rather than swallowing: a page saying the
+ * lights were drawn over a picture missing some of them is the fault this project keeps
+ * meeting.
+ */
+export const SHADER_LAMPS = 16;
+
+export interface LitLamp {
+  /** Where the lamp is, in the scene's axes. */
+  at: { x: number; y: number; z: number };
+  colour: Color;
+  /** Its brightest, before range takes any of it. Zero is a lamp that is not lit. */
+  peak: number;
+  /** Which way the ship carrying it heads, in degrees true. Irrelevant to an all-round light. */
+  headingDegreesTrue: number;
+  /** The arc it shows over, as relative bearings clockwise from that bow. */
+  arcStartDegrees: number;
+  arcEndDegrees: number;
+  /** Rule 22's range for this light, in metres. The streak dies well inside it. */
+  nominalRangeMetres: number;
+}
+
+/**
+ * How bright a streak is drawn at its brightest, before range takes any of it.
+ *
+ * **A ceiling rather than a measurement**, for the reason `BRIGHTEST_LOBE` gives about the
+ * moon: Rule 22 states a minimum RANGE and no candela, and how much of a reflection reaches
+ * an eye depends on the sea and the air. What the picture can honestly carry is that a lamp
+ * lays a streak, where it lies, and that it dies before the lamp does.
+ */
+export const BRIGHTEST_STREAK = 1.6;
+
+export interface LampUniforms {
+  /** (x, y, z, peak) per lamp. A peak of zero is a lamp that is out. */
+  uLamp: { value: Vector4[] };
+  uLampColour: { value: Color[] };
+  /** (heading, arc start, arc end) in radians, and the lamp's own range in metres. */
+  uLampArc: { value: Vector4[] };
+}
+
+export function makeLampUniforms(): LampUniforms {
+  return {
+    uLamp: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
+    uLampColour: { value: Array.from({ length: SHADER_LAMPS }, () => new Color()) },
+    uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
+  };
+}
+
+/**
+ * Load the lit lamps into the uniforms. Anything past `SHADER_LAMPS` lays no streak.
+ *
+ * **What does not fit is the page's business, not a log line.** `ui/panels.ts` counts the
+ * lamps a scenario can light against this same constant and says so, because a picture
+ * missing streaks under a page that lists every light is the two disagreeing - and the count
+ * has to be knowable without watching a particular frame go by.
+ */
+export function setLamps(uniforms: LampUniforms, lamps: LitLamp[]): void {
+  for (let i = 0; i < SHADER_LAMPS; i += 1) {
+    const lamp = lamps[i];
+    const slot = uniforms.uLamp.value[i];
+    const arc = uniforms.uLampArc.value[i];
+    if (!slot || !arc) continue;
+    if (!lamp) {
+      slot.set(0, 0, 0, 0);
+      continue;
+    }
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.peak);
+    uniforms.uLampColour.value[i]?.copy(lamp.colour);
+    arc.set(
+      (lamp.headingDegreesTrue * Math.PI) / 180,
+      (lamp.arcStartDegrees * Math.PI) / 180,
+      (lamp.arcEndDegrees * Math.PI) / 180,
+      lamp.nominalRangeMetres,
+    );
+  }
+}
+
+/**
+ * Whether a point on the water is inside a lamp's arc.
+ *
+ * **The bearing of the WATER from the lamp**, measured from the bow of the ship carrying it -
+ * the same convention `isWithinArc` takes, and the same one that is 180 degrees wrong if the
+ * two ends are swapped. The scene's axes are local ENU with y up and z running south, so a
+ * true bearing is `atan2(east, north)` with north as `-z`.
+ *
+ * Half-open, `[start, end)`, so the four Rule 21 arcs partition the horizon exactly as they
+ * do in `actors/vessel/lights.ts`. An all-round light is `[0, 360)` and every bearing is in.
+ */
+export function litFromLamp(
+  at: { x: number; z: number },
+  lamp: { at: { x: number; z: number }; headingDegreesTrue: number },
+  arc: { startDegrees: number; endDegrees: number },
+): boolean {
+  const trueBearing = (Math.atan2(at.x - lamp.at.x, -(at.z - lamp.at.z)) * 180) / Math.PI;
+  const relative = wrap(trueBearing - lamp.headingDegreesTrue);
+  const start = wrap(arc.startDegrees);
+  const end = wrap(arc.endDegrees) || 360;
+  return start < end ? relative >= start && relative < end : relative >= start || relative < end;
+}
+
+function wrap(degrees: number): number {
+  return ((degrees % 360) + 360) % 360;
+}
+
+/**
+ * The GLSL, beside the rule it mirrors. `render/waves.ts` pastes it after `SKY_GLSL`, whose
+ * `lobeWidth` it calls.
+ *
+ * The loop is over a constant length with a peak of zero standing for an unlit slot, the same
+ * shape `setWaves` uses for components - simpler than a count uniform, and the loop has to be
+ * constant anyway.
+ */
+export const LAMPS_GLSL = `
+uniform vec4 uLamp[${SHADER_LAMPS}];
+uniform vec3 uLampColour[${SHADER_LAMPS}];
+uniform vec4 uLampArc[${SHADER_LAMPS}];
+
+vec3 lampsTowards( vec3 reflected, vec3 at, float carried ) {
+  vec3 sum = vec3( 0.0 );
+  if ( uSeaSlope < 0.0 ) return sum;
+  float width = lobeWidth( carried, 0.0 );
+  for ( int i = 0; i < ${SHADER_LAMPS}; i ++ ) {
+    vec4 lamp = uLamp[ i ];
+    if ( lamp.w <= 0.0 ) continue;
+    vec3 towards = lamp.xyz - at;
+    float range = length( towards );
+    float reach = uLampArc[ i ].w * ${STREAK_REACH_OF_NOMINAL.toFixed(2)};
+    if ( range >= reach ) continue;
+
+    // The bearing of THIS WATER from the lamp, off the bow of the ship carrying it.
+    float bearing = atan( at.x - lamp.x, -( at.z - lamp.z ) ) - uLampArc[ i ].x;
+    float relative = mod( bearing, 6.2831853 );
+    float start = uLampArc[ i ].y;
+    float end = uLampArc[ i ].z;
+    bool inside = start < end
+      ? ( relative >= start && relative < end )
+      : ( relative >= start || relative < end );
+    if ( !inside ) continue;
+
+    float spread = min( 1.0, pow( ${STREAK_FULL_METRES.toFixed(1)} / max( range, 0.001 ), 2.0 ) );
+    float t = clamp( range / reach, 0.0, 1.0 );
+    float fall = spread * ( 1.0 - t * t * ( 3.0 - 2.0 * t ) );
+    float away = acos( clamp( dot( reflected, normalize( towards ) ), -1.0, 1.0 ) );
+    sum += uLampColour[ i ] * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );
+  }
+  return sum;
+}
+`;

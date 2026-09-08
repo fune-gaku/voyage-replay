@@ -184,3 +184,49 @@ export function glitterSpreadRadians(
   const missing = Math.max(measured - drawnSlopeVariance, 0);
   return Math.sqrt(2 * missing);
 }
+
+/**
+ * How far a lamp's streak is allowed to reach, against the range the lamp itself must carry.
+ *
+ * **A reflection is dimmer than the lamp**, so a streak visible where the light is not would
+ * be the picture inventing a detection - which is the one thing #39 named as making it a lie.
+ * There is no photometry to settle it with: Rule 22 gives a minimum RANGE and not a candela,
+ * and how much of a reflection reaches an eye depends on the sea and the air. So the
+ * inequality is declared and enforced rather than derived, at half the lamp's own range.
+ *
+ * Half is a choice. What is not a choice is that it must be less than one.
+ */
+export const STREAK_REACH_OF_NOMINAL = 0.5;
+
+/**
+ * How bright a lamp's streak is at this range, as a fraction of its brightest.
+ *
+ * Two things in it, and only the first is physics. A point source's irradiance on the water
+ * falls as the inverse square, which is why a streak shortens as a ship draws off. The second
+ * is the cut-off above: the fade is taken to zero inside the lamp's own reach, so that the
+ * streak cannot outlive the light that casts it.
+ *
+ * `nominalRangeMetres` is Rule 22's, carried on the light itself.
+ */
+export function streakBrightness(rangeMetres: number, nominalRangeMetres: number): number {
+  const reach = nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
+  if (rangeMetres >= reach) return 0;
+  // Full out to the reference range and inverse-square beyond it, so a lamp close aboard does
+  // not divide by nothing.
+  const spread = Math.min(1, (STREAK_FULL_METRES / Math.max(rangeMetres, 1e-6)) ** 2);
+  // And smoothed to nothing at the reach, or the streak would end at a visible edge.
+  const t = Math.min(Math.max(rangeMetres / reach, 0), 1);
+  return spread * (1 - t * t * (3 - 2 * t));
+}
+
+/**
+ * Inside this, a streak is at its brightest; outside, it falls as the inverse square.
+ *
+ * A hundred metres is about where a lamp stops being close aboard. The figure sets how quickly
+ * the streak dies away with range and nothing else - the reach above is what decides where it
+ * ends - and it is chosen, which `ui/panels.ts` says.
+ *
+ * Exported for `render/lamps.ts`, whose GLSL writes the same fall a second time because
+ * nothing in Node can compile a shader. The constants at least are shared.
+ */
+export const STREAK_FULL_METRES = 100;

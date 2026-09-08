@@ -838,3 +838,62 @@ the dark. Where the two disagree — a file saying night with the sun computed a
 which is what a mistyped date or time zone looks like — the water must not hand back a sun over
 a night palette. That would report the disagreement wordlessly, in a picture, where the panel
 reports it in a sentence a reader can check.
+
+## The streaks a lamp lays
+
+At night a ship's navigation light lays a streak on the water, and that streak is part of what
+a lookout sees. **It is the one reflection in this picture that is evidence rather than
+decoration.** A hull mirrored in daylight is a broken column of light nobody reads anything
+off; a red sidelight at two miles laying a red path towards an observer is a signature — it
+extends the light's reach, and it arrives on a bearing.
+
+### The same machinery as the moon, with the distance put back
+
+`render/sky.ts` compares the reflected ray against the DIRECTION of a body, because a body is
+at infinity. A lamp is not, so it is compared against the direction from the fragment to the
+lamp — which is the specular condition itself. That the streak then lies between the
+observer's feet and the lamp's, and stretches towards whoever is looking, falls out of where
+that condition holds. No geometry of its own.
+
+The spread is the sea's, shared with the sky rather than copied: the moon and a sidelight are
+reflected in the same water, and two widths would be two seas.
+
+### The arc is answered at the water, not at the eye
+
+A lamp lights only its own sector, so what decides whether a patch of sea carries its colour is
+where that patch is, measured off the bow of the ship carrying the lamp. Answering it at the
+observer instead lays a red streak ahead of a ship seen from astern — the same 180° error
+`visibleLights` warns about, and just as plausible in a still frame.
+
+**Her own lamps light the water alongside her.** `showFor` hides them from her own bridge
+because a watchkeeper cannot see her own lamps, but she can see what they do to the sea, so
+the streaks are gated on the arc at the water rather than on whether the lamp is drawn.
+
+### It has to die before the lamp does
+
+A reflection is dimmer than its source, so a streak visible where the light is not would be the
+picture **inventing a detection**. There is nothing to settle it with: Rule 22 gives a minimum
+RANGE and no candela, and how much of a reflection reaches an eye depends on the sea and the
+air. So the inequality is declared and enforced — the streak is gone by half the lamp's own
+Rule 22 range — rather than derived. Half is a choice; that it is less than one is not.
+
+The peak falls as the inverse square inside that, which is a point source's light on the water,
+and is held flat inside a hundred metres so that a lamp close aboard does not divide by nothing.
+
+### A mark's streak carries its rhythm
+
+A steady lane under a `Q(9)` is a worse claim than no lane at all: the rhythm is the whole of
+what identifies the mark, and a light that flashes over water that glows steadily says two
+different things about one lamp. The streak is asked the same question the lamp was, at the
+same instant — `showingAt` — and is absent for every dark phase.
+
+A mark's own light range is not in this format. Rule 22 answers it for a ship and says nothing
+about a buoy, so `ASSUMED_MARK.lightRangeNauticalMiles` is a middling figure for a lit one and
+it is chosen; it decides only how far the streak may reach before it has to be gone.
+
+### What does not fit
+
+A shader's array length is a constant, so the water reflects at most `SHADER_LAMPS` at once.
+The page counts the lamps a scenario can light against the same constant and says when there
+are more, because a picture missing streaks under a page that lists every light is the two
+disagreeing.
