@@ -698,7 +698,15 @@ function approachCaveat(both: [Prepared, Prepared], epochSeconds: number): strin
     : "";
 
   const caveat = viewCaveat(both, epochSeconds);
-  return `Measured ${between}, which is what the sources state.${howFar} ${caveat}`;
+  // **What the sources state is the SAMPLES, and this figure is not one of them.** Adding a
+  // step and an interpolation to the hull row while leaving this one flat made the older
+  // number look like the measured one, which is the opposite of true: both are picked from
+  // positions this tool put between the reported ones, a second apart.
+  const found =
+    " The least of it is picked from one-second steps along positions joined by straight " +
+    "lines between the reported ones, so the figure and its moment are this tool's arithmetic " +
+    "over the source's points rather than anything the source measured.";
+  return `Measured ${between}, which is what the sources state.${howFar}${found} ${caveat}`;
 }
 
 /**

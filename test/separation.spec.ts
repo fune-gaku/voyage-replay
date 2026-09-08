@@ -443,6 +443,42 @@ describe("contact over a track", () => {
   });
 
   /**
+   * **A turning ship is where a cleverer search goes wrong.** The first version of the
+   * narrowing ran a ternary search, which assumes the window holds one minimum. What is being
+   * measured is the shortest distance between two polygons that are TURNING, and which pair of
+   * vertex and edge is nearest switches as they go - a piecewise function that can hold two
+   * valleys in a second. A sweep of the window assumes nothing, and this pins it against a
+   * scan fine enough to have no window to miss.
+   */
+  it("narrows a turning approach to what a fine scan finds", () => {
+    const swinging = (lons: number[], headings: number[]): TrackPoint[] =>
+      lons.map((lon, index) => ({
+        t: new Date(Date.UTC(2025, 0, 1, 0, index)).toISOString(),
+        lat: 0,
+        lon,
+        cogDegreesTrue: headings[index] ?? 0,
+        headingDegreesTrue: headings[index] ?? 0,
+      }));
+    const a = prepareActor(actor("A", swinging([0, 0, 0], [0, 0, 0]), BIG_SHIP), ORIGIN);
+    // B swings through ninety degrees as she passes, so her nearest corner changes on the way.
+    const b = prepareActor(
+      actor("B", swinging([0.0016, 0.0011, 0.0016], [0, 90, 180]), BIG_SHIP),
+      ORIGIN,
+    );
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const pair = [
+      { track: a, ...ship },
+      { track: b, ...ship },
+    ] as const;
+
+    const fine = hullApproach(pair[0], pair[1], 0.05);
+    const coarse = hullApproach(pair[0], pair[1], 5);
+
+    expect(coarse?.contacts).toEqual([]);
+    expect(coarse?.metres).toBeCloseTo(fine?.metres ?? 0, 1);
+  });
+
+  /**
    * **The least gap comes off the hulls too, not off the step that happened to show it.**
    * Two ships passing without touching are nearest somewhere between two looks, so a grid
    * reading is up to a step stale - and the panel prints it as a distance with no hedge. The

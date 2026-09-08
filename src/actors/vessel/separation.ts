@@ -305,14 +305,19 @@ function walk(
  *
  * **The contact edges were bisected and this was not, which left the page asserting a grid
  * reading as a distance.** Two ships passing without touching are nearest somewhere between
- * two looks, so the panel printed a gap up to a step stale and a moment to match - under prose
- * that says nothing about either being approximate.
+ * two looks, so the panel printed a gap up to a step stale and a moment to match.
  *
- * A ternary search over the step either side of the best look. The gap between two hulls
- * moving in straight lines is smooth and, over a window this short, has one minimum in it; the
- * search cannot find a deeper one in a window the scan skipped, which is the same limit that
- * lets a short contact fall between two looks and is declared with it. It never returns worse
- * than the reading it started from.
+ * **A finer look, not a cleverer one.** The first version of this ran a ternary search and
+ * called the gap smooth and single-minimumed over the window, which it is not: what is being
+ * measured is the shortest distance between two polygons that are TURNING, and which pair of
+ * vertex and edge is nearest switches as they go. The function is piecewise, and a search that
+ * discards half its window on two probes can walk away from the deeper of two valleys and
+ * report the shallower one - the same false precision this was meant to remove, one level in.
+ * A sub-scan assumes nothing: it looks at every slice.
+ *
+ * What it still cannot see is a nearer approach in a window the coarse scan skipped over
+ * entirely. That is the step's limit, the same one that lets a short contact go unnoticed, and
+ * the panel declares them together.
  */
 function closest(
   a: HullTrack,
@@ -321,23 +326,25 @@ function closest(
   over: { from: number; to: number; stepSeconds: number },
 ): { metres: number; epochSeconds: number } {
   if (found.metres <= 0) return found;
-  let low = Math.max(over.from, found.epochSeconds - over.stepSeconds);
-  let high = Math.min(over.to, found.epochSeconds + over.stepSeconds);
-  for (let step = 0; step < NARROWINGS; step += 1) {
-    const third = (high - low) / 3;
-    const nearer = gapAt(a, b, low + third);
-    const further = gapAt(a, b, high - third);
-    if (nearer === null || further === null) break;
-    if (nearer < further) high -= third;
-    else low += third;
+  const low = Math.max(over.from, found.epochSeconds - over.stepSeconds);
+  const high = Math.min(over.to, found.epochSeconds + over.stepSeconds);
+  const slice = (high - low) / SLICES;
+  let best = found;
+  for (let i = 0; i <= SLICES; i += 1) {
+    const at = low + i * slice;
+    const gap = gapAt(a, b, at);
+    if (gap !== null && gap < best.metres) best = { metres: gap, epochSeconds: at };
   }
-  const at = (low + high) / 2;
-  const gap = gapAt(a, b, at);
-  return gap !== null && gap < found.metres ? { metres: gap, epochSeconds: at } : found;
+  return best;
 }
 
-/** Enough to put the moment inside a millisecond of a one-second step. */
-const NARROWINGS = 30;
+/**
+ * How finely the window either side of the best look is swept.
+ *
+ * Two hundred and fifty-six slices of a one-second step puts the moment inside four
+ * milliseconds, for two hundred and fifty-six polygon comparisons done once.
+ */
+const SLICES = 256;
 
 /**
  * When the hulls actually met, between a sample that was clear and one that was not.

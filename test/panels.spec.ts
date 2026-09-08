@@ -210,6 +210,17 @@ describe("renderPanels", () => {
    * check by hand; the hulls are what "did they hit" is asking. Printing only the first is
    * the state this issue found; printing only the second throws away the checkable number.
    */
+  /**
+   * **Neither row is a measurement, and hedging only one made the other look like one.** The
+   * reported-position range is picked from one-second steps along straight lines drawn between
+   * the source's points; what the source states is the points. Saying so beside "which is what
+   * the sources state" is the difference between citing a source and hiding behind one.
+   */
+  it("says the reported-position range is also picked off steps and interpolation", () => {
+    expect(html).toContain("picked from one-second steps along positions joined by straight");
+    expect(html).toContain("this tool&#39;s arithmetic over the source&#39;s points");
+  });
+
   it("reports the reported positions and the hulls as separate rows", () => {
     expect(html).toContain("Reported positions");
     expect(html).toContain("Between hulls");
