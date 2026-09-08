@@ -45,14 +45,29 @@ const PEAK_ENHANCEMENT = 3.3;
  * A named constant because it is a real choice, not a detail. The second moment IN
  * WAVENUMBER diverges logarithmically - `k^2 S(w)` falls off as `w^-1` - so the
  * root-mean-square wavenumber, and with it the level-crossing rate, depends on where the
- * tail is cut. Measured: widening the cut from 0.5 Tp to 0.175 Tp, nearly a factor of
- * three, moves one occlusion figure from 76% to 89%. Real, and an order of magnitude
- * smaller than the width of a sea state class, which is the uncertainty that actually
- * governs (a factor of 54 on the same figure).
+ * tail is cut. There is no converged answer to find, only a declared one.
+ *
+ * **0.12 of the peak period**, which for a 3 m sea is a shortest wave of 1.3 m. Chosen
+ * against what the shortfall in slope actually is, measured over this spectrum at Hs 3 m:
+ *
+ * | cut | shortest wave | rms slope | k_rms |
+ * |---|---|---|---|
+ * | 0.35 (was) | 11.1 m | 5.3 deg | x1.00 |
+ * | 0.175 | 2.8 m | 6.9 deg | x1.30 |
+ * | **0.12** | **1.3 m** | **7.7 deg** | **x1.44** |
+ * | 0.05 | 0.23 m | 9.2 deg | x1.72 |
+ * | 0.03 | 0.08 m | 9.9 deg | x1.87 |
+ *
+ * **Cox and Munk's measured slope for the wind that raises a 3 m sea is 14.2 degrees**, and
+ * the table says plainly that widening this band cannot reach it: eight-centimetre waves get
+ * to ten. The rest of a real sea's slope is in capillary-gravity ripples, which a JONSWAP
+ * gravity spectrum has no business describing and no renderer can draw. So this is cut where
+ * the waves stop being drawable rather than where the slope comes right - and what is missing
+ * is named on the page instead of being quietly integrated for.
  *
  * Frequency moments do not diverge, so the zero-crossing period is not affected.
  */
-const TAIL_CUTOFF_FRACTION_OF_PEAK = 0.35;
+export const TAIL_CUTOFF_FRACTION_OF_PEAK = 0.12;
 
 /**
  * Where to stop for the moments that DO converge.
@@ -688,7 +703,7 @@ function erfc(x: number): number {
  * about the same water. Short waves carry little height and most of the slope, which is
  * exactly what makes them cheap to leave out and wrong to.
  */
-export const DRAWN_COMPONENTS = 24;
+export const DRAWN_COMPONENTS = 40;
 
 /**
  * Directional spreading: the `s` of the Longuet-Higgins form, `D(theta) ~ cos^2s(theta/2)`,

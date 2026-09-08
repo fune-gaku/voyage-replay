@@ -62,6 +62,22 @@ const DISPLACEMENT_FADE_METRES = new Vector2(250, 600);
 const SLOPE_FADE_METRES = new Vector2(2500, 9000);
 
 /**
+ * How many pixels of a wave are needed before it is drawn rather than sparkled.
+ *
+ * **The band now reaches down to metre waves**, which is where most of a sea's slope lives -
+ * and a wave narrower than a pixel does not look like a wave, it looks like noise crawling
+ * over the water. So each component is faded at its OWN range: the swell carries the picture
+ * out to the horizon while the chop on top of it stops contributing a few hundred metres out,
+ * which is about where a real one stops being separable to the eye as well.
+ *
+ * The angle a pixel subtends is the vertical field of view over the height in pixels - a
+ * fiftieth of a degree at 55 degrees over 1080 - and eight of them is where a sinusoid stops
+ * reading as one.
+ */
+const SHORTEST_DRAWN_PIXELS = 8;
+const PIXEL_ANGLE = ((SHORTEST_DRAWN_PIXELS * (55 * Math.PI)) / 180 / 1080).toFixed(6);
+
+/**
  * How much of the sky a flat sea hands back, and how much one seen edge-on does.
  *
  * Water's reflectance at normal incidence is about two per cent and goes to one at grazing
@@ -200,10 +216,19 @@ const NORMALS = `
 #include <normal_fragment_begin>
 {
   float fade = uWaveScale * ${FADE(SLOPE_FADE_METRES)};
+  float away = distance( vWaveWorld.xz, uEye.xz );
   vec2 slope = vec2( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
-    slope += w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    // **Each wave fades at its own range, not all of them at one.** A metre-long wave is
+    // below a pixel by a few hundred metres and shimmers rather than shows, while the
+    // hundred-metre swell under it is still the shape of the sea at ten kilometres. One
+    // fade for the lot either keeps the short ones until they crawl or drops the long ones
+    // while they still carry the picture; this drops each where it stops being resolvable,
+    // which is where its own wavelength falls below ${SHORTEST_DRAWN_PIXELS.toFixed(0)} pixels.
+    float wavelength = 6.2831853 / length( w.xy );
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( away * ${PIXEL_ANGLE} + 1e-6 ) );
+    slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
   }
   vec3 waved = ( viewMatrix * vec4( normalize( vec3( -slope.x, 1.0, -slope.y ) ), 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );

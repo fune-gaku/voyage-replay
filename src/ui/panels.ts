@@ -30,6 +30,7 @@ import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
+  TAIL_CUTOFF_FRACTION_OF_PEAK,
   forceClass,
   fullyDevelopedHeightMetres,
   meanOfHighest,
@@ -490,9 +491,41 @@ function seaSection(scenario: Scenario): string {
           : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
     ],
     ["Derivation", sea.derivation],
+    ["Waves drawn", bandRow(sea)],
   ];
-  return wind + keyValueTable(rows) + note(seaCaveat(sea));
+  return wind + keyValueTable(rows) + note(seaCaveat(sea)) + note(SLOPE_NOTE);
 }
+
+/**
+ * Which waves are in the drawn sea, which is a statement about the picture rather than the
+ * water: it decides how steep the surface is and how often it crosses a sight line.
+ */
+function bandRow(sea: SeaEstimate): string {
+  const period = sea.rough.peakPeriodSeconds;
+  if (sea.periodFrom === "none" || period <= 0) return "none, on a sea of no height";
+  const longest = (GRAVITY * (period * 1.5) ** 2) / (2 * Math.PI);
+  const shortest = (GRAVITY * (period * TAIL_CUTOFF_FRACTION_OF_PEAK) ** 2) / (2 * Math.PI);
+  return `${shortest.toFixed(1)} m to about ${longest.toFixed(0)} m of wavelength`;
+}
+
+/**
+ * **What the band leaves out, said rather than integrated for.**
+ *
+ * The slope of a sea lives in its short waves, and the shortest here are about a metre - so
+ * the drawn surface is markedly flatter than a real one. Widening the band cannot close that:
+ * the rest of the slope is in capillary-gravity ripples, which the spectrum this is built on
+ * does not describe and no screen can draw. Saying so is the alternative to a picture that
+ * looks right for a reason nobody could check.
+ */
+const SLOPE_NOTE =
+  "The drawn sea carries waves from about a metre up. Most of a real sea's SLOPE is in " +
+  "shorter waves than that - Cox and Munk measured about 14 degrees rms for the wind that " +
+  "raises a 3 m sea, against 8 degrees here - so the water is drawn flatter than it was, and " +
+  "the difference is in ripples this spectrum does not describe and no screen can draw. The " +
+  "same band decides how often the sea crosses a sight line, so the hidden fractions below " +
+  "move with it: it is one choice, made once, for the picture and the arithmetic together.";
+
+const GRAVITY = 9.81;
 
 /**
  * The wind, where the file gives one - and it is printed whether or not there is a sea.

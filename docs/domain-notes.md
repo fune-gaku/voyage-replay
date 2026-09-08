@@ -175,9 +175,23 @@ Carlo on the same geometry gives:
 
 | range | held rigid | riding | Monte Carlo, rigid / riding |
 |---:|---:|---:|---|
-| 8 km | 18.3% | 35.9% | 10.5 / 30.0 |
-| 11 km | 82.2% | 63.9% | 63.0 / 52.8 |
-| 13 km | 100% | 93.8% | 100 / 89.6 |
+| 8 km | 25.2% | 40.5% | 10.5 / 30.0 |
+| 11 km | 91.7% | 68.3% | 63.0 / 52.8 |
+| 13 km | 100% | 95.4% | 100 / 89.6 |
+
+**The first two columns were re-measured after the band was widened (#36); the third was
+not.** Those Monte Carlo figures were taken at the old cut of 0.35 Tp and are left as they
+were rather than moved to numbers from a different experiment. Anyone re-taking them should
+know two things that cost an afternoon here:
+
+- **The lowest clearance is at the far END of the line** whenever the grazing point clamps
+  onto the target, which is every range inside `sqrt(2R(h − f))`. A walk that stops one step
+  short of her misses the wave that actually hides her, and reports nought per cent.
+- **Random phases are not enough.** A sum of fixed-amplitude sinusoids has the right variance
+  and a tail far thinner than Gaussian — its maximum is bounded by the sum of the amplitudes —
+  so at three standard deviations it under-counts extremes by orders of magnitude. The
+  component energies have to be randomised too (Rayleigh amplitudes) before the surface is the
+  Gaussian one the level-crossing arithmetic assumes.
 
 Both run high, for the reason in *Known biases* below. **The reversal is in both**, which is
 what matters: it is a property of the problem and not of the approximation.
@@ -221,10 +235,33 @@ removes is impossible rather than unlikely — which is a different argument fro
 
 The second spectral moment **in wavenumber** diverges logarithmically — `k²S(ω)` falls off as
 `ω⁻¹` — so the root-mean-square wavenumber, and with it the crossing rate, depends on where the
-tail is cut. `TAIL_CUTOFF_FRACTION_OF_PEAK = 0.35` is that choice, named for the same reason
+tail is cut. `TAIL_CUTOFF_FRACTION_OF_PEAK = 0.12` is that choice, named for the same reason
 `REFRACTION_COEFFICIENT` is. Widening it from 0.5 Tp to 0.175 Tp, nearly a factor of three,
 moves one occlusion figure from 76% to 89% — real, and an order of magnitude smaller than the
 width of a sea state class.
+
+**Where it is cut, and why not further.** The slope lives in the short waves, and the drawn
+band's rms slope depends only on the cut — not on the sea's height, since the wavelengths grow
+with it. Measured over this spectrum at Hs 3 m:
+
+| cut | shortest wave | rms slope | k_rms |
+|---|---|---|---|
+| 0.35 (was) | 11.1 m | 5.3° | ×1.00 |
+| 0.175 | 2.8 m | 6.9° | ×1.30 |
+| **0.12** | **1.3 m** | **7.7°** | **×1.44** |
+| 0.05 | 0.23 m | 9.2° | ×1.72 |
+| 0.03 | 0.08 m | 9.9° | ×1.87 |
+
+**Cox and Munk's measured slope for the wind that raises a 3 m sea is 14.2°** — `mss = 0.003 +
+0.00512 U` — and the table says plainly that widening this band cannot reach it: eight
+centimetre waves get to ten degrees. The rest of a real sea's slope is in capillary–gravity
+ripples, which a JONSWAP gravity spectrum has no business describing and no renderer can draw.
+
+So the band is cut where waves stop being drawable rather than where the slope comes right, and
+**what is missing is named on the page rather than quietly integrated for**. A glitter path
+(#37) measures the full slope including those ripples, so its width has to come from the
+measured relation and not from the drawn surface — which is a different statement from letting
+the drawn band and the analysed one drift apart, and has to be made deliberately.
 
 Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
 them at the same place left the zero-crossing period six per cent long, against the published

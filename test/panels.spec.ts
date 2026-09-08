@@ -1046,6 +1046,30 @@ describe("a beacon in the same table as a buoy", () => {
   });
 });
 
+/**
+ * Which waves are in the drawn sea, and what that leaves out. It is one choice made once for
+ * the picture and the arithmetic together, and the page has to carry it because nothing in
+ * the frame says how steep the water should have been.
+ */
+describe("the band the sea is drawn from", () => {
+  it("names the wavelengths drawn, and what the slope is missing", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "day", seaState: 5 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("of wavelength");
+    expect(html).toContain("Cox and Munk");
+    expect(html).toContain("drawn flatter than it was");
+  });
+
+  /** A sea of no height has no band, and printing a range of wavelengths over one is a lie. */
+  it("draws no band over a sea with no waves in it", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "day", seaState: 0 };
+    expect(panelsFor(subject)).toContain("none, on a sea of no height");
+  });
+});
+
 describe("which way the drawn sea runs", () => {
   /**
    * The waves are drawn from one direction with a narrow spread, so a reader can take a
