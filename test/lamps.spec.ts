@@ -178,6 +178,10 @@ describe("how far a streak reaches", () => {
     expect(verticalSpread(15)).toBeCloseTo(0.1296, 4);
     expect(verticalSpread(30)).toBeCloseTo(0.006047, 6);
     expect(verticalSpread(60)).toBeCloseTo(1.316e-5, 8);
+    // The depression of the water thirty metres ahead of a masthead twenty metres up, which
+    // the prose in `core/illumination.ts` quotes. Thirty METRES is not thirty degrees, and
+    // writing the one figure under the other is how that sentence went wrong.
+    expect(verticalSpread(33.6901)).toBeCloseTo(0.002845, 6);
     // Symmetric: five degrees up is as much within the band as five degrees down.
     expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);
   });

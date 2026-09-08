@@ -269,7 +269,7 @@ export const BEAM_FALL_PER_DEGREE =
  * **Those are with the beam pointed at the water, which it is not.** `verticalSpread` takes
  * the depression into account and cuts the near field away: the same masthead lights the sea
  * thirty metres ahead of its own ship at 0.00011 lx rather than 0.04, because that water lies
- * thirty-four degrees below its beam, where six thousandths of the beam is left.
+ * 33.7 degrees below its beam, where under three thousandths of it is left.
  *
  * Starlight is about 0.002 lx and a full moon 0.25. **The drawn figure is the one with the
  * beam profile in, and it is a quarter of starlight**: 0.00049 lx at a hundred metres,
