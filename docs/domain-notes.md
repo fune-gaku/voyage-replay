@@ -244,24 +244,55 @@ width of a sea state class.
 band's rms slope depends only on the cut — not on the sea's height, since the wavelengths grow
 with it. Measured over this spectrum at Hs 3 m:
 
+Taken at the period `assumedPeakPeriodSeconds` gives a 3 m sea — 8.65 s — because the same
+integral at any other period describes a sea this tool never draws:
+
 | cut | shortest wave | rms slope | k_rms |
 |---|---|---|---|
-| 0.35 (was) | 11.1 m | 5.3° | ×1.00 |
-| 0.175 | 2.8 m | 6.9° | ×1.30 |
-| **0.12** | **1.3 m** | **7.7°** | **×1.44** |
-| 0.05 | 0.23 m | 9.2° | ×1.72 |
-| 0.03 | 0.08 m | 9.9° | ×1.87 |
+| 0.35 (was) | 14.3 m | 4.1° | ×1.00 |
+| 0.175 | 3.6 m | 5.4° | ×1.30 |
+| **0.12** | **1.7 m** | **6.0°** | **×1.44** |
+| 0.05 | 0.29 m | 7.1° | ×1.72 |
+| 0.03 | 0.11 m | 7.7° | ×1.87 |
 
 **Cox and Munk's measured slope for the wind that raises a 3 m sea is 14.2°** — `mss = 0.003 +
-0.00512 U` — and the table says plainly that widening this band cannot reach it: eight
-centimetre waves get to ten degrees. The rest of a real sea's slope is in capillary–gravity
+0.00512 U` — and the table says plainly that widening this band cannot reach it: eleven
+centimetre waves get to eight degrees. The rest of a real sea's slope is in capillary–gravity
 ripples, which a JONSWAP gravity spectrum has no business describing and no renderer can draw.
+
+**The drawn slope is lower again than the band's** — 5.4° against 6.0° — because the components
+are equal-energy bins: each carries its bin's height variance exactly and its slope variance
+only approximately, one frequency standing for a range over which `k²` varies by a factor of a
+few. More components narrow that gap; nothing closes it.
 
 So the band is cut where waves stop being drawable rather than where the slope comes right, and
 **what is missing is named on the page rather than quietly integrated for**. A glitter path
 (#37) measures the full slope including those ripples, so its width has to come from the
 measured relation and not from the drawn surface — which is a different statement from letting
 the drawn band and the analysed one drift apart, and has to be made deliberately.
+
+**The picture then draws that band twice, and only one of the two can float anything.** The
+geometry carries a component while the mesh has vertices for it — the disc's rings grow 8.73
+per cent of their radius, so eight samples to a wavelength runs out at 12 m of wave near the
+eye and at 170 m of wave by 250 m out — while the shading carries one while it covers more
+than a few pixels. Neither fade can be dropped: aliasing in the normals is a sparkle, and
+aliasing in the geometry is a slow false swell that moves the horizon and the hulls standing
+on it. But the two disagree by construction, and what floats has to be given the geometry:
+
+| From the eye | Height variance the mesh carries | Slope variance | rms slope |
+|---:|---:|---:|---:|
+| 20 m | 99.9% | 51% | 3.8° |
+| 100 m | 91% | 29% | 2.9° |
+| 250 m | 42% | 8% | 1.5° |
+| 600 m | 3% | 0.5% | 0.4° |
+
+**Nearly all of the height and half of the slope**, and that split is the spectrum's own: the
+components are equal-energy, so each carries the same height variance and the short ones carry
+almost all of the slope. So a buoy alongside heaves to essentially the whole sea and leans to
+about two thirds of its steepness, and one at 250 m — where the range fade has not yet begun —
+rides less than half of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
+`render/waves.ts` because nothing in Node can compile a shader to ask it. Handing her the
+undrawn spectrum instead is #34's hovering buoy arriving by a second route.
 
 Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
 them at the same place left the zero-crossing period six per cent long, against the published

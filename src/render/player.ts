@@ -32,6 +32,7 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
+import { pixelAngle } from "./waves.js";
 import { lightOf, type LightReading } from "../actors/mark/light.js";
 import { ridingOf, type Riding } from "../actors/mark/riding.js";
 import { drawnAppearance } from "../actors/mark/appearance.js";
@@ -420,6 +421,10 @@ export class Replay {
     this.aspect = width / height;
     this.bridge.aspect = this.aspect;
     this.bridge.updateProjectionMatrix();
+    // The shortest wave the sea can carry is a property of the frame: a fixed figure would
+    // keep the chop until it crawled on a small window and drop it early on a large one, so
+    // the drawn band would depend on how big somebody's browser is.
+    this.stage.sceneParts.setPixelAngle(pixelAngle(this.bridge.fov, this.canvas.clientHeight));
     this.overlay.resize(width, height);
     this.update();
   }

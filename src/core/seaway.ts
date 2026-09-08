@@ -47,23 +47,30 @@ const PEAK_ENHANCEMENT = 3.3;
  * root-mean-square wavenumber, and with it the level-crossing rate, depends on where the
  * tail is cut. There is no converged answer to find, only a declared one.
  *
- * **0.12 of the peak period**, which for a 3 m sea is a shortest wave of 1.3 m. Chosen
- * against what the shortfall in slope actually is, measured over this spectrum at Hs 3 m:
+ * **0.12 of the peak period**, which for a 3 m sea is a shortest wave of 1.7 m. Chosen
+ * against what the shortfall in slope actually is, measured over this spectrum at Hs 3 m and
+ * the period `assumedPeakPeriodSeconds` gives it - 8.65 s, since taking these at any other
+ * period describes a sea this tool never draws:
  *
  * | cut | shortest wave | rms slope | k_rms |
  * |---|---|---|---|
- * | 0.35 (was) | 11.1 m | 5.3 deg | x1.00 |
- * | 0.175 | 2.8 m | 6.9 deg | x1.30 |
- * | **0.12** | **1.3 m** | **7.7 deg** | **x1.44** |
- * | 0.05 | 0.23 m | 9.2 deg | x1.72 |
- * | 0.03 | 0.08 m | 9.9 deg | x1.87 |
+ * | 0.35 (was) | 14.3 m | 4.1 deg | x1.00 |
+ * | 0.175 | 3.6 m | 5.4 deg | x1.30 |
+ * | **0.12** | **1.7 m** | **6.0 deg** | **x1.44** |
+ * | 0.05 | 0.29 m | 7.1 deg | x1.72 |
+ * | 0.03 | 0.11 m | 7.7 deg | x1.87 |
  *
  * **Cox and Munk's measured slope for the wind that raises a 3 m sea is 14.2 degrees**, and
- * the table says plainly that widening this band cannot reach it: eight-centimetre waves get
- * to ten. The rest of a real sea's slope is in capillary-gravity ripples, which a JONSWAP
+ * the table says plainly that widening this band cannot reach it: eleven-centimetre waves get
+ * to eight. The rest of a real sea's slope is in capillary-gravity ripples, which a JONSWAP
  * gravity spectrum has no business describing and no renderer can draw. So this is cut where
  * the waves stop being drawable rather than where the slope comes right - and what is missing
  * is named on the page instead of being quietly integrated for.
+ *
+ * **The DRAWN slope is lower again**, 5.4 degrees against the band's 6.0: equal-energy bins
+ * carry each bin's height variance exactly and its slope variance only approximately, since
+ * one frequency has to stand for a bin over which `k^2` varies. More components narrow that;
+ * nothing removes it.
  *
  * Frequency moments do not diverge, so the zero-crossing period is not affected.
  */

@@ -518,9 +518,9 @@ function bandRow(sea: SeaEstimate): string {
  * looks right for a reason nobody could check.
  */
 const SLOPE_NOTE =
-  "The drawn sea carries waves from about a metre up. Most of a real sea's SLOPE is in " +
+  "The drawn sea carries waves from a metre or two up. Most of a real sea's SLOPE is in " +
   "shorter waves than that - Cox and Munk measured about 14 degrees rms for the wind that " +
-  "raises a 3 m sea, against 8 degrees here - so the water is drawn flatter than it was, and " +
+  "raises a 3 m sea, against 5 or 6 here - so the water is drawn flatter than it was, and " +
   "the difference is in ripples this spectrum does not describe and no screen can draw. The " +
   "same band decides how often the sea crosses a sight line, so the hidden fractions below " +
   "move with it: it is one choice, made once, for the picture and the arithmetic together.";
@@ -1205,16 +1205,35 @@ function ridingNote(marks: Mark[], region: BuoyageRegion | null): string {
     `${range} here, which rests on her draught alone - the waterplane cancels - taken ` +
     `${where}. So she follows a long swell, moves further than a chop near that period, and ` +
     "falls behind a shorter one. Her lean is given twice that period, which is why the two " +
-    "do not peak together. **The damping is the one figure here with no source**: it " +
-    "depends on the hull " +
-    `and on whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per ` +
-    "cent of critical is this tool's own figure. It weighs most at resonance, where the " +
-    "response goes " +
-    "as one over twice it - which is to say where this model is least trustworthy. How far " +
-    "each shape leans is a class rather than a calculation: a spar buoy exists to stay " +
-    "upright, and the ballast that makes her do it is not in any report."
+    `do not peak together. ${WHAT_NOBODY_STATED} ${RIDES_THE_DRAWN_SEA}`
   );
 }
+
+/**
+ * **The damping is the one figure here with no source**, and the lean is a class rather than
+ * a figure at all - so both are said outright rather than left to look computed.
+ */
+const WHAT_NOBODY_STATED =
+  "**The damping is the one figure here with no source**: it depends on the hull and on " +
+  `whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per cent of ` +
+  "critical is this tool's own figure. It weighs most at resonance, where the response goes " +
+  "as one over twice it - which is to say where this model is least trustworthy. How far " +
+  "each shape leans is a class rather than a calculation: a spar buoy exists to stay " +
+  "upright, and the ballast that makes her do it is not in any report.";
+
+/**
+ * **She is given the sea the picture draws, not the sea the page describes.**
+ *
+ * The mesh band-limits every component to the vertices under it, so the chop is in the water
+ * near the eye and gone a few hundred metres out. A buoy handed the whole spectrum there
+ * would heave to waves that are not beneath her, which is the hovering of #34 arriving
+ * through the band rather than through the range fade.
+ */
+const RIDES_THE_DRAWN_SEA =
+  "She rides the sea as it is DRAWN under her rather than the sea described above: the mesh " +
+  "holds the swell everywhere and the chop only near the eye, so a buoy a few hundred metres " +
+  "off answers less than one alongside. Given the whole spectrum over water drawn without " +
+  "it, she would hover.";
 
 /** The same riding the renderer uses, from the same resolved shape. */
 function ridingFor(mark: Mark, region: BuoyageRegion | null): Riding {

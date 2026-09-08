@@ -70,12 +70,44 @@ const SLOPE_FADE_METRES = new Vector2(2500, 9000);
  * out to the horizon while the chop on top of it stops contributing a few hundred metres out,
  * which is about where a real one stops being separable to the eye as well.
  *
- * The angle a pixel subtends is the vertical field of view over the height in pixels - a
- * fiftieth of a degree at 55 degrees over 1080 - and eight of them is where a sinusoid stops
- * reading as one.
+ * **The angle a pixel subtends is a property of the frame, not a constant**, so it comes in as
+ * a uniform: the field of view over the height in pixels. Hard-coded, the same wave survives
+ * to half the range on a short window and vanishes at twice the size on a tall one - which
+ * would make the drawn band depend on how big somebody's browser is.
  */
 const SHORTEST_DRAWN_PIXELS = 8;
-const PIXEL_ANGLE = ((SHORTEST_DRAWN_PIXELS * (55 * Math.PI)) / 180 / 1080).toFixed(6);
+
+/**
+ * How the mesh under a wave is spaced, and how many samples a wave needs to be one.
+ *
+ * `water.ts` lays its rings geometrically at 8.73 per cent, so the spacing at any distance is
+ * that fraction of it - with a floor, since the innermost rings are metres apart rather than
+ * millimetres. Eight samples is the same count the shading uses for a pixel: below it a
+ * sinusoid stops reading as a sinusoid, whether the sampler is a vertex or a fragment.
+ */
+const RING_GROWTH = 0.0873;
+const NEAREST_SPACING = 1.5;
+const SAMPLES_PER_WAVE = 8;
+
+/**
+ * How much of one component the mesh under a point can actually carry there.
+ *
+ * **The CPU mirror of the loop in `DISPLACEMENT`, and it exists for the reason `#34` gives**:
+ * anything floating has to ride the sea that is DRAWN, and the drawn sea is no longer the
+ * whole spectrum at every range. Beyond a couple of hundred metres the vertices are twenty
+ * metres apart, so the metre-long waves the band now reaches down to are not in the geometry
+ * at all - and a buoy heaving to waves the water does not have is a buoy hovering, which is
+ * exactly the failure the per-component fade was added to prevent in the picture.
+ *
+ * Two writings of one rule, in GLSL and here, because no test can compile a shader. They are
+ * kept in this file, next to each other, so that they are edited together.
+ */
+export function meshCarries(wavelengthMetres: number, distanceFromEyeMetres: number): number {
+  const spacing = Math.max(distanceFromEyeMetres * RING_GROWTH, NEAREST_SPACING);
+  const t = Math.min(Math.max(wavelengthMetres / (SAMPLES_PER_WAVE * spacing), 0), 1);
+  // smoothstep, as GLSL defines it.
+  return t * t * (3 - 2 * t);
+}
 
 /**
  * How much of the sky a flat sea hands back, and how much one seen edge-on does.
@@ -103,6 +135,24 @@ export interface WaveUniforms {
   uWaveScale: { value: number };
   /** What the water reflects. The scene's own sky, so the two cannot disagree. */
   uSkyColour: { value: Color };
+  /**
+   * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
+   * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
+   * Set from the frame, because a constant would make the drawn band depend on the window.
+   */
+  uPixelAngle: { value: number };
+}
+
+/**
+ * The angle the shortest drawable wave has to subtend, from the frame it is drawn in.
+ *
+ * A wave is drawn while its own wavelength covers more of the picture than this; below it, it
+ * is noise crawling across the water rather than a wave, and it is faded out where the eye
+ * would stop separating it anyway.
+ */
+export function pixelAngle(verticalFieldOfViewDegrees: number, heightPixels: number): number {
+  const perPixel = (verticalFieldOfViewDegrees * Math.PI) / 180 / Math.max(heightPixels, 1);
+  return SHORTEST_DRAWN_PIXELS * perPixel;
 }
 
 export function makeWaveUniforms(): WaveUniforms {
@@ -111,6 +161,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWavePhase: { value: Array.from({ length: SHADER_COMPONENTS }, () => 0) },
     uWaveTime: { value: 0 },
     uWaveScale: { value: 0 },
+    uPixelAngle: { value: pixelAngle(55, 1080) },
     uSkyColour: { value: new Color(0x000000) },
   };
 }
@@ -148,6 +199,7 @@ uniform vec4 uWave[${SHADER_COMPONENTS}];
 uniform float uWavePhase[${SHADER_COMPONENTS}];
 uniform float uWaveTime;
 uniform float uWaveScale;
+uniform float uPixelAngle;
 varying vec3 vWaveWorld;
 `;
 
@@ -184,16 +236,26 @@ const FADE = (near: Vector2): string =>
  *
  * Placed at `begin_vertex` alongside the curvature, which subtracts from the same value;
  * the two are independent and additive, and neither cares which ran first.
+ *
+ * **Every component is band-limited to the mesh under it, not just the lot to one range.**
+ * The disc's rings grow by 8.73 per cent of the distance, so vertices are 22 m apart at 250 m
+ * - and a 2 m wave sampled there does not come out short, it comes out as a slow false swell
+ * crawling across the water, which moves the horizon and the hulls standing on it. Aliasing in
+ * the normals is noise; aliasing in the geometry is a different sea.
  */
 const DISPLACEMENT = `
 #include <begin_vertex>
 vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
+  float away = distance( vWaveWorld.xz, uEye.xz );
+  float spacing = max( away * ${RING_GROWTH.toFixed(4)}, ${NEAREST_SPACING.toFixed(1)} );
   float height = 0.0;
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
-    height += w.z * sin( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    float wavelength = 6.2831853 / length( w.xy );
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( ${SAMPLES_PER_WAVE}.0 * spacing ) );
+    height += carries * w.z * sin( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
   }
   transformed.y += fade * height;
 }
@@ -224,10 +286,10 @@ const NORMALS = `
     // below a pixel by a few hundred metres and shimmers rather than shows, while the
     // hundred-metre swell under it is still the shape of the sea at ten kilometres. One
     // fade for the lot either keeps the short ones until they crawl or drops the long ones
-    // while they still carry the picture; this drops each where it stops being resolvable,
-    // which is where its own wavelength falls below ${SHORTEST_DRAWN_PIXELS.toFixed(0)} pixels.
+    // while they still carry the picture; this drops each where its own wavelength falls
+    // below the few pixels a sinusoid needs to read as one.
     float wavelength = 6.2831853 / length( w.xy );
-    float carries = smoothstep( 0.0, 1.0, wavelength / ( away * ${PIXEL_ANGLE} + 1e-6 ) );
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( away * uPixelAngle + 1e-6 ) );
     slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
   }
   vec3 waved = ( viewMatrix * vec4( normalize( vec3( -slope.x, 1.0, -slope.y ) ), 0.0 ) ).xyz;
@@ -269,6 +331,7 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uWavePhase"] = uniforms.uWavePhase;
     shader.uniforms["uWaveTime"] = uniforms.uWaveTime;
     shader.uniforms["uWaveScale"] = uniforms.uWaveScale;
+    shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
     shader.fragmentShader = FRAGMENT_DECLARATIONS + shader.fragmentShader;

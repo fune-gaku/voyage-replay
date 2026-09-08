@@ -11,6 +11,8 @@ import {
   applyWaves,
   displacedFraction,
   makeWaveUniforms,
+  meshCarries,
+  pixelAngle,
   setWaves,
   SHADER_COMPONENTS,
 } from "../src/render/waves.js";
@@ -230,5 +232,148 @@ describe("the shader carries the whole sea it was given", () => {
 
     const packed = uniforms.uWave.value.reduce((total, wave) => total + wave.z ** 2 / 2, 0);
     expect(Math.sqrt(packed)).toBeCloseTo(seaway.surfaceStdDevMetres, 6);
+  });
+});
+
+/**
+ * **Short waves have to leave the picture before they stop being pictures.**
+ *
+ * The band now reaches down to a metre or two, which is where a sea's slope lives - and a
+ * wave narrower than the thing sampling it does not come out short, it comes out as noise
+ * crawling over the water. In the shading that is a sparkle; in the geometry it is a slow
+ * false swell that moves the horizon and the hulls standing on it.
+ */
+describe("dropping each component where its own wavelength runs out", () => {
+  /**
+   * The disc's rings grow by 8.73 per cent of their radius, so vertices are 22 m apart at
+   * 250 m. The 117 m swell of a 3 m sea still has five of them to a wavelength there; a 2 m
+   * wave has a tenth of one, and drawing it is drawing the aliasing rather than the wave.
+   */
+  it("keeps the swell where the mesh is coarse and drops the chop", () => {
+    expect(meshCarries(117, 250)).toBeGreaterThan(0.5);
+    expect(meshCarries(2, 250)).toBeLessThan(0.01);
+  });
+
+  /** Close in, the vertices are metres apart and the same short wave is drawable again. */
+  it("gives the same short wave back near the eye, where there are vertices for it", () => {
+    expect(meshCarries(12, 5)).toBeCloseTo(1, 6);
+    expect(meshCarries(12, 400)).toBeLessThan(0.05);
+  });
+
+  /** A fade rather than a cut, so a mark crossing the range does not step. */
+  it("fades rather than switches, and never leaves the unit interval", () => {
+    let last = 1;
+    for (const away of [0, 10, 50, 100, 200, 400, 800, 2000]) {
+      const carries = meshCarries(30, away);
+      expect(carries, `${away} m`).toBeLessThanOrEqual(last + 1e-12);
+      expect(carries, `${away} m`).toBeGreaterThanOrEqual(0);
+      last = carries;
+    }
+  });
+
+  /**
+   * **Both stages have to do it, and they did not.** The fragment shader faded per component
+   * while the vertex shader displaced the lot, so the geometry carried metre waves out to
+   * 600 m as a false swell while the shading correctly dropped them. Nothing in the old
+   * tests could see it: they checked that the chunks existed and how many components were
+   * packed.
+   */
+  it("band-limits in the vertex stage as well as the fragment one", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    for (const stage of [shader.vertexShader, shader.fragmentShader]) {
+      // The component's own wavelength, and the amplitude multiplied by what it earns.
+      expect(stage).toMatch(/float wavelength = 6\.2831853 \/ length\( w\.xy \);/);
+      expect(stage).toMatch(/float carries = smoothstep\(/);
+      expect(stage).toMatch(/carries \* w\./);
+    }
+  });
+
+  /**
+   * The two stages measure against different things - the vertex against the mesh under it,
+   * the fragment against a pixel - and only the second can be a property of the frame.
+   */
+  it("measures the vertex stage against the mesh and the fragment against a pixel", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.vertexShader).toContain("float spacing = max( away * 0.0873, 1.5 );");
+    expect(shader.vertexShader).toContain("wavelength / ( 8.0 * spacing )");
+    // The uniform is declared in both stages; only the fragment one measures against it.
+    expect(shader.fragmentShader).toContain("wavelength / ( away * uPixelAngle");
+    expect(shader.fragmentShader).not.toContain("float spacing");
+  });
+});
+
+/**
+ * **A pixel's angle is a property of the frame, not a constant.** Fixed, the same wave would
+ * survive to half the range in a short window and vanish at twice the size in a tall one, so
+ * the drawn band would depend on how big somebody's browser is.
+ */
+describe("the angle the shortest drawable wave has to fill", () => {
+  it("shrinks as the frame gains pixels, and holds for the same pixel size", () => {
+    expect(pixelAngle(55, 1080)).toBeGreaterThan(pixelAngle(55, 2160));
+    expect(pixelAngle(55, 2160)).toBeCloseTo(pixelAngle(55, 1080) / 2, 12);
+    // Twice the view over twice the pixels is the same pixel, and the same band.
+    expect(pixelAngle(110, 2160)).toBeCloseTo(pixelAngle(55, 1080), 12);
+  });
+
+  /** Eight pixels of a 55 degree view over 1080 rows: about two fifths of a degree. */
+  it("comes out at the pixels a sinusoid needs to read as one", () => {
+    expect((pixelAngle(55, 1080) * 180) / Math.PI).toBeCloseTo((55 / 1080) * 8, 9);
+  });
+
+  /** A frame with no height yet - a canvas before layout - must not divide by zero. */
+  it("survives a frame that has no height yet", () => {
+    expect(Number.isFinite(pixelAngle(55, 0))).toBe(true);
+  });
+});
+
+/**
+ * **What floats has to ride the sea that is drawn**, and the band is now part of what is
+ * drawn. A buoy 250 m out sits on a mesh that holds the swell and less than half the sea's
+ * variance; giving her the whole spectrum there is the hovering buoy of #34 arriving by
+ * another route - through the band this time rather than through the range fade.
+ */
+describe("the sea a floating mark is given", () => {
+  const sea = waveComponents(seawayOf(3));
+
+  /** Height and slope variance the mesh still carries at a distance, as fractions of the sea's. */
+  function carried(away: number): { height: number; slope: number } {
+    const parts = sea.map((wave: WaveComponent) => {
+      const carries = meshCarries((2 * Math.PI) / wave.wavenumberPerMetre, away);
+      return { wave, amplitude: wave.amplitudeMetres * carries };
+    });
+    const share = (of: (a: number, k: number) => number): number =>
+      parts.reduce((t, p) => t + of(p.amplitude, p.wave.wavenumberPerMetre) ** 2, 0) /
+      parts.reduce((t, p) => t + of(p.wave.amplitudeMetres, p.wave.wavenumberPerMetre) ** 2, 0);
+    return { height: share((a) => a), slope: share((a, k) => a * k) };
+  }
+
+  /**
+   * Nearly all of the HEIGHT survives close in - the sea's variance is in the long waves -
+   * and less than half of it is left at 250 m, where the vertices are 22 m apart. A mark
+   * there heaving to the whole spectrum would be heaving to twice the water under her.
+   */
+  it("takes the swell out to where the vertices run out, and drops the rest", () => {
+    expect(carried(20).height).toBeGreaterThan(0.99);
+    expect(carried(250).height).toBeLessThan(0.5);
+    expect(carried(600).height).toBeLessThan(0.1);
+  });
+
+  /**
+   * **The mesh carries about half the SLOPE even at the eye**, and that is not a fault to be
+   * fixed: the nearest rings are 1.5 m apart, so eight samples is a 12 m wave, and the metre
+   * waves the band now reaches down to exist in the shading alone. A mark is leaned by the
+   * surface she sits on rather than by the one painted over it - the alternative is a buoy
+   * rocking to crests that are not in the water beneath her.
+   */
+  it("leans a mark by the geometry, not by the shading painted over it", () => {
+    expect(carried(20).slope).toBeGreaterThan(0.4);
+    expect(carried(20).slope).toBeLessThan(0.7);
+    expect(carried(250).slope).toBeLessThan(carried(250).height);
   });
 });

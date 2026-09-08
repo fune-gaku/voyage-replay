@@ -11,10 +11,11 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { prepareTrack, sampleAt } from "../src/core/track.js";
-import type { Track } from "../src/core/types.js";
+import type { Environment, Track } from "../src/core/types.js";
 import type { Frame } from "../src/render/basemap.js";
 import { toWorld } from "../src/render/coords.js";
 import { buildScene, buildTrackLine } from "../src/render/scene.js";
+import { displacedFraction } from "../src/render/waves.js";
 import { ORIGIN } from "./fixtures.js";
 
 function background(scene: { background: unknown }): number {
@@ -121,6 +122,53 @@ describe("the water", () => {
       500_000,
     );
     expect(sizeOf(50_000), "and no more for one a hundred times bigger").toBe(harbour);
+  });
+});
+
+/**
+ * **What floats rides the sea that is DRAWN**, which is now less of the sea the further out
+ * the point is. The vertex shader band-limits every component to the vertices under it, and
+ * a mark given the whole spectrum out there would heave to waves that are not in the water
+ * beneath her - the hovering buoy of #34, arriving through the band rather than through the
+ * range fade.
+ */
+describe("the sea under something floating", () => {
+  const environment = {
+    waves: { significantHeightMetres: 3, derivation: "measured" },
+  } as const satisfies Environment;
+
+  /** How far the drawn water moves at a point, over a couple of minutes of the scenario. */
+  function riseAt(parts: ReturnType<typeof buildScene>, north: number): number {
+    let sum = 0;
+    for (let seconds = 0; seconds < 120; seconds += 0.5) {
+      sum += parts.drawnSurfaceAt({ east: 0, north }, seconds).heightMetres ** 2;
+    }
+    return Math.sqrt(sum / 240);
+  }
+
+  it("moves less at a distance, where the range fade has not started yet", () => {
+    const parts = buildScene(environment, 1000);
+    parts.setDiagramView(false);
+    parts.setEye({ east: 0, north: 0 }, 0);
+
+    // **250 m is where `displacedFraction` is still exactly one**, so every bit of this
+    // difference is the band and none of it the range fade. The vertices are 22 m apart
+    // there and the sea keeps two fifths of its variance; a mark heaving to all of it
+    // would be riding twice the water that is drawn under her.
+    expect(displacedFraction(250)).toBe(1);
+    expect(riseAt(parts, 250)).toBeLessThan(riseAt(parts, 20) * 0.8);
+    expect(riseAt(parts, 250)).toBeGreaterThan(0);
+  });
+
+  /** Close in, the mesh has vertices for the sea's own waves and nothing is taken away. */
+  it("leaves the water near the eye alone", () => {
+    const parts = buildScene(environment, 1000);
+    parts.setDiagramView(false);
+    parts.setEye({ east: 0, north: 0 }, 0);
+
+    // A 3 m sea has a surface standard deviation of Hs/4, and the swell that carries it is
+    // hundreds of metres long - all of which the mesh under a 20 m point still holds.
+    expect(riseAt(parts, 20)).toBeGreaterThan(0.6);
   });
 });
 

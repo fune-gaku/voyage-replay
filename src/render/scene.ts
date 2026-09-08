@@ -44,6 +44,7 @@ import {
   applyWaves,
   displacedFraction,
   makeWaveUniforms,
+  meshCarries,
   setWaves,
   type WaveUniforms,
 } from "./waves.js";
@@ -121,6 +122,8 @@ export interface SceneParts {
    * still sea rather than as honesty.
    */
   setSeaClock(secondsFromStart: number): void;
+  /** How much of the picture the shortest drawable wave has to fill - a property of the frame. */
+  setPixelAngle(radians: number): void;
   /**
    * The sea under a point, as the water is DRAWN there.
    *
@@ -128,6 +131,11 @@ export interface SceneParts {
    * fades to flat past a few hundred metres - the disc runs out of vertices, not the sea
    * out of waves - and a buoy riding the true field over visibly still water would be a
    * buoy hovering. One function, so the two cannot come apart.
+   *
+   * **The band is part of that, not only the range.** Each component is dropped where the
+   * mesh beneath it runs out of vertices for it, so the sea here is the swell everywhere and
+   * the chop near the eye alone - the same rule the vertex shader applies, mirrored in
+   * `waves.ts` because nothing in Node can compile a shader to ask it.
    */
   drawnSurfaceAt(position: LocalPosition, secondsFromStart: number, riding?: Riding): SurfacePoint;
 }
@@ -328,7 +336,10 @@ function viewControls(
   parts: Switchable,
   setLighting: (on: boolean) => void,
   extentMetres: number,
-): Pick<SceneParts, "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "drawnSurfaceAt"> {
+): Pick<
+  SceneParts,
+  "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"
+> {
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -348,8 +359,26 @@ function viewControls(
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
+    ...seaControls(parts),
+  };
+}
+
+/**
+ * The three that answer to the water rather than to the camera: when it is, how finely it can
+ * be drawn, and what it comes to under a given point.
+ *
+ * Together because they are one surface seen three ways, and a caller that had the clock but
+ * not the band would be asking about a sea nobody is drawing.
+ */
+function seaControls(
+  parts: Switchable,
+): Pick<SceneParts, "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"> {
+  return {
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
+    },
+    setPixelAngle: (radians: number): void => {
+      parts.waves.uPixelAngle.value = radians;
     },
     drawnSurfaceAt: (
       position: LocalPosition,
@@ -382,6 +411,27 @@ function setDiagram(
  * The sea under a point, damped by the same fade the shader uses and switched off wherever
  * the shader's is - so a chart, which has no waves, floats nothing.
  */
+/**
+ * The sea as the mesh draws it HERE, which is less of it the further out the point is.
+ *
+ * The vertex shader band-limits every component to the vertices under it, so past a couple
+ * of hundred metres the geometry holds the swell and none of the chop. **A floating body has
+ * to be given the same sea**, or it heaves to waves that are not in the water beneath it -
+ * which is the hovering buoy of #34 again, arriving this time through the band rather than
+ * through the range fade.
+ *
+ * The amplitude is scaled rather than the component dropped, because that is what the shader
+ * does: a fade, so that a mark crossing the range does not step.
+ */
+function asDrawn(sea: WaveComponent[], distanceFromEyeMetres: number): WaveComponent[] {
+  return sea.map((wave) => ({
+    ...wave,
+    amplitudeMetres:
+      wave.amplitudeMetres *
+      meshCarries((2 * Math.PI) / wave.wavenumberPerMetre, distanceFromEyeMetres),
+  }));
+}
+
 function drawnSurface(
   parts: Switchable,
   position: LocalPosition,
@@ -395,7 +445,7 @@ function drawnSurface(
   // the fade goes outside it, because that is about the water being drawn flat at range and
   // not about anything floating on it.
   const point = surfaceAt(
-    parts.sea,
+    asDrawn(parts.sea, away),
     { eastMetres: position.east, northMetres: position.north },
     secondsFromStart,
     riding,
