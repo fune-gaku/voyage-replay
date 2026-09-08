@@ -7,7 +7,7 @@
  * and a reconstruction whose scale you cannot read is a cartoon.
  */
 
-import type { Mesh, Vector3 } from "three";
+import type { Mesh } from "three";
 import {
   AmbientLight,
   BufferAttribute,
@@ -26,7 +26,7 @@ import {
 
 import type { Conditions } from "../core/conditions.js";
 import type { LocalPosition } from "../core/geodesy.js";
-import { glitterSpreadRadians, lightingAt } from "../core/illumination.js";
+import { glitterSpreadRadians, lightingAt, type Lit } from "../core/illumination.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
@@ -427,7 +427,7 @@ function seaControls(
       // with the sun computed above the horizon is a transcription error, and a sun path
       // over a night palette would report it in a picture instead of in a sentence.
       const lit = lightingAt(conditions, night);
-      lights.pointAt(lit ? towardsBody(lit) : null);
+      lights.pointAt(lit);
       // **The width of the path is the sea's, and the sea is the one that is DRAWN.** Its
       // slope is a third of a real one, so the missing roughness goes into the body's own
       // lobe - measured off the components the water is made of, not off the spectrum they
@@ -604,7 +604,7 @@ function buildFog(
 interface Lights {
   setDiagram: (on: boolean) => void;
   /**
-   * Point the key light at the body the water is reflecting, or put it out.
+   * Point the key light at the body the water is reflecting, and dim it with that body.
    *
    * **One direction for the whole frame.** A sea handing back a moon on 191 degrees while
    * the hulls are lit from somewhere else is one picture making two claims - the failure
@@ -616,8 +616,12 @@ interface Lights {
    * side and a shaded one, and the scene is carried by the ambient alone. Leaving the light
    * standing would light the hulls from wherever the moon was before it set - which makes a
    * frame depend on how the viewer got to it, since scrubbing backwards never restores it.
+   *
+   * **And the phase dims it, as it dims the water.** A page saying a half moon is a ninth of
+   * a full one, over a picture whose lane fades while the hulls keep their moonlight, is the
+   * same frame making two claims about how much light there was.
    */
-  pointAt: (towards: Vector3 | null) => void;
+  pointAt: (lit: Lit | null) => void;
 }
 
 function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
@@ -633,12 +637,15 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   // Both are held rather than read back off the light, because the two callers arrive in
   // either order within a frame and each has to leave the other's decision standing.
   let diagram = false;
-  let lit = true;
+  // How much of the full figure the body is worth: one for the sun and for a full moon, less
+  // for every other phase, zero when nothing is up. The night's own 0.25 is therefore a FULL
+  // moon's, which is the same declaration `BRIGHTEST_LOBE` makes about the water.
+  let share = 1;
   const apply = (): void => {
     ambient.intensity = diagram ? Math.max(palette.ambient, 1.35) : palette.ambient;
     // A chart is lit for reading and answers to nothing in the sky; a bridge view is lit by
     // whatever is up there, and by nothing at all when nothing is.
-    key.intensity = diagram ? 0.8 : lit ? (night ? 0.25 : 1.75) : 0;
+    key.intensity = diagram ? 0.8 : (night ? 0.25 : 1.75) * share;
   };
 
   return {
@@ -648,9 +655,9 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
     },
     // A directional light in three shines from its position towards the origin, so the
     // position IS the direction to the body - scaled up only to keep it clear of the scene.
-    pointAt: (towards: Vector3 | null): void => {
-      lit = towards !== null;
-      if (towards) key.position.copy(towards).multiplyScalar(1000);
+    pointAt: (lit: Lit | null): void => {
+      share = lit ? Math.min(lit.relativeBrightness, 1) : 0;
+      if (lit) key.position.copy(towardsBody(lit)).multiplyScalar(1000);
       apply();
     },
   };

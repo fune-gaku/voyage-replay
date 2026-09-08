@@ -336,6 +336,31 @@ describe("the sky the water hands back", () => {
     expect(key.intensity).toBeGreaterThan(0);
   });
 
+  /**
+   * **The phase dims the hulls as it dims the water.** A page saying a half moon is a ninth
+   * of a full one, over a picture whose lane fades while the moonlight on the hulls does
+   * not, is one frame making two claims about how much light there was.
+   */
+  it("dims the key light with the moon's phase, and holds the sun at the full figure", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+    const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+
+    // A 41 per cent moon is a sixteenth of a full one by Allen's relation, not two fifths.
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    const crescent = key.intensity;
+    expect(crescent).toBeGreaterThan(0);
+    expect(crescent).toBeLessThan(0.25 / 5);
+
+    // The sun is clamped to the full figure rather than four hundred thousand times it.
+    const day = { ...sea, lightCondition: "day" } as const satisfies Environment;
+    const lit = buildScene(day, 1000);
+    lit.setDiagramView(false);
+    const sun = lit.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+    lit.setSky(conditionsAt(suoNada, day, Date.parse("2025-11-27T12:00:00+09:00") / 1000));
+    expect(sun.intensity).toBeCloseTo(1.75, 6);
+  });
+
   /** A chart is lit for reading and answers to nothing in the sky, whichever call came last. */
   it("leaves the plan view's own lighting alone", () => {
     const parts = buildScene(sea, 1000);

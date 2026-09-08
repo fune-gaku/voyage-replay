@@ -817,6 +817,12 @@ recorded and issue #15 named. A sea handing back a moon on 191° while the hulls
 somewhere else is one picture making two claims, so #37 takes that piece of #15 with it: the sky
 and the key light are driven from the same computed direction.
 
+**And the phase dims the key light too.** The night's directional figure is a FULL moon's, so
+every other phase scales from it by the same law the water's lobe uses — a page saying a half
+moon is a ninth of a full one, over hulls whose moonlight never changes, would be one frame
+making two claims about how much light there was. The sun clamps to the full figure rather
+than to four hundred thousand times it.
+
 **Which body may light the picture follows the picture, not the almanac.** The renderer draws
 night or day from the light condition the FILE states, because that is a witness's word about
 the dark. Where the two disagree — a file saying night with the sun computed above the horizon,
