@@ -32,6 +32,7 @@ import {
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
+import { pixelAngle } from "./waves.js";
 import { lightOf, type LightReading } from "../actors/mark/light.js";
 import { ridingOf, type Riding } from "../actors/mark/riding.js";
 import { drawnAppearance } from "../actors/mark/appearance.js";
@@ -420,6 +421,17 @@ export class Replay {
     this.aspect = width / height;
     this.bridge.aspect = this.aspect;
     this.bridge.updateProjectionMatrix();
+    // The shortest wave the sea can carry is a property of the frame: a fixed figure would
+    // keep the chop until it crawled on a small window and drop it early on a large one, so
+    // the drawn band would depend on how big somebody's browser is.
+    //
+    // **Times the pixel ratio, because the fragment shader runs on the drawing buffer and
+    // not on the CSS box.** A retina screen puts two device pixels in each of these, so
+    // taking the layout height would drop every component at half the range it should - the
+    // drawn band would then depend on the reader's DISPLAY rather than on the window.
+    this.stage.sceneParts.setPixelAngle(
+      pixelAngle(this.bridge.fov, height * this.renderer.getPixelRatio()),
+    );
     this.overlay.resize(width, height);
     this.update();
   }

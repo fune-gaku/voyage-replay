@@ -43,7 +43,9 @@ import { buildTerrain, type Terrain } from "./terrain.js";
 import {
   applyWaves,
   displacedFraction,
+  drawable,
   makeWaveUniforms,
+  meshCarries,
   setWaves,
   type WaveUniforms,
 } from "./waves.js";
@@ -121,6 +123,8 @@ export interface SceneParts {
    * still sea rather than as honesty.
    */
   setSeaClock(secondsFromStart: number): void;
+  /** How much of the picture the shortest drawable wave has to fill - a property of the frame. */
+  setPixelAngle(radians: number): void;
   /**
    * The sea under a point, as the water is DRAWN there.
    *
@@ -128,6 +132,11 @@ export interface SceneParts {
    * fades to flat past a few hundred metres - the disc runs out of vertices, not the sea
    * out of waves - and a buoy riding the true field over visibly still water would be a
    * buoy hovering. One function, so the two cannot come apart.
+   *
+   * **The band is part of that, not only the range.** Each component is dropped where the
+   * mesh beneath it runs out of vertices for it, so the sea here is the swell everywhere and
+   * the chop near the eye alone - the same rule the vertex shader applies, mirrored in
+   * `waves.ts` because nothing in Node can compile a shader to ask it.
    */
   drawnSurfaceAt(position: LocalPosition, secondsFromStart: number, riding?: Riding): SurfacePoint;
 }
@@ -268,8 +277,11 @@ function addWater(
   // Where the source states no direction the sea still has to run somewhere, so it runs the
   // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
   // bearing plainly readable off the picture, which is exactly why it cannot go undeclared.
+  // Filtered here rather than in the shader, so that the geometry, the shading and anything
+  // floating are all given the same set - and so that `ui/panels.ts`, which reports the band,
+  // is reporting the components the water is actually made of.
   const components = sea
-    ? waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE)
+    ? drawable(waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE))
     : [];
   setWaves(waves, components);
 
@@ -328,7 +340,10 @@ function viewControls(
   parts: Switchable,
   setLighting: (on: boolean) => void,
   extentMetres: number,
-): Pick<SceneParts, "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "drawnSurfaceAt"> {
+): Pick<
+  SceneParts,
+  "setView" | "setDiagramView" | "setEye" | "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"
+> {
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -340,7 +355,7 @@ function viewControls(
       parts.basemap?.setView(frame);
       // The sea follows whatever is reading it, so the dense middle of the disc sits under
       // the part of the picture somebody is looking at rather than at the origin.
-      parts.water.position.set(frame.centre.east, 0, -frame.centre.north);
+      centreSeaOn(parts, frame.centre);
     },
     setDiagramView: (on: boolean): void => {
       setDiagram(scene, parts, setLighting, on);
@@ -348,8 +363,26 @@ function viewControls(
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
+    ...seaControls(parts),
+  };
+}
+
+/**
+ * The three that answer to the water rather than to the camera: when it is, how finely it can
+ * be drawn, and what it comes to under a given point.
+ *
+ * Together because they are one surface seen three ways, and a caller that had the clock but
+ * not the band would be asking about a sea nobody is drawing.
+ */
+function seaControls(
+  parts: Switchable,
+): Pick<SceneParts, "setSeaClock" | "setPixelAngle" | "drawnSurfaceAt"> {
+  return {
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
+    },
+    setPixelAngle: (radians: number): void => {
+      parts.waves.uPixelAngle.value = radians;
     },
     drawnSurfaceAt: (
       position: LocalPosition,
@@ -382,6 +415,27 @@ function setDiagram(
  * The sea under a point, damped by the same fade the shader uses and switched off wherever
  * the shader's is - so a chart, which has no waves, floats nothing.
  */
+/**
+ * The sea as the mesh draws it HERE, which is less of it the further out the point is.
+ *
+ * The vertex shader band-limits every component to the vertices under it, so past a couple
+ * of hundred metres the geometry holds the swell and none of the chop. **A floating body has
+ * to be given the same sea**, or it heaves to waves that are not in the water beneath it -
+ * which is the hovering buoy of #34 again, arriving this time through the band rather than
+ * through the range fade.
+ *
+ * The amplitude is scaled rather than the component dropped, because that is what the shader
+ * does: a fade, so that a mark crossing the range does not step.
+ */
+function asDrawn(sea: WaveComponent[], distanceFromEyeMetres: number): WaveComponent[] {
+  return sea.map((wave) => ({
+    ...wave,
+    amplitudeMetres:
+      wave.amplitudeMetres *
+      meshCarries((2 * Math.PI) / wave.wavenumberPerMetre, distanceFromEyeMetres),
+  }));
+}
+
 function drawnSurface(
   parts: Switchable,
   position: LocalPosition,
@@ -395,7 +449,7 @@ function drawnSurface(
   // the fade goes outside it, because that is about the water being drawn flat at range and
   // not about anything floating on it.
   const point = surfaceAt(
-    parts.sea,
+    asDrawn(parts.sea, away),
     { eastMetres: position.east, northMetres: position.north },
     secondsFromStart,
     riding,
@@ -415,9 +469,24 @@ function standAt(parts: Switchable, eye: LocalPosition | null, heading: number):
   if (parts.terrain) parts.terrain.group.visible = eye !== null;
   if (!eye) return;
 
-  parts.curvature.uEye.value.set(eye.east, 0, -eye.north);
-  parts.water.position.set(eye.east, 0, -eye.north);
+  centreSeaOn(parts, eye);
   parts.terrain?.follow(eye, heading);
+}
+
+/**
+ * Where the sea is dense, and where every distance in it is measured from. **One call, so the
+ * two cannot come apart.**
+ *
+ * The disc's rings grow from its own centre, and the band-limiting in `waves.ts` asks how far
+ * a point is from the eye - so if the eye and the centre were ever different points, the
+ * shader would judge the mesh's fineness at the wrong radius and put waves on triangles too
+ * big to hold them. They are set together here because the two views set them at different
+ * moments: a bridge frame from the watchkeeper's position, a plan frame from what the camera
+ * is over, and a bridge view whose own track has run out draws with whichever ran last.
+ */
+function centreSeaOn(parts: Switchable, at: LocalPosition): void {
+  parts.curvature.uEye.value.set(at.east, 0, -at.north);
+  parts.water.position.set(at.east, 0, -at.north);
 }
 
 /**

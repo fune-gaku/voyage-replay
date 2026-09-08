@@ -175,9 +175,23 @@ Carlo on the same geometry gives:
 
 | range | held rigid | riding | Monte Carlo, rigid / riding |
 |---:|---:|---:|---|
-| 8 km | 18.3% | 35.9% | 10.5 / 30.0 |
-| 11 km | 82.2% | 63.9% | 63.0 / 52.8 |
-| 13 km | 100% | 93.8% | 100 / 89.6 |
+| 8 km | 25.2% | 40.5% | 10.5 / 30.0 |
+| 11 km | 91.7% | 68.3% | 63.0 / 52.8 |
+| 13 km | 100% | 95.4% | 100 / 89.6 |
+
+**The first two columns were re-measured after the band was widened (#36); the third was
+not.** Those Monte Carlo figures were taken at the old cut of 0.35 Tp and are left as they
+were rather than moved to numbers from a different experiment. Anyone re-taking them should
+know two things that cost an afternoon here:
+
+- **The lowest clearance is at the far END of the line** whenever the grazing point clamps
+  onto the target, which is every range inside `sqrt(2R(h − f))`. A walk that stops one step
+  short of her misses the wave that actually hides her, and reports nought per cent.
+- **Random phases are not enough.** A sum of fixed-amplitude sinusoids has the right variance
+  and a tail far thinner than Gaussian — its maximum is bounded by the sum of the amplitudes —
+  so at three standard deviations it under-counts extremes by orders of magnitude. The
+  component energies have to be randomised too (Rayleigh amplitudes) before the surface is the
+  Gaussian one the level-crossing arithmetic assumes.
 
 Both run high, for the reason in *Known biases* below. **The reversal is in both**, which is
 what matters: it is a property of the problem and not of the approximation.
@@ -221,10 +235,83 @@ removes is impossible rather than unlikely — which is a different argument fro
 
 The second spectral moment **in wavenumber** diverges logarithmically — `k²S(ω)` falls off as
 `ω⁻¹` — so the root-mean-square wavenumber, and with it the crossing rate, depends on where the
-tail is cut. `TAIL_CUTOFF_FRACTION_OF_PEAK = 0.35` is that choice, named for the same reason
+tail is cut. `TAIL_CUTOFF_FRACTION_OF_PEAK = 0.12` is that choice, named for the same reason
 `REFRACTION_COEFFICIENT` is. Widening it from 0.5 Tp to 0.175 Tp, nearly a factor of three,
 moves one occlusion figure from 76% to 89% — real, and an order of magnitude smaller than the
 width of a sea state class.
+
+**Where it is cut, and why not further.** The slope lives in the short waves, and the drawn
+band's rms slope depends only on the cut — not on the sea's height, since the wavelengths grow
+with it. Measured over this spectrum at Hs 3 m:
+
+Taken at the period `assumedPeakPeriodSeconds` gives a 3 m sea — 8.65 s — because the same
+integral at any other period describes a sea this tool never draws:
+
+| cut | shortest wave | rms slope | k_rms |
+|---|---|---|---|
+| 0.35 (was) | 14.3 m | 4.1° | ×1.00 |
+| 0.175 | 3.6 m | 5.4° | ×1.30 |
+| **0.12** | **1.7 m** | **6.0°** | **×1.44** |
+| 0.05 | 0.29 m | 7.1° | ×1.72 |
+| 0.03 | 0.11 m | 7.7° | ×1.87 |
+
+**Cox and Munk's measured slope for the wind that raises a 3 m sea is 14.2°** — `mss = 0.003 +
+0.00512 U` — and the table says plainly that widening this band cannot reach it: eleven
+centimetre waves get to eight degrees. The rest of a real sea's slope is in capillary–gravity
+ripples, which a JONSWAP gravity spectrum has no business describing and no renderer can draw.
+
+**The drawn slope is lower again than the band's** — 5.4° against 6.0° — because the components
+are equal-energy bins: each carries its bin's height variance exactly and its slope variance
+only approximately, one frequency standing for a range over which `k²` varies by a factor of a
+few. More components narrow that gap; nothing closes it.
+
+**And equal-energy binning puts almost nothing in the widened part.** Counted on a 3 m sea:
+38 of the 40 components fall between 23 m and 174 m of wavelength, one falls at 1.9 m, and one
+comes out with no amplitude at all. The short one carries 0.07 per cent of the height and
+**half of the slope**; the dead one is the lowest bin, which runs from a sixth of the peak
+frequency — four kilometres of wavelength — where a JONSWAP spectrum holds nothing, sampled
+somewhere inside itself.
+
+That the slope survives on one sample is not luck: the slope density `k²S(ω)` falls as `ω⁻¹`,
+so every octave of the tail contributes about the same, and where in the bin the sample lands
+hardly matters. What does not survive is the TEXTURE — one sinusoid at one wavelength and one
+bearing is a regular ripple, not a chop. The page prints the wavelengths that carry the sea
+rather than the bins' own edges, because a component of no amplitude is not a wave the picture
+has. Binning that gives the tail more than one component is issue #50.
+
+So the band is cut where waves stop being drawable rather than where the slope comes right, and
+**what is missing is named on the page rather than quietly integrated for**. A glitter path
+(#37) measures the full slope including those ripples, so its width has to come from the
+measured relation and not from the drawn surface — which is a different statement from letting
+the drawn band and the analysed one drift apart, and has to be made deliberately.
+
+The shading's own limit is a pixel of the **drawing buffer**, not of the CSS box: a retina
+screen puts two device pixels in each layout one, and taking the layout height would drop
+every component at half the range it should — making the sea's drawn steepness a property of
+the reader's display, with nothing on screen to say so.
+
+**The picture then draws that band twice, and only one of the two can float anything.** The
+geometry carries a component while the mesh has vertices for it — the disc's rings grow 8.73
+per cent of their radius, so eight samples to a wavelength runs out at 12 m of wave near the
+eye and at 170 m of wave by 250 m out — while the shading carries one while it covers more
+than a few pixels. Neither fade can be dropped: aliasing in the normals is a sparkle, and
+aliasing in the geometry is a slow false swell that moves the horizon and the hulls standing
+on it. But the two disagree by construction, and what floats has to be given the geometry:
+
+| From the eye | Height variance the mesh carries | Slope variance | rms slope |
+|---:|---:|---:|---:|
+| 20 m | 99.9% | 51% | 3.8° |
+| 100 m | 91% | 29% | 2.9° |
+| 250 m | 42% | 8% | 1.5° |
+| 600 m | 3% | 0.5% | 0.4° |
+
+**Nearly all of the height and half of the slope**, and that split is the spectrum's own: the
+components are equal-energy, so each carries the same height variance and the short ones carry
+almost all of the slope. So a buoy alongside heaves to essentially the whole sea and leans to
+about two thirds of its steepness, and one at 250 m — where the range fade has not yet begun —
+rides less than half of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
+`render/waves.ts` because nothing in Node can compile a shader to ask it. Handing her the
+undrawn spectrum instead is #34's hovering buoy arriving by a second route.
 
 Frequency moments converge, so they are integrated out to forty times the peak instead. Cutting
 them at the same place left the zero-crossing period six per cent long, against the published

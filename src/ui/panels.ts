@@ -28,12 +28,15 @@ import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
+import { drawable } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   forceClass,
   fullyDevelopedHeightMetres,
   meanOfHighest,
+  waveComponents,
   type SeaEstimate,
+  type WaveComponent,
   type WindEstimate,
 } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
@@ -469,6 +472,14 @@ function seaSection(scenario: Scenario): string {
   const wind = windRows(conditions) + disagreementNote(conditions);
   if (!sea) return wind + `<p>${escapeHtml(NO_SEA)}</p>`;
 
+  // The components the RENDERER draws, through the renderer's own two rules: the generator
+  // is seeded from the sea itself, and `drawable` drops what is under a millimetre and gives
+  // the rest its share. Same sea, same direction, same filter - so every figure below is
+  // about the water on screen rather than about a second reading of the band.
+  const drawn = drawable(
+    waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE),
+  );
+
   const rows: [string, string][] = [
     ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
     ["Significant height", heightRange(sea)],
@@ -478,21 +489,110 @@ function seaSection(scenario: Scenario): string {
         ? "no waves to have one"
         : `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
     ],
-    [
-      "Coming from",
-      // Keyed on the DIRECTION's own provenance, not the period's. A file may state a
-      // bearing on a sea of no height - a decayed swell has one - and hiding it because the
-      // period is absent denies a figure the file contains.
-      sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0
-        ? "no waves to come from anywhere"
-        : sea.fromDegreesTrue === null
-          ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
-          : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
-    ],
+    ["Coming from", directionRow(sea)],
     ["Derivation", sea.derivation],
+    ["Waves drawn", bandRow(drawn, sea.rough.significantHeightMetres > 0)],
   ];
-  return wind + keyValueTable(rows) + note(seaCaveat(sea));
+  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
 }
+
+/**
+ * Where the sea runs from, keyed on the DIRECTION's own provenance rather than the period's.
+ *
+ * A file may state a bearing on a sea of no height - a decayed swell has one - and hiding it
+ * because the period is absent denies a figure the file contains.
+ */
+function directionRow(sea: SeaEstimate): string {
+  if (sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0) {
+    return "no waves to come from anywhere";
+  }
+  if (sea.fromDegreesTrue === null) {
+    return `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`;
+  }
+  return `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`;
+}
+
+/** The shortest and longest wavelengths actually carrying the drawn sea, or null for a calm. */
+function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number } | null {
+  if (drawn.length === 0) return null;
+  const lengths = drawn.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
+  return { shortest: Math.min(...lengths), longest: Math.max(...lengths) };
+}
+
+/**
+ * Which waves are in the drawn sea, which is a statement about the picture rather than the
+ * water: it decides how steep the surface is and how often it crosses a sight line.
+ *
+ * **Measured off the components themselves rather than off the band's edges.** Each is
+ * sampled from somewhere inside its own equal-energy bin, so the band's ends are not the
+ * drawn sea's ends: the bins reach from a sixth of the peak frequency to eight times it,
+ * while the waves that come out of them for a 3 m sea run from 1.9 m to 174 m. Printing the
+ * edge would be the page describing a sea the picture does not have.
+ */
+function bandRow(drawn: WaveComponent[], hasHeight: boolean): string {
+  // Two different nothings. A sea of no height has no components at all; a sea of four
+  // millimetres has forty and the renderer keeps none of them, since not one stands a
+  // millimetre high. Saying "no height" over a height printed in the row above would be the
+  // page contradicting itself one line up.
+  const band = drawnBand(drawn);
+  if (band) return `${band.shortest.toFixed(1)} m to ${band.longest.toFixed(0)} m of wavelength`;
+  return hasHeight
+    ? "none - nothing in this sea stands a millimetre high"
+    : "none, on a sea of no height";
+}
+
+/** The rms slope of a surface made of these components: `atan` of the summed variance. */
+function rmsSlopeDegrees(drawn: WaveComponent[]): number {
+  const variance = drawn.reduce(
+    (total, wave) => total + (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2,
+    0,
+  );
+  return (Math.atan(Math.sqrt(variance)) * 180) / Math.PI;
+}
+
+/**
+ * **What the band leaves out, said rather than integrated for - and only where there is a
+ * band.** A sea of no height has no waves drawn and no slope to fall short of, and a page
+ * that warned about the steepness of a flat surface would be describing another picture.
+ *
+ * Both figures are this sea's own. The drawn one is summed from the components above; the
+ * measured one is Cox and Munk's `mss = 0.003 + 0.00512 U` for the wind that raises a sea
+ * this size, since no report carries a slope. Widening the band cannot close the gap: the
+ * rest is in capillary-gravity ripples, which the spectrum this is built on does not
+ * describe and no screen can draw.
+ */
+function slopeNote(drawn: WaveComponent[]): string {
+  const band = drawnBand(drawn);
+  if (!band) return "";
+  const heights = drawn.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
+  const measured = coxMunkSlopeDegrees(4 * Math.sqrt(heights));
+  return (
+    `The drawn sea carries waves from ${band.shortest.toFixed(1)} m up. Most of a real sea's ` +
+    "SLOPE is in shorter waves than that - Cox and Munk measured about " +
+    `${measured.toFixed(0)} degrees rms for the wind that raises a sea this size, against ` +
+    `${rmsSlopeDegrees(drawn).toFixed(1)} here - so the water is drawn flatter than it was, ` +
+    "and the difference is in ripples this spectrum does not describe and no screen can " +
+    "draw. The same band decides how often the sea crosses a sight line, so the hidden " +
+    "fractions below move with it: it is one choice, made once, for the picture and the " +
+    "arithmetic together."
+  );
+}
+
+/**
+ * Cox and Munk's clean-surface slope for the wind that would raise this sea, in degrees.
+ *
+ * The wind comes back out of the fully developed relation `Hs = 0.21 U^2 / g`, the same
+ * inversion `assumedPeakPeriodSeconds` makes to get a period - so this says "a sea this size
+ * belongs to about this wind, and that wind's surface is this steep". A stated wind is not
+ * used: the sea drawn came from the height, and a slope quoted for some other wind would be
+ * about a surface nobody is looking at.
+ */
+function coxMunkSlopeDegrees(significantHeightMetres: number): number {
+  const windSpeed = Math.sqrt((significantHeightMetres * GRAVITY) / 0.21);
+  return (Math.atan(Math.sqrt(0.003 + 0.00512 * windSpeed)) * 180) / Math.PI;
+}
+
+const GRAVITY = 9.81;
 
 /**
  * The wind, where the file gives one - and it is printed whether or not there is a sea.
@@ -1172,16 +1272,41 @@ function ridingNote(marks: Mark[], region: BuoyageRegion | null): string {
     `${range} here, which rests on her draught alone - the waterplane cancels - taken ` +
     `${where}. So she follows a long swell, moves further than a chop near that period, and ` +
     "falls behind a shorter one. Her lean is given twice that period, which is why the two " +
-    "do not peak together. **The damping is the one figure here with no source**: it " +
-    "depends on the hull " +
-    `and on whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per ` +
-    "cent of critical is this tool's own figure. It weighs most at resonance, where the " +
-    "response goes " +
-    "as one over twice it - which is to say where this model is least trustworthy. How far " +
-    "each shape leans is a class rather than a calculation: a spar buoy exists to stay " +
-    "upright, and the ballast that makes her do it is not in any report."
+    `do not peak together. ${WHAT_NOBODY_STATED} ${RIDES_THE_DRAWN_SEA}`
   );
 }
+
+/**
+ * **The damping is the one figure here with no source**, and the lean is a class rather than
+ * a figure at all - so both are said outright rather than left to look computed.
+ */
+const WHAT_NOBODY_STATED =
+  "**The damping is the one figure here with no source**: it depends on the hull and on " +
+  `whether she carries a heave plate, and ${(CHOSEN_DAMPING * 100).toFixed(0)} per cent of ` +
+  "critical is this tool's own figure. It weighs most at resonance, where the response goes " +
+  "as one over twice it - which is to say where this model is least trustworthy. How far " +
+  "each shape leans is a class rather than a calculation: a spar buoy exists to stay " +
+  "upright, and the ballast that makes her do it is not in any report.";
+
+/**
+ * **She is given the sea the picture draws, not the sea the page describes.**
+ *
+ * Two things take the sea away with distance and both apply to her. The band goes first:
+ * every component is dropped where the vertices under it run out, so the chop is gone within
+ * a couple of hundred metres while the swell is still there. Then the displaced geometry
+ * itself fades between 250 and 600 m, past which the water is drawn flat and she sits still
+ * on it - which is #34's rule, not an omission.
+ *
+ * Naming only the band would say the swell reaches her at any distance, and the page would
+ * then be describing water the picture stopped drawing.
+ */
+const RIDES_THE_DRAWN_SEA =
+  "She rides the sea as it is DRAWN under her rather than the sea described above: the chop " +
+  "goes out of the water within a couple of hundred metres, where the mesh runs out of " +
+  "vertices for it, and the displaced surface itself flattens between 250 and 600 m - so a " +
+  "buoy a few hundred metres off answers less than one alongside, and one beyond that lies " +
+  "still on water drawn flat. Given the whole spectrum over water drawn without it, she " +
+  "would hover.";
 
 /** The same riding the renderer uses, from the same resolved shape. */
 function ridingFor(mark: Mark, region: BuoyageRegion | null): Riding {

@@ -428,23 +428,25 @@ describe("the surface at a place and an instant", () => {
    */
   it("has a slope that is the height's gradient, in both directions", () => {
     const components = sea();
-    const step = 0.05;
-    for (const [east, north] of [
+    // **A centred difference over a millimetre**, and both parts of that matter now the band
+    // reaches down to metre waves: a one-sided difference is first-order and a step of five
+    // centimetres is a twentieth of the shortest wave in the sea, which is exactly where a
+    // finite difference stops being the derivative it is standing in for.
+    const step = 0.001;
+    const height = (east: number, north: number): number =>
+      surfaceAt(components, at(east, north), 12).heightMetres;
+
+    const places: [number, number][] = [
       [0, 0],
       [120, -80],
       [-45, 210],
-    ]) {
-      const here = surfaceAt(components, at(east ?? 0, north ?? 0), 12);
-      const eastward =
-        (surfaceAt(components, at((east ?? 0) + step, north ?? 0), 12).heightMetres -
-          here.heightMetres) /
-        step;
-      const northward =
-        (surfaceAt(components, at(east ?? 0, (north ?? 0) + step), 12).heightMetres -
-          here.heightMetres) /
-        step;
-      expect(here.slopeEast).toBeCloseTo(eastward, 3);
-      expect(here.slopeNorth).toBeCloseTo(northward, 3);
+    ];
+    for (const [east, north] of places) {
+      const here = surfaceAt(components, at(east, north), 12);
+      const eastward = (height(east + step, north) - height(east - step, north)) / (2 * step);
+      const northward = (height(east, north + step) - height(east, north - step)) / (2 * step);
+      expect(here.slopeEast).toBeCloseTo(eastward, 4);
+      expect(here.slopeNorth).toBeCloseTo(northward, 4);
     }
   });
 

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
+import { seawayFrom, waveComponents } from "../src/core/seaway.js";
+import { drawable } from "../src/render/waves.js";
 import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
@@ -1043,6 +1045,129 @@ describe("a beacon in the same table as a buoy", () => {
 
     expect(html).toContain("riding the sea");
     expect(html).not.toContain("neither heaves nor tilts");
+  });
+});
+
+/**
+ * Which waves are in the drawn sea, and what that leaves out. It is one choice made once for
+ * the picture and the arithmetic together, and the page has to carry it because nothing in
+ * the frame says how steep the water should have been.
+ */
+describe("the band the sea is drawn from", () => {
+  it("names the wavelengths drawn, and what the slope is missing", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "day", seaState: 5 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("of wavelength");
+    expect(html).toContain("Cox and Munk");
+    expect(html).toContain("drawn flatter than it was");
+  });
+
+  /** A sea of no height has no band, and printing a range of wavelengths over one is a lie. */
+  it("draws no band over a sea with no waves in it", () => {
+    const subject = scenario();
+    subject.environment = { lightCondition: "day", seaState: 0 };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("none, on a sea of no height");
+    // And the note under it went with the band. A page that warned about the steepness of a
+    // flat surface would be describing a different picture from the one beside it.
+    expect(html).not.toContain("Cox and Munk");
+    expect(html).not.toContain("drawn flatter than it was");
+  });
+
+  /**
+   * **Two different nothings.** A sea of no height has no components at all; a sea of four
+   * millimetres has forty and not one of them stands high enough to be drawn. Calling the
+   * second "a sea of no height" would contradict the height printed in the row above it -
+   * the same fault, one row apart, as the note that warned about the steepness of a flat sea.
+   */
+  it("tells a flat sea from one too small to draw", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.004, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("0.004 m");
+    expect(html).toContain("nothing in this sea stands a millimetre high");
+    expect(html).not.toContain("on a sea of no height");
+  });
+
+  /**
+   * **The row is the components the renderer draws, not the band they were cut from.** Each
+   * is sampled from inside its own equal-energy bin, so the bins' ends are not the sea's:
+   * the lowest reaches a sixth of the peak frequency, which is four kilometres of wavelength
+   * on a 3 m sea. Printing an edge would be the page describing a wave the picture has not
+   * got - the failure this project keeps meeting, in its smallest form.
+   */
+  it("prints the wavelengths the renderer actually draws", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 3, derivation: "measured" },
+    };
+    const sea = seawayFrom(subject.environment);
+    if (!sea) throw new Error("a stated 3 m sea has to give an estimate");
+    const drawn = drawable(waveComponents(sea.rough));
+    const lengths = drawn.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
+
+    const html = panelsFor(subject);
+    expect(html).toContain(
+      `${Math.min(...lengths).toFixed(1)} m to ${Math.max(...lengths).toFixed(0)} m of wavelength`,
+    );
+    // The lowest bin's own edge is 6 Tp, or about 4 km. Nothing that long is drawn.
+    expect(Math.max(...lengths)).toBeLessThan(1000);
+  });
+
+  /**
+   * **The figures in the note come off the drawn set, not off a second reading of it.** A
+   * centimetre of sea keeps one component of the forty, so a note computed from all of them
+   * would describe a surface forty times better resolved than the one on screen - and the
+   * height it is scaled to would be the one the row above prints, which is the picture's.
+   */
+  it("takes the note's own figures from the components the water is made of", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.01, derivation: "measured" },
+    };
+    const sea = seawayFrom(subject.environment);
+    if (!sea) throw new Error("a stated centimetre of sea has to give an estimate");
+    const shown = drawable(waveComponents(sea.rough, 0));
+    const slope = shown.reduce(
+      (total, wave) => total + (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+
+    expect(shown.length).toBeLessThan(40);
+    expect(panelsFor(subject)).toContain(
+      `against ${((Math.atan(Math.sqrt(slope)) * 180) / Math.PI).toFixed(1)} here`,
+    );
+  });
+
+  /**
+   * The slope quoted is this sea's, summed off those same components - not a figure taken
+   * once on a 3 m sea and printed over every other.
+   */
+  it("quotes the slope of the sea in front of it", () => {
+    const gentle = scenario();
+    gentle.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.6, derivation: "measured" },
+    };
+    const heavy = scenario();
+    heavy.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 5, derivation: "measured" },
+    };
+
+    // Cox and Munk's measured slope grows with the wind that raises the sea; the drawn one
+    // barely moves, because the wavelengths grow with the sea as well. Both are stated.
+    expect(panelsFor(gentle)).toContain("10 degrees rms");
+    expect(panelsFor(heavy)).toContain("16 degrees rms");
   });
 });
 
