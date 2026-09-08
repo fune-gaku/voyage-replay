@@ -918,7 +918,7 @@ same reach. It comes back from the shader separately from the streak because **i
 reflection and must not take the Fresnel factor**: Schlick's term says how much of what is
 BEHIND the surface's mirror direction comes back, and light landing on the water is not that.
 
-### How much light a lamp puts on the water IS computable
+### How much light a lamp puts on the water IS computable — as a floor
 
 This project said for a while that it was not: Rule 22 states a minimum range and no candela,
 which is true and is not the end of the matter. **Annex I, section 8 gives the relation the
@@ -928,7 +928,19 @@ rule's own ranges were set by:**
 I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in nautical miles
 ```
 
-| light | range | candela |
+**Read the word MINIMUM in that section's title.** What the formula gives is the intensity a
+light must have *under service conditions* to comply — a floor. Section 9 puts a ceiling on the
+same lights so they do not dazzle, and a real fitting is somewhere in between; which point in
+that band a particular lamp occupied is in no casualty report this project has met. Section 10
+is the same shape of statement: **at least** the required intensity within 5°, **at least** 60
+per cent of it at 7.5°. So the vertical profile is a lower envelope too.
+
+Everything below is therefore the bottom of the legal band drawn as though it were the lamp.
+The night was at least this bright and may have been brighter; the 94-to-12 between a masthead
+and a sidelight is the ratio of two minima, not of two fittings; and none of these figures may
+be quoted as what a lamp measured. The panel says so in as many words.
+
+| light | range | minimum candela |
 |---|---:|---:|
 | masthead, vessel ≥ 50 m | 6 NM | 94 |
 | masthead, vessel < 50 m | 5 NM | 52 |

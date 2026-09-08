@@ -2,7 +2,7 @@ import { Color } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
-  candelaFromNominalRange,
+  minimumCandelaForRange,
   lampLuxOnWater,
   verticalSpread,
   STREAK_REACH_OF_NOMINAL,
@@ -26,7 +26,7 @@ function lamp(over: Partial<LitLamp> = {}): LitLamp {
   return {
     at: { x: 0, y: 12, z: 0 },
     colour: new Color(0xff4d4d),
-    candela: candelaFromNominalRange(3),
+    minimumCandela: minimumCandelaForRange(3),
     headingDegreesTrue: 0,
     arcStartDegrees: 0,
     arcEndDegrees: 360,
@@ -117,7 +117,7 @@ describe("how far a streak reaches", () => {
   function streakAt(waterX: number, eyeX: number, range = nominal): number {
     const lit = lamp({
       nominalRangeMetres: range,
-      candela: candelaFromNominalRange(range / METRES_PER_NAUTICAL_MILE),
+      minimumCandela: minimumCandelaForRange(range / METRES_PER_NAUTICAL_MILE),
     });
     return lampLight(
       lit,
@@ -159,7 +159,7 @@ describe("how far a streak reaches", () => {
 
   /**
    * **The light a lamp puts on the water is computable, and it was not being computed.**
-   * Rule 22 gives the range, Annex I section 8 gives the candela it was set from, and the
+   * Rule 22 gives the range, Annex I section 8 gives the minimum candela it was set from, and the
    * rest is the inverse square with an incidence cosine - which on a level sea makes it the
    * cube of the slant range, not the square of the horizontal one.
    */
@@ -198,7 +198,7 @@ describe("how far a streak reaches", () => {
    * checked against.
    */
   it("lights the water where its beam grazes it, not underneath itself", () => {
-    const masthead = candelaFromNominalRange(6);
+    const masthead = minimumCandelaForRange(6);
     const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
 
     expect(at(20)).toBeCloseTo(0.0000235, 7);
@@ -215,7 +215,7 @@ describe("how far a streak reaches", () => {
 
   it("puts a quarter of starlight on the water at a hundred metres", () => {
     // A 6 mile masthead light is 94 candela; twenty metres up, at a hundred metres off.
-    const masthead = candelaFromNominalRange(6);
+    const masthead = minimumCandelaForRange(6);
     expect(masthead).toBeCloseTo(94.2, 0);
 
     // **Pinned rather than bounded, because the bound is what let the page overstate it.**
@@ -230,16 +230,16 @@ describe("how far a streak reaches", () => {
 
   /** And it falls as the cube, so it is gone a few hundred metres out rather than lingering. */
   it("falls away with range past where the beam meets the water", () => {
-    const masthead = candelaFromNominalRange(6);
+    const masthead = minimumCandelaForRange(6);
     const near = lampLuxOnWater(masthead, 20, Math.hypot(100, 20));
     const far = lampLuxOnWater(masthead, 20, Math.hypot(300, 20));
     expect(near).toBeGreaterThan(far * 5);
   });
 
-  /** A dimmer light by Rule 22 is a dimmer light in candela, in the ratio the rule implies. */
+  /** A dimmer light by Rule 22 is a dimmer light in minimumCandela, in the ratio the rule implies. */
   it("makes a sidelight an eighth of a masthead, which is what the ranges say", () => {
-    expect(candelaFromNominalRange(3)).toBeCloseTo(12.1, 1);
-    expect(candelaFromNominalRange(6) / candelaFromNominalRange(3)).toBeCloseTo(7.8, 1);
+    expect(minimumCandelaForRange(3)).toBeCloseTo(12.1, 1);
+    expect(minimumCandelaForRange(6) / minimumCandelaForRange(3)).toBeCloseTo(7.8, 1);
   });
 
   /** A lamp with a shorter range lays a shorter streak, which is the whole of the rule. */
@@ -257,7 +257,7 @@ describe("what reaches the shader", () => {
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
     // The lamp's own figure, with no exposure folded into it.
-    // The lamp's own candela, out of Rule 22 by Annex I: a 3 mile sidelight is about 12.
+    // The lamp's own minimum candela, out of Rule 22 by Annex I: a 3 mile sidelight is about 12.
     expect(uniforms.uLamp.value[0]?.w).toBeCloseTo(12.1, 1);
     expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
     expect(uniforms.uLampStreak.value).toBe(EXPOSURE.streak);
@@ -316,7 +316,7 @@ describe("what each lamp puts on the water", () => {
   function aboard(heightMetres: number, alongMetres: number, range = 6): LitLamp {
     return lamp({
       at: { x: 0, y: heightMetres, z: -300 + alongMetres },
-      candela: candelaFromNominalRange(range),
+      minimumCandela: minimumCandelaForRange(range),
       headingDegreesTrue: 180,
       arcStartDegrees: 247.5,
       arcEndDegrees: 112.5,

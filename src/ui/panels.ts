@@ -365,7 +365,7 @@ const WHAT_A_LAMP_DOES =
   "reflects; the light on the sea over the lamp's own leg alone, because where an observer " +
   "stands decides how much of it comes back to them and never how much arrived. " +
   "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
-  "gives each light a range, Annex I section 8 gives the candela that range was set from, " +
+  "gives each light a range, Annex I section 8 gives the minimum candela that range was set from, " +
   "and the rest is the inverse square with the incidence angle and the vertical spread of " +
   "the fitting - a navigation light points at the horizon, not at the water. Annex I " +
   "section 10 fixes that spread only at two depressions, full intensity to 5 degrees and 60 " +
@@ -376,7 +376,13 @@ const WHAT_A_LAMP_DOES =
   "Without the spread it would be four times that, which is the figure to be careful of: it " +
   "is the beam pointed where it is not pointed. What stays chosen besides the tail is one " +
   "figure per condition saying what a lux draws as, set so that a lamp and the moon are on " +
-  "one scale. ";
+  "one scale. " +
+  "**All of that is a FLOOR.** Section 8 computes the minimum intensity a light must have to " +
+  "comply, section 10 sets the vertical spread as an at-least, and section 9 caps how bright " +
+  "a light may be without dazzling - so a real lamp sits somewhere in that band, and nothing " +
+  "in a casualty report says where. The picture is drawn along the bottom of it. The night " +
+  "was at least this bright and may have been brighter, and the 94-to-12 between a masthead " +
+  "and a sidelight is the ratio of two legal minima rather than of two fittings. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

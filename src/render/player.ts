@@ -13,7 +13,7 @@ import {
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
-import { candelaFromNominalRange } from "../core/illumination.js";
+import { minimumCandelaForRange } from "../core/illumination.js";
 import {
   distanceMetres,
   METRES_PER_NAUTICAL_MILE,
@@ -635,8 +635,8 @@ export class Replay {
         lamps.push({
           at,
           colour: new Color(LAMP_COLOURS[light.colour]),
-          // Rule 22's range, turned into the candela it was set from - Annex I, section 8.
-          candela: candelaFromNominalRange(light.nominalRangeNauticalMiles),
+          // Rule 22's range, turned into the minimum candela it was set from - Annex I, section 8.
+          minimumCandela: minimumCandelaForRange(light.nominalRangeNauticalMiles),
           headingDegreesTrue: heading,
           arcStartDegrees: light.arc.startDegrees,
           arcEndDegrees: light.arc.endDegrees,
@@ -663,7 +663,7 @@ export class Replay {
       {
         at: lamp.getWorldPosition(new Vector3()),
         colour: lamp.material.color.clone(),
-        candela: candelaFromNominalRange(ASSUMED_MARK.lightRangeNauticalMiles),
+        minimumCandela: minimumCandelaForRange(ASSUMED_MARK.lightRangeNauticalMiles),
         // All-round: IALA marks show over the whole horizon, and this format carries no
         // sectored lights to say otherwise.
         headingDegreesTrue: 0,

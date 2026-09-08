@@ -186,7 +186,7 @@ export function glitterSpreadRadians(
 }
 
 /**
- * A navigation light's intensity, in candela, from the range Rule 22 gives it.
+ * A navigation light's MINIMUM intensity in candela, from the range Rule 22 gives it.
  *
  * **It is computable, and this project spent a while saying it was not.** Rule 22 states a
  * minimum RANGE and no candela, which is true - but Annex I, section 8 gives the relation
@@ -202,10 +202,21 @@ export function glitterSpreadRadians(
  * taste. What stays declared is one exposure per condition - how many lux draw as how bright -
  * and `render/scene.ts` holds it.
  *
+ * **But read the word MINIMUM in the title of section 8, because it is doing work.** What the
+ * formula gives is `I ... under service conditions` for a light that only just complies. A
+ * real fitting is somewhere between that and the CEILING section 9 puts on it to stop lights
+ * dazzling, and where in that band a particular lamp sat is not in any report this project has
+ * met. So this is a lower envelope drawn as though it were the lamp: the picture is a floor,
+ * the 94-to-12 between a masthead and a sidelight is the ratio of two floors rather than of
+ * two lamps, and a night drawn from it is at least this bright and may have been brighter.
+ * `ui/panels.ts` says so, and nothing here should be quoted as what a lamp measured.
+ *
+ * The same word governs `verticalSpread` below, for the same reason and out of the same annex.
+ *
  * The transmissivity is a clear-weather figure and is the rule's own; a real night's air is
  * not stated in any report this project has met.
  */
-export function candelaFromNominalRange(nauticalMiles: number): number {
+export function minimumCandelaForRange(nauticalMiles: number): number {
   const threshold = 2e-7;
   const transmissivity = 0.8;
   return 3.43e6 * threshold * nauticalMiles ** 2 * transmissivity ** -nauticalMiles;
@@ -223,7 +234,13 @@ export function candelaFromNominalRange(nauticalMiles: number): number {
  *
  * The shape between the rule's two points is this project's, and it is written as a
  * declaration rather than a fit to anything: 1 within five degrees, 0.6 at seven and a half,
- * and away to almost nothing by thirty. What the rule fixes, it fixes; the tail is chosen.
+ * and away to almost nothing by thirty.
+ *
+ * **And the rule's two points are floors as well.** Section 10 says AT LEAST the required
+ * intensity within five degrees and AT LEAST sixty per cent of it at seven and a half; a real
+ * fitting's beam is somewhere above that envelope and its shape is not stated anywhere. So
+ * this curve is the lower bound of a compliant lamp taken as the lamp, and the whole of it -
+ * the two points and the tail between and below them - is a floor rather than a measurement.
  *
  * | depression | of the nominal |
  * |---:|---:|
@@ -280,7 +297,7 @@ export const BEAM_FALL_PER_DEGREE =
  * picture is a mistake this file's readers have now made three times over.
  */
 export function lampLuxOnWater(
-  candela: number,
+  minimumCandela: number,
   lampHeightMetres: number,
   slantRangeMetres: number,
 ): number {
@@ -289,7 +306,7 @@ export function lampLuxOnWater(
   // How far below the horizontal this patch of water lies from the lamp, which is what
   // decides how much of the fitting's beam reaches it at all.
   const depression = (Math.asin(Math.min(height / slantRangeMetres, 1)) * 180) / Math.PI;
-  return (candela * verticalSpread(depression) * height) / slantRangeMetres ** 3;
+  return (minimumCandela * verticalSpread(depression) * height) / slantRangeMetres ** 3;
 }
 
 /**
@@ -299,7 +316,7 @@ export function lampLuxOnWater(
  * be the picture inventing a detection - which is the one thing #39 named as making it a lie.
  *
  * **The candela is not what is missing here.** Rule 22's range gives it, through Annex I
- * section 8, and `candelaFromNominalRange` above computes it. What no rule settles is what
+ * section 8, and `minimumCandelaForRange` above computes it. What no rule settles is what
  * happens to the light after it leaves the lamp: how much of it the sea throws back rather
  * than absorbing, how much the air takes on two legs instead of one, and how much has to
  * arrive before an eye at night calls it something. Three unknowns multiplied together, none

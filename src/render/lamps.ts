@@ -77,14 +77,14 @@ export interface LitLamp {
   at: { x: number; y: number; z: number };
   colour: Color;
   /**
-   * How strong the lamp is, in candela, **computed from the range Rule 22 gives it** by
-   * Annex I's own relation - see `candelaFromNominalRange`. A 6 mile masthead is 94 cd, a
+   * How strong the lamp is AT LEAST, in candela, **computed from the range Rule 22 gives it** by
+   * Annex I's own relation - see `minimumCandelaForRange`. A 6 mile masthead is 94 cd, a
    * 3 mile sidelight 12.
    *
    * The lamp's own figure, with no exposure in it: what a candela becomes on screen belongs
    * to the drawn condition, and `render/scene.ts` holds that.
    */
-  candela: number;
+  minimumCandela: number;
   /** Which way the ship carrying it heads, in degrees true. Irrelevant to an all-round light. */
   headingDegreesTrue: number;
   /** The arc it shows over, as relative bearings clockwise from that bow. */
@@ -96,7 +96,7 @@ export interface LitLamp {
 
 export interface LampUniforms {
   /**
-   * (x, y, z, candela) per lamp. **The lamp's own figure, with no exposure in it**: zero is an
+   * (x, y, z, minimum candela) per lamp. **The lamp's own figure, with no exposure in it**: zero is an
    * empty slot, and anything else is the intensity Annex I section 8 gives the range Rule 22
    * sets - about 12 for a 3 mile sidelight and 94 for a 6 mile masthead, not a one for lit.
    * The ratio between the two IS the picture, so nothing here may be normalised to on and off.
@@ -171,7 +171,7 @@ export function setLamps(
     // The lamp's own figure, in candela. The exposures are uniforms of their own, so that
     // turning one of them down cannot move the other - they are two different things a lamp
     // does - and so that neither is folded into a number that means something else.
-    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.candela);
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.minimumCandela);
     uniforms.uLampColour.value[i]?.copy(lamp.colour);
     arc.set(
       (lamp.headingDegreesTrue * Math.PI) / 180,
@@ -247,7 +247,7 @@ export function lampLight(
   const landing = Math.max(dot(toLamp, up), 0);
   // How far below the lamp's own horizon this patch lies - geometry, not the facet's tilt.
   const spread = verticalSpread((Math.asin(Math.min(Math.max(toLamp.y, 0), 1)) * 180) / Math.PI);
-  const reaching = exposure.luxToScreen * ((lamp.candela * spread) / (slant * slant));
+  const reaching = exposure.luxToScreen * ((lamp.minimumCandela * spread) / (slant * slant));
 
   const path = slant + Math.hypot(where.eye.x - at.x, where.eye.y - at.y, where.eye.z - at.z);
   const away = Math.acos(Math.min(Math.max(dot(reflectedAt(patch, where.eye), toLamp), -1), 1));

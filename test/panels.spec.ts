@@ -1290,13 +1290,18 @@ describe("the streaks the lamps lay", () => {
     expect(html).toContain("Each lamp does two things to the water");
     expect(html).toContain("inside the lamp");
     expect(html).toContain("inventing a detection");
-    expect(html).toContain("Annex I section 8 gives the candela");
+    expect(html).toContain("Annex I section 8 gives the minimum candela");
     // **The drawn figure, not the one with the beam pointed at the water.** The page quoted
     // the upper bound and called it what the stars do; it is a quarter of that.
     expect(html).toContain("about 0.0005 lux on the sea a hundred metres off");
     expect(html).toContain("a quarter of what the stars do");
     // And says which part of the beam profile is the rule's and which is this tool's.
     expect(html).toContain("the fall-off drawn here is THIS TOOL");
+    // **And that the whole photometric chain is a floor, not a measurement.** Annex I gives
+    // minima; a complying lamp is somewhere between them and section 9's ceiling, and no
+    // report says where. Quoting the minima as the lamp is the overclaim to guard against.
+    expect(html).toContain("All of that is a FLOOR");
+    expect(html).toContain("the ratio of two legal minima rather than of two fittings");
   });
 
   /**
