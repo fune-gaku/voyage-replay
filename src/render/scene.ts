@@ -202,8 +202,44 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 5000
  * somewhere that flatters the picture instead would be the kind of thing this project
  * spends its time undoing. Issue #15.
  */
-const NIGHT = { sky: 0x05080e, zenith: 0x02030a, water: 0x0a121d, land: 0x03050a, ambient: 0.28 };
-const DAY = { sky: 0x9dc0e6, zenith: 0x3d7ac4, water: 0x1d4360, land: 0x6b7a5e, ambient: 0.55 };
+const NIGHT = {
+  sky: 0x05080e,
+  zenith: 0x02030a,
+  water: 0x0a121d,
+  land: 0x03050a,
+  ambient: 0.28,
+  bodyLobe: 1,
+  streak: 0.35,
+};
+const DAY = {
+  sky: 0x9dc0e6,
+  zenith: 0x3d7ac4,
+  water: 0x1d4360,
+  land: 0x6b7a5e,
+  ambient: 0.55,
+  bodyLobe: 0.6,
+  streak: 0.35,
+};
+
+/**
+ * **How bright a reflection may draw, which is a property of the CONDITION and not of what is
+ * reflected.**
+ *
+ * `bodyLobe` is the sun's or a full moon's own peak; `streak` is a lamp's. Both are declared,
+ * for the reason the panels give: Rule 22 states a range and no candela, cloud is never in the
+ * file, and this renderer is not photometrically calibrated. What is computed is the RATIO -
+ * the sun against a full moon, one phase against another - and only the absolute scale is
+ * chosen here.
+ *
+ * **It has to be per condition, and once was not.** A night sky here is 0.003 and a day sky
+ * 0.60, two hundred times apart; one number served both, and the middle of a daylight path
+ * came out at 3.1 where 1.0 is white - clipped flat across a cone fifty degrees wide, which
+ * is not a path but a hole. `ambient` above has been per condition all along and for exactly
+ * the same reason.
+ *
+ * A full moon still clips at its very centre, which is what a full moon's glitter does to an
+ * eye and to a camera. What must not happen is the clipping spreading over the water.
+ */
 
 /**
  * `sky` is the HORIZON's colour and `zenith` is overhead, and which is which matters twice.
@@ -280,7 +316,7 @@ export function buildScene(
     curvature,
     grid: addGrid(scene),
   };
-  return { scene, actors, ...viewControls(scene, parts, lights, { extentMetres, night }) };
+  return { scene, actors, ...viewControls(scene, parts, lights, { extentMetres, palette }) };
 }
 
 /**
@@ -420,9 +456,9 @@ function viewControls(
   scene: Scene,
   parts: Switchable,
   lights: Lights,
-  frame: { extentMetres: number; night: boolean },
+  frame: { extentMetres: number; palette: Palette },
 ): Controls {
-  const { extentMetres, night } = frame;
+  const { extentMetres, palette } = frame;
   // The grid only, and only here. What the map fetches is a question about where the camera
   // is pointing, and at this moment it has not been framed on anything yet - the first real
   // frame arrives before anything is drawn.
@@ -442,7 +478,7 @@ function viewControls(
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);
     },
-    ...seaControls(parts, lights, night),
+    ...seaControls(parts, lights, palette),
   };
 }
 
@@ -456,17 +492,17 @@ function viewControls(
 function seaControls(
   parts: Switchable,
   lights: Lights,
-  night: boolean,
+  palette: Palette,
 ): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "setLamps" | "drawnSurfaceAt"> {
   return {
     setLamps: (lamps: LitLamp[]): void => {
-      setLamps(parts.waves.lamps, lamps);
+      setLamps(parts.waves.lamps, lamps, palette.streak);
     },
     setSky: (conditions: Conditions): void => {
       // The night the PICTURE is drawn in, not the one the sun is in: a file saying night
       // with the sun computed above the horizon is a transcription error, and a sun path
       // over a night palette would report it in a picture instead of in a sentence.
-      const lit = lightingAt(conditions, night);
+      const lit = lightingAt(conditions, palette === NIGHT);
       lights.pointAt(lit);
       // **The width of the path is the sea's, and the sea is the one that is DRAWN.** Its
       // slope is a third of a real one, so the missing roughness goes into the body's own
@@ -477,7 +513,7 @@ function seaControls(
       // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
       // same flag the waves answer to, asked rather than worked out a second time.
       const drawnAsSea = parts.waves.uWaveScale.value > 0;
-      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null);
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null, palette.bodyLobe);
     },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;

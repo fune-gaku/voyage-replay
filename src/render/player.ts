@@ -26,7 +26,7 @@ import { formatClock, formatDate } from "../core/time.js";
 import { prepareActor, sampleAt, type PreparedTrack, type SampledState } from "../core/track.js";
 import type { Actor, Scenario, Vessel } from "../core/types.js";
 import { BASEMAP_CREDIT } from "./basemap.js";
-import { BRIGHTEST_STREAK, type LitLamp } from "./lamps.js";
+import type { LitLamp } from "./lamps.js";
 import {
   frameOverheadCamera,
   makeBridgeCamera,
@@ -634,7 +634,9 @@ export class Replay {
         lamps.push({
           at,
           colour: new Color(LAMP_COLOURS[light.colour]),
-          peak: BRIGHTEST_STREAK,
+          // Simply lit, which is all this format says about a navigation light. How bright a
+          // streak may draw belongs to the condition, and `scene.ts` holds it.
+          relativeBrightness: 1,
           headingDegreesTrue: heading,
           arcStartDegrees: light.arc.startDegrees,
           arcEndDegrees: light.arc.endDegrees,
@@ -661,7 +663,7 @@ export class Replay {
       {
         at: lamp.getWorldPosition(new Vector3()),
         colour: lamp.material.color.clone(),
-        peak: BRIGHTEST_STREAK,
+        relativeBrightness: 1,
         // All-round: IALA marks show over the whole horizon, and this format carries no
         // sectored lights to say otherwise.
         headingDegreesTrue: 0,

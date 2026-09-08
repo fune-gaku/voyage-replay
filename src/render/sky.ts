@@ -69,25 +69,7 @@ export interface SkyUniforms {
  */
 const HORIZON_POWER = 2.5;
 
-/**
- * The brightest a body's lobe is drawn against the sky behind it.
- *
- * **A ceiling rather than a measurement, and the one number here with no source.** The
- * renderer is not photometrically calibrated - the night palette is a chosen dark blue - so
- * an absolute radiance would be a figure with nothing behind it. What is honest is the
- * RATIO: the sun against the moon, and one moon's phase against another's, both of which
- * come out of `core/illumination.ts`. This decides only how bright the brightest possible
- * body is allowed to draw, and `ui/panels.ts` says it is a bound and not a reading.
- *
- * Two and a half rather than nine, which was the first figure here: a Gaussian this wide
- * still carries a thousandth of its peak ninety degrees away, and a peak of nine therefore
- * lifted the WHOLE sky by about a third of the night palette's own brightness. A path that
- * brightens the sky behind it is not a path. The core clips to white on a full moon, which
- * is what a full moon's glitter does to an eye and to a camera.
- */
-const BRIGHTEST_LOBE = 2.5;
-
-/** Relative brightness at which a body is drawn at `BRIGHTEST_LOBE`. Anything above clamps. */
+/** Relative brightness at which a body draws at the full exposure. Anything above clamps. */
 const FULL_MOON_LOBE = 1;
 
 /**
@@ -329,6 +311,7 @@ export function setSkyBody(
   uniforms: SkyUniforms,
   lit: Lit | null,
   measuredSlopeVariance: number | null,
+  exposure: number,
 ): void {
   // **Each is set whether or not the other is there.** A moonless night is when a lamp's
   // streak is the whole picture and the lamps reflect in the same water; and a body is up
@@ -342,7 +325,7 @@ export function setSkyBody(
   }
   uniforms.uSkyBody.value.copy(towardsBody(lit));
   uniforms.uSkyBodyLobe.value.set(
-    BRIGHTEST_LOBE * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
+    exposure * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
     BODY_ANGULAR_RADIUS_RADIANS,
   );
 }
