@@ -212,6 +212,47 @@ export function candelaFromNominalRange(nauticalMiles: number): number {
 }
 
 /**
+ * How much of a navigation light's intensity goes this far below the horizontal.
+ *
+ * **A navigation light is a horizontal-beam fitting, and modelling it as a bare point source
+ * lights the sea under the ship carrying it.** Annex I, section 10 specifies the vertical
+ * spread: the required intensity from 5 degrees above the horizontal to 5 below, and at
+ * least 60 per cent of it out to 7.5 degrees either way. Below that the rule requires
+ * nothing, and a real fitting falls away fast - which is why a watchkeeper does not see her
+ * own masthead light flooding the water ahead of her, and why the first version of this did.
+ *
+ * The shape between the rule's two points is this project's, and it is written as a
+ * declaration rather than a fit to anything: 1 within five degrees, 0.6 at seven and a half,
+ * and away to almost nothing by thirty. What the rule fixes, it fixes; the tail is chosen.
+ *
+ * | depression | of the nominal |
+ * |---:|---:|
+ * | 0-5 deg | 1.00 |
+ * | 7.5 deg | 0.60 |
+ * | 15 deg | 0.14 |
+ * | 30 deg | 0.02 |
+ * | 60 deg | 0.001 |
+ */
+export function verticalSpread(depressionDegrees: number): number {
+  const below = Math.abs(depressionDegrees);
+  if (below <= ANNEX_I_FULL_DEGREES) return 1;
+  return Math.exp(-BEAM_FALL_PER_DEGREE * (below - ANNEX_I_FULL_DEGREES));
+}
+
+/** Annex I section 10: the required intensity holds to five degrees either side. */
+export const ANNEX_I_FULL_DEGREES = 5;
+/** And at least sixty per cent of it to seven and a half. */
+const ANNEX_I_AT_SEVEN_AND_A_HALF = 0.6;
+/**
+ * The rate that follows, per degree below the rule's full-intensity band.
+ *
+ * Exported because `render/lamps.ts` writes the same curve in GLSL and nothing in Node can
+ * compile a shader to check it - so at least the two constants are one.
+ */
+export const BEAM_FALL_PER_DEGREE =
+  Math.log(1 / ANNEX_I_AT_SEVEN_AND_A_HALF) / (7.5 - ANNEX_I_FULL_DEGREES);
+
+/**
  * How brightly a lamp lights a patch of water, in lux.
  *
  * `E = I cos(incidence) / d^2`, and the cosine off a level surface is the lamp's height over
@@ -224,6 +265,11 @@ export function candelaFromNominalRange(nauticalMiles: number): number {
  * | 6 mile masthead, 20 m up | 0.012 lx | 0.0018 lx | 0.00007 lx |
  * | 3 mile sidelight, 8 m up | 0.0015 lx | 0.0002 lx | 0.00001 lx |
  *
+ * **Those are with the beam pointed at the water, which it is not.** `verticalSpread` takes
+ * the depression into account and cuts the near field away: the same masthead lights the sea
+ * thirty metres ahead of its own ship at 0.0012 lx rather than 0.04, because that water lies
+ * thirty-four degrees below its beam.
+ *
  * Starlight is about 0.002 lx and a full moon 0.25. **A ship's own masthead light puts about
  * as much on the water at a hundred metres as the stars do**, and a tenth of what the moon
  * did on the night of the reference case. That is the scale it has to be drawn at.
@@ -234,7 +280,11 @@ export function lampLuxOnWater(
   slantRangeMetres: number,
 ): number {
   if (slantRangeMetres <= 0) return 0;
-  return (candela * Math.max(lampHeightMetres, 0)) / slantRangeMetres ** 3;
+  const height = Math.max(lampHeightMetres, 0);
+  // How far below the horizontal this patch of water lies from the lamp, which is what
+  // decides how much of the fitting's beam reaches it at all.
+  const depression = (Math.asin(Math.min(height / slantRangeMetres, 1)) * 180) / Math.PI;
+  return (candela * verticalSpread(depression) * height) / slantRangeMetres ** 3;
 }
 
 /**
