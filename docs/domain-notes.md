@@ -896,6 +896,32 @@ that condition holds. No geometry of its own.
 The spread is the sea's, shared with the sky rather than copied: the moon and a sidelight are
 reflected in the same water, and two widths would be two seas.
 
+### A lamp does two things to water, and only one of them is a reflection
+
+The **streak** is the lamp's image in a rough mirror. The specular condition holds only where
+the reflected ray points at the source, so it runs from the lamp towards whoever is looking
+and nowhere else — correct optics, and half of what a lamp does.
+
+The **pool** is the water the lamp LIGHTS: irradiance landing on the surface, scattered back,
+and therefore there from every bearing at once. Drawing only the streak makes a lamp look like
+it shines at the observer and at nothing else, which is exactly what it was called the first
+time anyone looked at it.
+
+**The arcs shape the pool, and that is where Rule 21 becomes visible on the water.** An
+all-round light — every mark in this format — throws a full circle. A sidelight throws a 112.5
+degree wedge on its own side, a masthead 225 ahead, a sternlight 135 astern. So "all round" is
+right for a buoy and wrong for a sidelight, and the difference is drawn rather than left to a
+sector diagram nobody sees from a bridge.
+
+Lambert's cosine on the surface's own normal, falling with the same range and cut off at the
+same reach. It comes back from the shader separately from the streak because **it is not a
+reflection and must not take the Fresnel factor**: Schlick's term says how much of what is
+BEHIND the surface's mirror direction comes back, and light landing on the water is not that.
+
+How much of it returns is a declared figure. Clean sea water scatters a few per cent, what is
+actually in the water decides the rest, and no report states either — so it joins `ambient`,
+`bodyLobe` and `streak` in the palette, and the page says so.
+
 ### The arc is answered at the water, not at the eye
 
 A lamp lights only its own sector, so what decides whether a patch of sea carries its colour is

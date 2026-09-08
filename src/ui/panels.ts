@@ -317,18 +317,28 @@ function streakNote(scenario: Scenario, conditions: Conditions): string {
     lamps + marks > SHADER_LAMPS
       ? ` More lamps can be lit at once here than the water can reflect - ${lamps + marks} against ${SHADER_LAMPS} - so some of them lay no streak.`
       : "";
-  return (
-    "Each lamp lays a streak on the water, on the bearing it is reflected along, and that is " +
-    "the one reflection in this picture a reader can take anything off. It is laid only over " +
-    "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
-    "light. It fades out inside the range Rule 22 gives that light, because a reflection is " +
-    "dimmer than its source and one that outlived the lamp would be inventing a detection. " +
-    "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, so the " +
-    "streak is drawn at a brightness chosen for the night rather than measured, and how " +
-    `much of a reflection reaches an eye depends on the sea and the air. ${LENGTH_RESTS_ON_HEIGHTS}` +
-    over
-  );
+  return WHAT_A_LAMP_DOES + LENGTH_RESTS_ON_HEIGHTS + over;
 }
+
+/**
+ * The two things a lamp does to water, and what neither of them may claim.
+ *
+ * A reflection is directional by construction and light is not, which is the whole of why
+ * both are drawn: the first alone makes a lamp look like it shines at whoever is looking.
+ */
+const WHAT_A_LAMP_DOES =
+  "Each lamp does two things to the water and both are drawn. It lays a STREAK, its own image " +
+  "in a rough mirror, which runs on the bearing it is reflected along and is the one " +
+  "reflection in this picture a reader can take anything off. And it LIGHTS the sea around " +
+  "it, which is not a reflection and is there from every bearing at once - a full circle " +
+  "under an all-round light, a 112.5 degree wedge under a sidelight, which is where Rule 21 " +
+  "becomes visible on the water rather than only in a sector diagram. Both are laid only over " +
+  "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
+  "light, and both fade out inside the range Rule 22 gives that light, because a reflection " +
+  "is dimmer than its source and one that outlived the lamp would be inventing a detection. " +
+  "**How bright either was is nobody's figure**: Rule 22 states a range and no candela, the " +
+  "water's own scattering is not in any report either, so both are drawn at brightnesses " +
+  "chosen for the night rather than measured. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

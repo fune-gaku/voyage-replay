@@ -436,8 +436,14 @@ const REFLECTION = `
   vec3 back = reflect( look, gWorldNormal );
   // The sky, and whatever lamps are lit over the same water. A lamp's streak is added to the
   // sky rather than replacing it: a light on the water does not take the night out of it.
-  vec3 handed = skyTowards( back, gCarriedSlope ) + lampsTowards( back, vWaveWorld, gCarriedSlope );
+  vec3 lit;
+  vec3 handed = skyTowards( back, gCarriedSlope )
+    + lampsTowards( back, vWaveWorld, gWorldNormal, gCarriedSlope, lit );
   outgoingLight = mix( outgoingLight, handed, sky );
+  // **And the water the lamps light, which is not a reflection and takes no Fresnel.** A
+  // reflection is only where the geometry lines up; light landing on the sea is there from
+  // every bearing, which is the difference between a lamp shining at one observer and a lamp.
+  outgoingLight += lit;
 }
 #include <opaque_fragment>
 `;

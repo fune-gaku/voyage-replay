@@ -18,6 +18,18 @@
  * copied: the moon and a sidelight are reflected in the same water, and two widths would be
  * two seas.
  *
+ * ## A lamp does two things to water, and only one of them is a reflection
+ *
+ * The streak is the lamp's image in a rough mirror: directional by construction, visible only
+ * where the reflected ray points at the source, and therefore running from the lamp towards
+ * whoever is looking. **The pool is the water LIT by the lamp** - irradiance landing on the
+ * surface and being scattered back - and that is there from every bearing at once. Drawing
+ * only the first makes a lamp look like it shines at the observer and nowhere else.
+ *
+ * The arc shapes the pool, which is where Rule 21 becomes visible on the water: an all-round
+ * light throws a full circle, a sidelight a 112.5 degree wedge on its own side, a masthead
+ * 225 degrees ahead. Both halves answer the arc at the water rather than at the eye.
+ *
  * ## The three ways this could lie
  *
  * - **The arc is tested at the WATER, not at the eye.** A lamp lights only its own sector, so
@@ -78,6 +90,16 @@ export interface LampUniforms {
   uLampColour: { value: Color[] };
   /** (heading, arc start, arc end) in radians, and the lamp's own range in metres. */
   uLampArc: { value: Vector4[] };
+  /**
+   * How much of the light landing on the water comes back out of it, and how brightly that is
+   * drawn - the two are not separable here and neither is measured.
+   *
+   * Clean sea water scatters a few per cent back and what is actually in it decides the rest,
+   * which no report states; and the scale it is drawn at is the condition's, like every other
+   * exposure. So this is one declared figure standing for both, carried in the palette with
+   * `streak` and `bodyLobe`.
+   */
+  uLampPool: { value: number };
 }
 
 export function makeLampUniforms(): LampUniforms {
@@ -85,21 +107,27 @@ export function makeLampUniforms(): LampUniforms {
     uLamp: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
     uLampColour: { value: Array.from({ length: SHADER_LAMPS }, () => new Color()) },
     uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
+    uLampPool: { value: 0 },
   };
 }
 
 /**
  * Load the lit lamps into the uniforms. Anything past `SHADER_LAMPS` lays no streak.
  *
- * `exposure` is how bright the brightest streak may draw in this condition - a declared
- * figure per drawn condition, for the reason `Palette.streak` gives.
+ * `exposure` is how bright the brightest streak and the brightest pool may draw in this
+ * condition - declared figures per drawn condition, for the reason `Palette.streak` gives.
  *
  * **What does not fit is the page's business, not a log line.** `ui/panels.ts` counts the
  * lamps a scenario can light against this same constant and says so, because a picture
  * missing streaks under a page that lists every light is the two disagreeing - and the count
  * has to be knowable without watching a particular frame go by.
  */
-export function setLamps(uniforms: LampUniforms, lamps: LitLamp[], exposure: number): void {
+export function setLamps(
+  uniforms: LampUniforms,
+  lamps: LitLamp[],
+  exposure: { streak: number; pool: number },
+): void {
+  uniforms.uLampPool.value = exposure.pool;
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -109,7 +137,7 @@ export function setLamps(uniforms: LampUniforms, lamps: LitLamp[], exposure: num
       slot.set(0, 0, 0, 0);
       continue;
     }
-    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, exposure * lamp.relativeBrightness);
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, exposure.streak * lamp.relativeBrightness);
     uniforms.uLampColour.value[i]?.copy(lamp.colour);
     arc.set(
       (lamp.headingDegreesTrue * Math.PI) / 180,
@@ -159,9 +187,14 @@ export const LAMPS_GLSL = `
 uniform vec4 uLamp[${SHADER_LAMPS}];
 uniform vec3 uLampColour[${SHADER_LAMPS}];
 uniform vec4 uLampArc[${SHADER_LAMPS}];
+uniform float uLampPool;
 
-vec3 lampsTowards( vec3 reflected, vec3 at, float carried ) {
+// What the lamps do to this patch of water: its own image of each of them, and the light
+// each of them lands on it. The second comes back through the out parameter, because it is
+// not a reflection and so must not take the Fresnel factor.
+vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit ) {
   vec3 sum = vec3( 0.0 );
+  lit = vec3( 0.0 );
   if ( uSeaSlope < 0.0 ) return sum;
   float width = lobeWidth( carried, 0.0 );
   for ( int i = 0; i < ${SHADER_LAMPS}; i ++ ) {
@@ -191,8 +224,15 @@ vec3 lampsTowards( vec3 reflected, vec3 at, float carried ) {
     float spread = min( 1.0, pow( ${STREAK_FULL_METRES.toFixed(1)} / max( path, 0.001 ), 2.0 ) );
     float t = clamp( path / reach, 0.0, 1.0 );
     float fall = spread * ( 1.0 - t * t * ( 3.0 - 2.0 * t ) );
-    float away = acos( clamp( dot( reflected, normalize( towards ) ), -1.0, 1.0 ) );
+    vec3 toLamp = normalize( towards );
+    float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
     sum += uLampColour[ i ] * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );
+
+    // **And the water it lands on.** Lambert's cosine on the surface's own normal, falling
+    // with the same range, so a lamp lights a pool of sea around itself that is there from
+    // every bearing - which is what a lamp looks like and what a reflection alone does not.
+    float landing = max( dot( toLamp, up ), 0.0 );
+    lit += uLampColour[ i ] * uLampPool * lamp.w * fall * landing;
   }
   return sum;
 }
