@@ -1049,10 +1049,14 @@ the streaks are gated on the arc at the water rather than on whether the lamp is
 ### It has to die before the lamp does
 
 A reflection is dimmer than its source, so a streak visible where the light is not would be the
-picture **inventing a detection**. There is nothing to settle it with: Rule 22 gives a minimum
-RANGE and no candela, and how much of a reflection reaches an eye depends on the sea and the
-air. So the inequality is declared and enforced — the streak is gone by half the lamp's own
-Rule 22 range — rather than derived. Half is a choice; that it is less than one is not.
+picture **inventing a detection**. **The candela is not what is missing** — Rule 22's range
+gives it through Annex I section 8, and this renderer computes it. What no rule settles is what
+becomes of the light after it leaves the lamp: how much of it the sea throws back rather than
+absorbs, how much the air takes over two legs instead of one, and how much has to arrive before
+an eye at night calls it something. Three unknowns multiplied together, none of them in any
+source this format reads. So the inequality is declared and enforced — the streak is gone by
+half the lamp's own Rule 22 range — rather than derived. Half is a choice; that it is less than
+one is not.
 
 **The cut-off is applied to the whole path: lamp to water to eye.** A reflected ray takes two
 sides of a triangle where the direct one takes the third, so the path is never shorter than the
@@ -1071,8 +1075,15 @@ both by it — makes the illumination of the sea a function of the camera. Measu
 So the pool is gated and faded on the lamp's own leg, and `test/lamps.spec.ts` pins it by moving
 only the eye and requiring the pool to be unchanged.
 
-The peak falls as the inverse square inside that, which is a point source's light on the water,
-and is held flat inside a hundred metres so that a lamp close aboard does not divide by nothing.
+Inside that, the streak scales with the light reaching the patch — `candela x verticalSpread /
+slant²`, the same quantity the pool takes — so it peaks where the beam grazes the water rather
+than under the lamp. **The old flattening inside a hundred metres is gone with the model that
+needed it.** `streakBrightness` and `STREAK_FULL_METRES` described the shader as it stood before
+the lamps were put on a photometric scale: an inverse square on the whole path, held flat close
+aboard so it did not divide by nothing. The shader no longer does either, and a core function
+still describing the old curve is a second definition of the rule waiting to be believed, so it
+was removed. `STREAK_REACH_OF_NOMINAL` stays, because the reach rule is still declared and
+`render/lamps.ts` still enforces it.
 
 ### A mark's streak carries its rhythm
 

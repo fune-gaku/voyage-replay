@@ -241,11 +241,12 @@ const DAY = {
  * 0.00049 lx on the water a hundred metres off once Annex I's vertical spread is in, at a
  * five-hundredth of a full moon and a fortieth of the 41 per cent one the reference night
  * had. That is the relation the night actually has, and it is why a ship's own lights do not
- * light the sea ahead of her. All of them are declared,
- * for the reason the panels give: Rule 22 states a range and no candela, cloud is never in the
- * file, and this renderer is not photometrically calibrated. What is computed is the RATIO -
- * the sun against a full moon, one phase against another - and only the absolute scale is
- * chosen here.
+ * light the sea ahead of her. What remains declared here is what happens to the light AFTER
+ * it leaves the lamp - how much of it the sea throws back, and what a lux is worth on a
+ * screen - because cloud is never in the file and this renderer is not photometrically
+ * calibrated. The candela itself is no longer among them: Rule 22's range gives it through
+ * Annex I section 8. What is computed is that, and the RATIO - the sun against a full moon,
+ * one phase against another - and only the absolute scale is chosen here.
  *
  * **It has to be per condition, and once was not.** A night sky here is 0.003 and a day sky
  * 0.60, two hundred times apart; one number served both, and the middle of a daylight path

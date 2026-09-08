@@ -5,9 +5,7 @@ import {
   candelaFromNominalRange,
   lampLuxOnWater,
   verticalSpread,
-  STREAK_FULL_METRES,
   STREAK_REACH_OF_NOMINAL,
-  streakBrightness,
 } from "../src/core/illumination.js";
 import { METRES_PER_NAUTICAL_MILE } from "../src/core/geodesy.js";
 import {
@@ -105,16 +103,40 @@ describe("which water a lamp lights", () => {
 
 /**
  * **A reflection is dimmer than its source**, so a streak that outlived the lamp would be the
- * picture inventing a detection. There is no photometry to settle it with - Rule 22 gives a
- * range and no candela - so the inequality is declared and enforced.
+ * picture inventing a detection. The candela is not what is missing - Rule 22's range gives it
+ * through Annex I section 8 - but what becomes of the light after it leaves the lamp is: the
+ * sea's reflectance, the air over two legs rather than one, and the threshold an eye calls
+ * something at. So the inequality is declared and enforced.
  */
 describe("how far a streak reaches", () => {
   const nominal = 3 * METRES_PER_NAUTICAL_MILE;
+  const UP_HERE = { x: 0, y: 1, z: 0 };
+  const FULL = { streak: 1, pool: 1, luxToScreen: 1 };
+
+  /** One lamp 12 m up at the origin, one patch of water, one eye: what streak comes back. */
+  function streakAt(waterX: number, eyeX: number, range = nominal): number {
+    const lit = lamp({
+      nominalRangeMetres: range,
+      candela: candelaFromNominalRange(range / METRES_PER_NAUTICAL_MILE),
+    });
+    return lampLight(
+      lit,
+      { at: { x: waterX, y: 0, z: 0 }, up: UP_HERE },
+      { eye: { x: eyeX, y: 11, z: 0 }, lobeWidthRadians: Math.sqrt(2 * 0.0525) },
+      FULL,
+    ).streak;
+  }
 
   it("is gone well inside the range the lamp itself must carry", () => {
-    expect(streakBrightness(nominal, nominal)).toBe(0);
-    expect(streakBrightness(nominal * STREAK_REACH_OF_NOMINAL, nominal)).toBe(0);
     expect(STREAK_REACH_OF_NOMINAL).toBeLessThan(1);
+    const reach = nominal * STREAK_REACH_OF_NOMINAL;
+    const slant = Math.hypot(50, 12);
+    // Water fifty metres from the lamp, with the eye set so the whole path is at the reach.
+    expect(streakAt(50, 50 + (reach - slant))).toBe(0);
+    // And nothing at all by the range the lamp itself has to carry.
+    expect(streakAt(50, 50 + (nominal - slant))).toBe(0);
+    // Inside it there is something.
+    expect(streakAt(50, 300)).toBeGreaterThan(0);
   });
 
   /**
@@ -126,30 +148,12 @@ describe("how far a streak reaches", () => {
    * lamp would carry one to an eye four miles off a three-mile light.
    */
   it("cannot reach an eye standing beyond the lamp's own range", () => {
-    const lampAt = { x: 0, z: 0 };
-    const eyeAt = { x: 4 * METRES_PER_NAUTICAL_MILE, z: 0 };
-    const direct = Math.hypot(eyeAt.x - lampAt.x, eyeAt.z - lampAt.z);
-    expect(direct).toBeGreaterThan(nominal);
+    const eye = 4 * METRES_PER_NAUTICAL_MILE;
+    expect(eye).toBeGreaterThan(nominal);
 
-    // Every patch of water between them, and a few off to the side.
+    // Every patch of water between them, including the one right under the lamp.
     for (let along = 0; along <= 1; along += 0.05) {
-      for (const off of [0, 500, 2000]) {
-        const water = { x: lampAt.x + along * (eyeAt.x - lampAt.x), z: off };
-        const path =
-          Math.hypot(water.x - lampAt.x, water.z - lampAt.z) +
-          Math.hypot(eyeAt.x - water.x, eyeAt.z - water.z);
-        expect(path).toBeGreaterThanOrEqual(direct - 1e-6);
-        expect(streakBrightness(path, nominal), `${along} ${off}`).toBe(0);
-      }
-    }
-  });
-
-  it("falls away with range, as a point source's light on the water does", () => {
-    let last = Infinity;
-    for (const range of [50, 200, 400, 800, 1600, 2400]) {
-      const brightness = streakBrightness(range, nominal);
-      expect(brightness, `${range} m`).toBeLessThan(last);
-      last = brightness;
+      expect(streakAt(along * eye, eye), `${along}`).toBe(0);
     }
   });
 
@@ -238,19 +242,11 @@ describe("how far a streak reaches", () => {
     expect(candelaFromNominalRange(6) / candelaFromNominalRange(3)).toBeCloseTo(7.8, 1);
   });
 
-  /** Close aboard it is at its brightest rather than dividing by a range near nothing. */
-  it("holds at full brightness inside the reference range", () => {
-    expect(streakBrightness(1, nominal)).toBeCloseTo(
-      streakBrightness(STREAK_FULL_METRES / 2, nominal),
-      1,
-    );
-    expect(streakBrightness(STREAK_FULL_METRES / 2, nominal)).toBeGreaterThan(0.9);
-  });
-
   /** A lamp with a shorter range lays a shorter streak, which is the whole of the rule. */
   it("shortens with the lamp's own range", () => {
-    const far = 6 * METRES_PER_NAUTICAL_MILE;
-    expect(streakBrightness(2500, far)).toBeGreaterThan(streakBrightness(2500, nominal));
+    // 3500 m of path is past half of a three mile lamp's range and inside half of a six.
+    expect(streakAt(50, 3500)).toBe(0);
+    expect(streakAt(50, 3500, 6 * METRES_PER_NAUTICAL_MILE)).toBeGreaterThan(0);
   });
 });
 

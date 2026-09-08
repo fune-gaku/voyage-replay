@@ -297,50 +297,15 @@ export function lampLuxOnWater(
  *
  * **A reflection is dimmer than the lamp**, so a streak visible where the light is not would
  * be the picture inventing a detection - which is the one thing #39 named as making it a lie.
- * There is no photometry to settle it with: Rule 22 gives a minimum RANGE and not a candela,
- * and how much of a reflection reaches an eye depends on the sea and the air. So the
- * inequality is declared and enforced rather than derived, at half the lamp's own range.
+ *
+ * **The candela is not what is missing here.** Rule 22's range gives it, through Annex I
+ * section 8, and `candelaFromNominalRange` above computes it. What no rule settles is what
+ * happens to the light after it leaves the lamp: how much of it the sea throws back rather
+ * than absorbing, how much the air takes on two legs instead of one, and how much has to
+ * arrive before an eye at night calls it something. Three unknowns multiplied together, none
+ * of them in any source this format reads. So the inequality is declared and enforced rather
+ * than derived, at half the lamp's own range.
  *
  * Half is a choice. What is not a choice is that it must be less than one.
  */
 export const STREAK_REACH_OF_NOMINAL = 0.5;
-
-/**
- * How bright a lamp's streak is over this path, as a fraction of its brightest.
- *
- * **`pathMetres` is the whole way round: lamp to water to eye**, and that is what makes the
- * rule hold rather than nearly hold. A reflected ray travels the two legs of a triangle where
- * the direct one travels the third, so the path is never shorter than the lamp's own range to
- * the observer - and a cut-off applied to it therefore puts the streak out before the lamp
- * goes out, at every geometry rather than at the ones somebody thought of. Measured on the
- * first leg alone, water close under a lamp would still carry a streak to an eye standing
- * well beyond the range Rule 22 gives that light, which is the picture inventing a detection.
- *
- * Two things in it, and only the first is physics: a point source's irradiance falls as the
- * inverse square, which is why a streak shortens as a ship draws off. The second is the
- * cut-off above.
- *
- * `nominalRangeMetres` is Rule 22's, carried on the light itself.
- */
-export function streakBrightness(pathMetres: number, nominalRangeMetres: number): number {
-  const reach = nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
-  if (pathMetres >= reach) return 0;
-  // Full out to the reference range and inverse-square beyond it, so a lamp close aboard does
-  // not divide by nothing.
-  const spread = Math.min(1, (STREAK_FULL_METRES / Math.max(pathMetres, 1e-6)) ** 2);
-  // And smoothed to nothing at the reach, or the streak would end at a visible edge.
-  const t = Math.min(Math.max(pathMetres / reach, 0), 1);
-  return spread * (1 - t * t * (3 - 2 * t));
-}
-
-/**
- * Inside this, a streak is at its brightest; outside, it falls as the inverse square.
- *
- * A hundred metres is about where a lamp stops being close aboard. The figure sets how quickly
- * the streak dies away with range and nothing else - the reach above is what decides where it
- * ends - and it is chosen, which `ui/panels.ts` says.
- *
- * Exported for `render/lamps.ts`, whose GLSL writes the same fall a second time because
- * nothing in Node can compile a shader. The constants at least are shared.
- */
-export const STREAK_FULL_METRES = 100;

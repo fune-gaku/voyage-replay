@@ -294,7 +294,8 @@ const BRIGHTNESS_IS_A_BOUND =
  * Three things have to be said with it. The arc is answered at the water, so a lamp's colour
  * only reaches sea its own sector covers. The streak dies inside the lamp's Rule 22 range,
  * because a reflection that outlived its source would be inventing a detection. And the
- * brightness is nobody's figure: Rule 22 states a range and no candela.
+ * brightness IS computed - Rule 22's range through Annex I section 8 - so what is left
+ * declared is what the sea does with the light and what a lux draws as, not the lamp.
  */
 function streakNote(scenario: Scenario, conditions: Conditions): string {
   if (!isNight(conditions.statedLight)) return "";
