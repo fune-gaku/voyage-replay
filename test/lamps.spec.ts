@@ -16,8 +16,8 @@ import {
   type LitLamp,
 } from "../src/render/lamps.js";
 
-/** How bright the brightest streak may draw here, which the scene's palette decides. */
-const EXPOSURE = 0.35;
+/** How brightly a streak and a pool may draw here, which the scene's palette decides. */
+const EXPOSURE = { streak: 0.35, pool: 0.05 };
 
 /** A lamp somewhere, with an arc and a range, for the claims below to be about. */
 function lamp(over: Partial<LitLamp> = {}): LitLamp {
@@ -171,7 +171,8 @@ describe("what reaches the shader", () => {
     setLamps(uniforms, [lamp({ at: { x: 40, y: 12, z: -70 }, arcEndDegrees: 112.5 })], EXPOSURE);
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
-    expect(uniforms.uLamp.value[0]?.w).toBe(EXPOSURE);
+    expect(uniforms.uLamp.value[0]?.w).toBe(EXPOSURE.streak);
+    expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -185,7 +186,7 @@ describe("what reaches the shader", () => {
   it("puts out the slots nothing is using", () => {
     const uniforms = makeLampUniforms();
     setLamps(uniforms, [lamp(), lamp()], EXPOSURE);
-    expect(uniforms.uLamp.value[1]?.w).toBe(EXPOSURE);
+    expect(uniforms.uLamp.value[1]?.w).toBe(EXPOSURE.streak);
 
     setLamps(uniforms, [lamp()], EXPOSURE);
     expect(uniforms.uLamp.value[1]?.w).toBe(0);
@@ -208,8 +209,21 @@ describe("what reaches the shader", () => {
 describe("the copy that runs on the card", () => {
   it("declares every uniform it is given", () => {
     for (const name of Object.keys(makeLampUniforms())) {
-      expect(LAMPS_GLSL, name).toMatch(new RegExp(`uniform (vec3|vec4) ${name}\\[`));
+      // An array of lamps or a single figure: a missed declaration compiles nothing.
+      expect(LAMPS_GLSL, name).toMatch(new RegExp(`uniform (vec3|vec4) ${name}\\[|float ${name};`));
     }
+  });
+
+  /**
+   * **A lamp lights the water as well as being reflected in it**, and the second is what
+   * makes it look like a lamp: a reflection is only where the geometry lines up, while light
+   * landing on the sea is there from every bearing. Lambert's cosine on the surface's own
+   * normal, and it comes back separately because it must not take the Fresnel factor.
+   */
+  it("hands the water it lights back separately from the water it is mirrored in", () => {
+    expect(LAMPS_GLSL).toContain("out vec3 lit");
+    expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
+    expect(LAMPS_GLSL).toContain("lit += uLampColour[ i ] * uLampPool * lamp.w * fall * landing;");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {

@@ -210,6 +210,7 @@ const NIGHT = {
   ambient: 0.28,
   bodyLobe: 1,
   streak: 0.35,
+  lampPool: 0.05,
 };
 const DAY = {
   sky: 0x9dc0e6,
@@ -219,13 +220,17 @@ const DAY = {
   ambient: 0.55,
   bodyLobe: 0.6,
   streak: 0.35,
+  lampPool: 0.05,
 };
 
 /**
  * **How bright a reflection may draw, which is a property of the CONDITION and not of what is
  * reflected.**
  *
- * `bodyLobe` is the sun's or a full moon's own peak; `streak` is a lamp's. Both are declared,
+ * `bodyLobe` is the sun's or a full moon's own peak, `streak` is a lamp's image in the water,
+ * and `lampPool` is the water that lamp LIGHTS - which is not a reflection and is there from
+ * every bearing, so it is what makes a lamp look like a lamp rather than like something
+ * shining at whoever happens to be looking. All three are declared,
  * for the reason the panels give: Rule 22 states a range and no candela, cloud is never in the
  * file, and this renderer is not photometrically calibrated. What is computed is the RATIO -
  * the sun against a full moon, one phase against another - and only the absolute scale is
@@ -496,7 +501,7 @@ function seaControls(
 ): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "setLamps" | "drawnSurfaceAt"> {
   return {
     setLamps: (lamps: LitLamp[]): void => {
-      setLamps(parts.waves.lamps, lamps, palette.streak);
+      setLamps(parts.waves.lamps, lamps, { streak: palette.streak, pool: palette.lampPool });
     },
     setSky: (conditions: Conditions): void => {
       // The night the PICTURE is drawn in, not the one the sun is in: a file saying night

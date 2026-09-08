@@ -1287,10 +1287,24 @@ describe("the streaks the lamps lay", () => {
 
   it("names the arc, the range and the brightness it will not claim", () => {
     const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
-    expect(html).toContain("Each lamp lays a streak on the water");
+    expect(html).toContain("Each lamp does two things to the water");
     expect(html).toContain("inside the lamp");
     expect(html).toContain("inventing a detection");
     expect(html).toContain("Rule 22 states a range and no candela");
+  });
+
+  /**
+   * **A reflection is directional and light is not.** The streak is the lamp's image in a
+   * rough mirror, visible only where the geometry lines up; the pool is the sea the lamp
+   * lights, there from every bearing. Drawing only the first makes a lamp look like it
+   * shines at whoever is looking - which is what it looked like.
+   */
+  it("tells the water a lamp lights from the water it is mirrored in", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("LIGHTS the sea around");
+    expect(html).toContain("there from every bearing");
+    // And the arcs are what shape it: a circle under a buoy, a wedge under a sidelight.
+    expect(html).toContain("112.5 degree wedge under a sidelight");
   });
 
   /**
