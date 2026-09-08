@@ -935,6 +935,39 @@ I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in naut
 | sidelight, vessel ≥ 50 m | 3 NM | 12 |
 | sidelight, 12–50 m | 2 NM | 4.3 |
 
+### A navigation light is a horizontal-beam fitting
+
+**And leaving that out lights the sea at the ship's own feet.** Annex I, section 10 fixes the
+vertical spread: the required intensity from 5° above the horizontal to 5° below, and at least
+60 per cent of it out to 7.5° either way. Below that the rule requires nothing and a real
+fitting falls away fast — which is why a watchkeeper does not see her own masthead light
+flooding the water ahead of her, and why the first version of this did:
+
+| depression | of the nominal |
+|---:|---:|
+| 0–5° | 1.00 |
+| 7.5° | 0.60 |
+| 15° | 0.13 |
+| 30° | 0.006 |
+
+The two points are the rule's; the shape between and below them is declared.
+
+So the light a lamp puts on the water **peaks where its beam grazes the surface** — about a
+hundred metres out for a masthead twenty metres up — and is nearly nothing underneath it:
+
+| 6 NM masthead, 20 m up | 20 m | 30 m | 100 m | 300 m |
+|---|---:|---:|---:|---:|
+| depression | 45° | 34° | 11° | 4° |
+| lux on the water | 0.00002 | 0.0001 | 0.0005 | 0.00007 |
+
+### The streak scales with the lamp, the pool with the light landing here
+
+Two different quantities, and using one for both is what put a bright core at a lamp's own
+feet. **The streak is the lamp SEEN in the water**, so it scales with how bright the lamp is
+from where the observer is standing — its illuminance at the eye — and is the same all along
+the lane. **The pool is the light arriving at this patch of water**, so it scales with the
+patch's own distance from the lamp and takes the incidence cosine.
+
 And the illuminance on the water follows: `E = I cos(incidence) / d²`, which on a level sea is
 `I h / d³` — **the cube**, because the incidence angle worsens as the range grows.
 

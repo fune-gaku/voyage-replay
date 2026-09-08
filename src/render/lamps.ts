@@ -49,7 +49,16 @@
 
 import { Color, Vector4 } from "three";
 
-import { STREAK_REACH_OF_NOMINAL } from "../core/illumination.js";
+import {
+  ANNEX_I_FULL_DEGREES,
+  BEAM_FALL_PER_DEGREE,
+  STREAK_REACH_OF_NOMINAL,
+} from "../core/illumination.js";
+
+/** The rule's own full-intensity half-angle, in radians, for the shader. */
+const FULL_BEAM_RADIANS = (ANNEX_I_FULL_DEGREES * Math.PI) / 180;
+/** And how fast it falls below that, per radian. */
+const BEAM_FALL_PER_RADIAN = (BEAM_FALL_PER_DEGREE * 180) / Math.PI;
 
 /**
  * How many lamps the water can reflect at once.
@@ -231,6 +240,7 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // before the lamp goes out, whatever the geometry. Measured on the first leg alone,
     // water close under a lamp carries a streak to an eye standing beyond the light's own
     // range, which is the picture inventing a detection.
+    vec3 toEye = lamp.xyz - cameraPosition;
     float path = length( towards ) + distance( at, cameraPosition );
     float reach = uLampArc[ i ].w * ${STREAK_REACH_OF_NOMINAL.toFixed(2)};
     if ( path >= reach ) continue;
@@ -245,29 +255,38 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
       : ( relative >= start || relative < end );
     if ( !inside ) continue;
 
-    // **The lamp's own light on this water, in lux.** Rule 22 gives the range, Annex I gives
-    // the candela, and the rest is the inverse square with the incidence cosine on the
-    // surface's OWN normal - so on a level sea it falls as the cube of the slant range. It
-    // was an inverse square on the horizontal range with no height in it, which lit the sea
-    // for hundreds of metres ahead of a ship's own masthead. It does not: 94 candela twenty
-    // metres up puts 0.0018 lux on the water at a hundred metres, about what the stars do.
     vec3 toLamp = normalize( towards );
     float slant = max( length( towards ), 1.0 );
     float landing = max( dot( toLamp, up ), 0.0 );
-    float lux = lamp.w / ( slant * slant );
+
+    // **A navigation light is a horizontal-beam fitting.** Annex I section 10 fixes the
+    // intensity from five degrees above the horizontal to five below and sixty per cent of
+    // it at seven and a half; below that a real one falls away fast. Left out - which is how
+    // this went in - a ship's own masthead light floods the sea at her feet, where the beam
+    // is not pointed at all.
+    float depression = asin( clamp( landing, 0.0, 1.0 ) );
+    float spread = depression <= ${FULL_BEAM_RADIANS.toFixed(5)}
+      ? 1.0
+      : exp( -${BEAM_FALL_PER_RADIAN.toFixed(4)} * ( depression - ${FULL_BEAM_RADIANS.toFixed(5)} ) );
 
     // Smoothed to nothing at the reach, or the light would end at a visible edge.
     float t = clamp( path / reach, 0.0, 1.0 );
     float fall = 1.0 - t * t * ( 3.0 - 2.0 * t );
 
+    // **The streak is the lamp SEEN in the water, so it scales with how bright the lamp is
+    // from here** - its illuminance at the eye - and not with how much light lands on the
+    // patch doing the reflecting. Scaled the second way, a streak is brightest at the lamp's
+    // own feet and fades towards the observer, which is a spotlight and not a reflection.
+    float atEye = lamp.w * spread / max( dot( toEye, toEye ), 1.0 );
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * uLampLux * lux * fall
+    sum += uLampColour[ i ] * uLampStreak * uLampLux * atEye * fall
       * exp( -0.5 * pow( away / width, 2.0 ) );
 
-    // **And the water it lands on**, which takes the incidence cosine and the sea's own
-    // reflectance. There from every bearing, where the streak is only where the geometry
-    // lines up.
-    lit += uLampColour[ i ] * uLampPool * uLampLux * lux * landing * fall;
+    // **And the water it lands on**, which is the other quantity: the light arriving HERE,
+    // with the incidence cosine on the surface's own normal. There from every bearing, where
+    // the streak is only where the geometry lines up.
+    float lux = lamp.w * spread * landing / ( slant * slant );
+    lit += uLampColour[ i ] * uLampPool * uLampLux * lux * fall;
   }
   return sum;
 }
