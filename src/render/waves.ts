@@ -182,6 +182,25 @@ export function pixelAngle(verticalFieldOfViewDegrees: number, heightPixels: num
   return SHORTEST_DRAWN_PIXELS * perPixel;
 }
 
+/**
+ * **A wave under a millimetre is not a wave the picture has.**
+ *
+ * The lowest frequency bin runs from a sixth of the peak, where a JONSWAP spectrum holds
+ * essentially nothing, and its component is sampled from somewhere inside it - so a sea comes
+ * out with one component hundreds of metres long and no amplitude at all. Carrying it costs a
+ * sine per vertex and draws nothing.
+ *
+ * It is a decision about the PICTURE, so it lives here and both the renderer and `ui/panels.ts`
+ * take it from this one place. Applied to only one of them, the page would report a band the
+ * water does not have, or the water would carry waves the page says are not there.
+ */
+export const DRAWN_FLOOR_METRES = 0.001;
+
+/** The components a picture can show. Everything else is under a millimetre. */
+export function drawable(components: WaveComponent[]): WaveComponent[] {
+  return components.filter((wave) => wave.amplitudeMetres >= DRAWN_FLOOR_METRES);
+}
+
 export function makeWaveUniforms(): WaveUniforms {
   return {
     uWave: { value: Array.from({ length: SHADER_COMPONENTS }, () => new Vector4()) },

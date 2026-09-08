@@ -28,6 +28,7 @@ import { watchCircleMetres } from "../actors/mark/mooring.js";
 import { formatCharacter } from "../core/light-character.js";
 import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
+import { drawable } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   forceClass,
@@ -502,21 +503,12 @@ function seaSection(scenario: Scenario): string {
   return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
 }
 
-/**
- * **A wave a millimetre high is not drawn, whatever the arithmetic says it is.**
- *
- * The lowest bin runs from a sixth of the peak frequency, where a JONSWAP spectrum holds
- * essentially nothing, and its component is sampled from inside it - so a sea comes out with
- * one component of four hundred metres and no amplitude at all. Reporting that as the long
- * end of the drawn band would be the page describing a wave the picture does not have.
- */
-const DRAWN_FLOOR_METRES = 0.001;
-
 /** The shortest and longest wavelengths actually carrying the drawn sea, or null for a calm. */
 function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number } | null {
-  const lengths = drawn
-    .filter((wave) => wave.amplitudeMetres >= DRAWN_FLOOR_METRES)
-    .map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
+  // `drawable` is the renderer's own rule, taken from it rather than restated: the water is
+  // built out of exactly these, so the row below cannot describe a band the picture has not
+  // got. A component under a millimetre is dropped there and so is not reported here.
+  const lengths = drawable(drawn).map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
   if (lengths.length === 0) return null;
   return { shortest: Math.min(...lengths), longest: Math.max(...lengths) };
 }
@@ -533,8 +525,9 @@ function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number 
  */
 function bandRow(drawn: WaveComponent[]): string {
   // Two different nothings. A sea of no height has no components at all; a sea of four
-  // millimetres has forty of them and not one that stands high enough to draw. Saying "no
-  // height" over a height printed in the row above would be the page contradicting itself.
+  // millimetres has forty and the renderer keeps none of them, since not one stands a
+  // millimetre high. Saying "no height" over a height printed in the row above would be the
+  // page contradicting itself one line up.
   if (drawn.length === 0) return "none, on a sea of no height";
   const band = drawnBand(drawn);
   if (!band) return "none - nothing in this sea stands a millimetre high";

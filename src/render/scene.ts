@@ -43,6 +43,7 @@ import { buildTerrain, type Terrain } from "./terrain.js";
 import {
   applyWaves,
   displacedFraction,
+  drawable,
   makeWaveUniforms,
   meshCarries,
   setWaves,
@@ -276,8 +277,11 @@ function addWater(
   // Where the source states no direction the sea still has to run somewhere, so it runs the
   // assumed way and `ui/panels.ts` says that it was assumed. A narrow spread makes the
   // bearing plainly readable off the picture, which is exactly why it cannot go undeclared.
+  // Filtered here rather than in the shader, so that the geometry, the shading and anything
+  // floating are all given the same set - and so that `ui/panels.ts`, which reports the band,
+  // is reporting the components the water is actually made of.
   const components = sea
-    ? waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE)
+    ? drawable(waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE))
     : [];
   setWaves(waves, components);
 

@@ -194,6 +194,30 @@ describe("the sea under something floating", () => {
     expect(riseAt(parts, centre)).toBe(0);
   });
 
+  /**
+   * **A sea too small to draw is drawn as nothing, and the page says nothing.** The floor is
+   * the renderer's rule and `ui/panels.ts` reports from the same one, so a stated four
+   * millimetres cannot come out as water that moves under a page saying it does not.
+   */
+  it("leaves a sea of a few millimetres out of the water altogether", () => {
+    const tiny = buildScene(
+      { waves: { significantHeightMetres: 0.004, derivation: "measured" } },
+      1000,
+    );
+    tiny.setDiagramView(false);
+    tiny.setEye({ east: 0, north: 0 }, 0);
+    expect(riseAt(tiny, { east: 0, north: 20 })).toBe(0);
+
+    // Five times that height and the components clear a millimetre, so the water moves.
+    const small = buildScene(
+      { waves: { significantHeightMetres: 0.02, derivation: "measured" } },
+      1000,
+    );
+    small.setDiagramView(false);
+    small.setEye({ east: 0, north: 0 }, 0);
+    expect(riseAt(small, { east: 0, north: 20 })).toBeGreaterThan(0);
+  });
+
   /** Close in, the mesh has vertices for the sea's own waves and nothing is taken away. */
   it("leaves the water near the eye alone", () => {
     const parts = buildScene(environment, 1000);

@@ -4,6 +4,7 @@ import { prepareActor } from "../src/core/track.js";
 import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
 import { seawayFrom, waveComponents } from "../src/core/seaway.js";
+import { drawable } from "../src/render/waves.js";
 import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
@@ -1110,7 +1111,7 @@ describe("the band the sea is drawn from", () => {
     };
     const sea = seawayFrom(subject.environment);
     if (!sea) throw new Error("a stated 3 m sea has to give an estimate");
-    const drawn = waveComponents(sea.rough).filter((wave) => wave.amplitudeMetres >= 0.001);
+    const drawn = drawable(waveComponents(sea.rough));
     const lengths = drawn.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
 
     const html = panelsFor(subject);
