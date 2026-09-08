@@ -294,7 +294,8 @@ const BRIGHTNESS_IS_A_BOUND =
  * Three things have to be said with it. The arc is answered at the water, so a lamp's colour
  * only reaches sea its own sector covers. The streak dies inside the lamp's Rule 22 range,
  * because a reflection that outlived its source would be inventing a detection. And the
- * brightness is nobody's figure: Rule 22 states a range and no candela.
+ * brightness IS computed - Rule 22's range through Annex I section 8 - so what is left
+ * declared is what the sea does with the light and what a lux draws as, not the lamp.
  */
 function streakNote(scenario: Scenario, conditions: Conditions): string {
   if (!isNight(conditions.statedLight)) return "";
@@ -317,18 +318,82 @@ function streakNote(scenario: Scenario, conditions: Conditions): string {
     lamps + marks > SHADER_LAMPS
       ? ` More lamps can be lit at once here than the water can reflect - ${lamps + marks} against ${SHADER_LAMPS} - so some of them lay no streak.`
       : "";
+  return WHAT_A_LAMP_DOES + LENGTH_RESTS_ON_HEIGHTS + markRange(marks) + over;
+}
+
+/**
+ * **Where the computed chain stops being computed.**
+ *
+ * A ship's lamp brightness follows the whole way from Rule 22's range through Annex I's
+ * relation, and the paragraph above says so. Rule 22 is about ships. Nothing in this format
+ * states how far a buoy's or a beacon's light carries, and IALA's ranges are per light rather
+ * than in general - so a mark's range is this tool's own figure, and it is that figure, not a
+ * rule, that decides how brightly a mark draws on the water. Said only when a lit mark is
+ * actually in the scene, because a sentence about marks over a picture with none in it is the
+ * same overclaim in the other direction.
+ */
+function markRange(lit: number): string {
+  if (lit === 0) return "";
   return (
-    "Each lamp lays a streak on the water, on the bearing it is reflected along, and that is " +
-    "the one reflection in this picture a reader can take anything off. It is laid only over " +
-    "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
-    "light. It fades out inside the range Rule 22 gives that light, because a reflection is " +
-    "dimmer than its source and one that outlived the lamp would be inventing a detection. " +
-    "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, so the " +
-    "streak is drawn at a brightness chosen for the night rather than measured, and how " +
-    `much of a reflection reaches an eye depends on the sea and the air. ${LENGTH_RESTS_ON_HEIGHTS}` +
-    over
+    ` One thing in that chain is not computed. Rule 22 is about ships, and nothing here says ` +
+    `how far a mark's light carries, so ${ASSUMED_MARK.lightRangeNauticalMiles} miles is ` +
+    `assumed for each of the ${lit} lit ${lit === 1 ? "mark" : "marks"} - and since a range ` +
+    `is what the candela is computed FROM, that assumption sets how bright they draw, both ` +
+    `in the water and on it. Read a mark's lane for where it lies, not for how it compares ` +
+    `with a ship's.`
   );
 }
+
+/**
+ * The two things a lamp does to water, and what neither of them may claim.
+ *
+ * A reflection is directional by construction and light is not, which is the whole of why
+ * both are drawn: the first alone makes a lamp look like it shines at whoever is looking.
+ */
+const WHAT_A_LAMP_DOES =
+  "Each lamp does two things to the water and both are drawn. It lays a STREAK, its own image " +
+  "in a rough mirror, which runs on the bearing it is reflected along and is the one " +
+  "reflection in this picture a reader can take anything off. And it LIGHTS the sea around " +
+  "it, which is not a reflection and is there from every bearing at once - a full circle " +
+  "under an all-round light, a 112.5 degree wedge under a sidelight, which is where Rule 21 " +
+  "becomes visible on the water rather than only in a sector diagram. Both are laid only over " +
+  "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
+  "light, and both fade out inside the range Rule 22 gives that light, because a reflection " +
+  "is dimmer than its source and one that outlived the lamp would be inventing a detection. " +
+  "They fade over different distances though, and the difference is the point: the streak " +
+  "over the whole way round, lamp to water to eye, so that it goes out before the lamp it " +
+  "reflects; the light on the sea over the lamp's own leg alone, because where an observer " +
+  "stands decides how much of it comes back to them and never how much arrived. " +
+  "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
+  "gives each light a range, Annex I section 8 gives the minimum candela that range was set from, " +
+  "and the rest is the inverse square with the incidence angle and the vertical spread of " +
+  "the fitting - a navigation light points at the horizon, not at the water. Annex I " +
+  "section 10 fixes that spread only at two depressions, full intensity to 5 degrees and 60 " +
+  "per cent at 7.5; below that the rule requires nothing and the fall-off drawn here is " +
+  "THIS TOOL'S, not the rule's. With it in, a six mile masthead light twenty metres up lays " +
+  "about 0.0005 lux on the sea a hundred metres off - a quarter of what the stars do, and a " +
+  "fortieth of what the moon did - and its brightest patch of sea is under 80 metres away. " +
+  "Without the spread it would be four times that, which is the figure to be careful of: it " +
+  "is the beam pointed where it is not pointed. What stays chosen besides the tail is one " +
+  "figure per condition saying what a lux draws as, set so that a lamp and the moon are on " +
+  "one scale. " +
+  "**Two different things there, and only one of them is a bound.** Section 8 computes the " +
+  "MINIMUM intensity a light must have to comply. A real fitting is at least that bright " +
+  "and may be a good deal brighter - the annex asks only that the maximum be limited to " +
+  "avoid undue glare, and puts no figure on it, so how far above the minimum a particular " +
+  "lamp sat is not bounded here or stated in any report. The 94-to-12 between a masthead " +
+  "and a sidelight is therefore the ratio of two legal minima rather than of two fittings. " +
+  "The vertical spread is weaker still, and which water it " +
+  "binds depends on how far off that water is. Section 10 requires the full intensity only " +
+  "within 5 degrees of the horizontal and 60 per cent of it within 7.5, and nothing below - " +
+  "and for a masthead twenty metres up those two angles fall on the sea at 229 and 152 " +
+  "metres, which makes three zones rather than two. Beyond 229 m the drawn value IS the full " +
+  "floor, so that faint water is a bound on a real lamp. Between 152 and 229 m the rule asks " +
+  "for 60 per cent and this curve draws more, so a complying lamp may be dimmer there than " +
+  "the picture. Inside 152 m no floor applies at all - and that is where the light is: the " +
+  "brightest patch, at 78 m, sits 14 degrees under the beam and is 3.4 times the sea at 229 " +
+  "where the full floor starts. **The lit patch anyone would notice is this tool's curve**, " +
+  "and the real lamp may have been brighter or dimmer than what is drawn there. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

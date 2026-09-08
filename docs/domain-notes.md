@@ -896,6 +896,185 @@ that condition holds. No geometry of its own.
 The spread is the sea's, shared with the sky rather than copied: the moon and a sidelight are
 reflected in the same water, and two widths would be two seas.
 
+### A lamp does two things to water, and only one of them is a reflection
+
+The **streak** is the lamp's image in a rough mirror. The specular condition holds only where
+the reflected ray points at the source, so it runs from the lamp towards whoever is looking
+and nowhere else — correct optics, and half of what a lamp does.
+
+The **pool** is the water the lamp LIGHTS: irradiance landing on the surface, scattered back,
+and therefore there from every bearing at once. Drawing only the streak makes a lamp look like
+it shines at the observer and at nothing else, which is exactly what it was called the first
+time anyone looked at it.
+
+**The arcs shape the pool, and that is where Rule 21 becomes visible on the water.** An
+all-round light — every mark in this format — throws a full circle. A sidelight throws a 112.5
+degree wedge on its own side, a masthead 225 ahead, a sternlight 135 astern. So "all round" is
+right for a buoy and wrong for a sidelight, and the difference is drawn rather than left to a
+sector diagram nobody sees from a bridge.
+
+Lambert's cosine on the surface's own normal, falling with the same range and cut off at the
+same reach. It comes back from the shader separately from the streak because **it is not a
+reflection and must not take the Fresnel factor**: Schlick's term says how much of what is
+BEHIND the surface's mirror direction comes back, and light landing on the water is not that.
+
+### How much light a lamp puts on the water IS computable — as a floor
+
+This project said for a while that it was not: Rule 22 states a minimum range and no candela,
+which is true and is not the end of the matter. **Annex I, section 8 gives the relation the
+rule's own ranges were set by:**
+
+```
+I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in nautical miles
+```
+
+**Read the word MINIMUM in that section's title.** What the formula gives is the intensity a
+light must have *under service conditions* to comply — a floor. A real fitting is at least that
+bright and may be a good deal brighter: the only word about the other end is a note at the foot
+of section 8 asking that the maximum be limited to avoid undue glare, and it puts no figure on
+it. So the rules bound this from below and not from above, and where a particular lamp sat is in
+no casualty report this project has met. The 94-to-12 between a masthead and a sidelight is the
+ratio of two minima, not of two fittings, and none of these figures may be quoted as what a lamp
+measured.
+
+(Section 9 is *Horizontal sectors*. An earlier version of this paragraph cited it for the
+ceiling, which it does not contain — the sort of mistake that reads as authority because it has
+a number in it.)
+
+**The vertical spread is weaker than that, and it is the half that lights the water.** Section
+10 gives two BANDS with a floor each — at least the full intensity within 5°, at least 60 per
+cent of it within 7.5° — and requires nothing below. The drawn curve equals the first floor,
+runs *above* the second, and below 7.5° has no floor to be above:
+
+| depression | drawn | guaranteed | |
+|---:|---:|---:|---|
+| 0–5° | 1.000 | 1.00 | the floor exactly |
+| 6° | 0.815 | 0.60 | **above it** — a complying lamp may be dimmer |
+| 7.5° | 0.600 | 0.60 | the floor again |
+| below 7.5° | 0.54 ↓ | — | **nothing is required** |
+
+A patch of sea's depression falls as it gets further off, so those bands are **ranges on the
+water**. For a masthead 20 m up, 7.5° lands at 152 m and 5° at 229 m:
+
+| water | depression | what the drawn value is |
+|---|---:|---|
+| inside 152 m | over 7.5° | this project's tail; no rule under it |
+| 152–229 m | 7.5° to 5° | above the 60 % floor; a lamp may be dimmer |
+| beyond 229 m | under 5° | the floor exactly — a bound on a real lamp |
+
+**The bright part is the part with no rule under it.** The peak is at 78 m and the figure
+quoted throughout is at 100 m, both inside 152, and the peak is 3.4× the light at 229 m where
+the full floor starts. So the lit patch anyone would notice is this project's curve rather than
+a bound on anybody's lamp, while the faint water further out is a floor. The panel says which
+is which, and `test/lamps.spec.ts` pins the two crossings.
+
+| light | range | minimum candela |
+|---|---:|---:|
+| masthead, vessel ≥ 50 m | 6 NM | 94 |
+| masthead, vessel < 50 m | 5 NM | 52 |
+| sidelight, vessel ≥ 50 m | 3 NM | 12 |
+| sidelight, 12–50 m | 2 NM | 4.3 |
+
+### A navigation light is a horizontal-beam fitting
+
+**And leaving that out lights the sea at the ship's own feet.** Annex I, section 10 fixes the
+vertical spread: the required intensity from 5° above the horizontal to 5° below, and at least
+60 per cent of it out to 7.5° either way. Below that the rule requires nothing and a real
+fitting falls away fast — which is why a watchkeeper does not see her own masthead light
+flooding the water ahead of her, and why the first version of this did:
+
+| depression | of the nominal |
+|---:|---:|
+| 0–5° | 1.00 |
+| 7.5° | 0.60 |
+| 15° | 0.13 |
+| 30° | 0.006 |
+
+The two points are the rule's; the shape between and below them is declared.
+
+So the light a lamp puts on the water **peaks where its beam grazes the surface** — 78 m out
+for a masthead twenty metres up, at 0.00053 lx — and is nearly nothing underneath it:
+
+| 6 NM masthead, 20 m up | 20 m | 30 m | 100 m | 300 m |
+|---|---:|---:|---:|---:|
+| depression | 45° | 34° | 11° | 4° |
+| lux on the water | 0.00002 | 0.0001 | 0.0005 | 0.00007 |
+
+### Both scale with the light reaching the patch, and only one takes the cosine
+
+A lane is made of water lit by the lamp, patch by patch; the eye only decides which patches
+are pointing at it. So both halves scale with **the lamp's intensity in that direction over
+the distance to that patch** — which is Cox and Munk's glitter radiance for a point source —
+and the difference between them is Lambert's cosine, which the pool takes because that is what
+spreading light over an area means, and the mirror does not, because a mirror does not care
+how obliquely the light arrived.
+
+**Scaled by the distance to the EYE instead, every lamp lays one lane of one brightness, and
+the three a ship carries come out as one.** That was tried, as a fix for a bright core under a
+lamp's own feet — a core whose real cause was the missing beam profile above. Two half-fixes
+for one fault, and the second undid what the picture had to show.
+
+### Each lamp's lane is in a different place, and it can now be measured
+
+The specular point divides the distance between the eye and the lamp in the ratio of their
+heights, so lamps at different heights show on different water. Measured on a 180 m ship
+300 m ahead of an 11 m eye, against a night sea drawn at about 0.010:
+
+| from the eye | forward masthead (42 m) | after masthead (53 m) | starboard sidelight (24 m) |
+|---:|---:|---:|---:|
+| 40 m | 0.0021 | **0.0012** | 0.0007 |
+| 60 m | **0.0023** | 0.0011 | 0.0008 |
+| 100 m | 0.0022 | 0.0006 | **0.0009** |
+| 220 m | 0.0007 | 0.0000 | 0.0000 |
+
+Three lanes, three peaks, three brightnesses — and all of them at a tenth to a fifth of the
+sea's own drawn brightness, which is why they read as one faint wash. **The lamps are on a
+photometric scale now and the sea is not**: `0x0a121d` was chosen to look like a dark sea, not
+to be starlight on water, and the true faintness of a navigation light's reflection disappears
+into it.
+
+**This is written where a test can reach it**, which it was not before. The shader was reasoned
+about twice and wrong twice — once by scaling with the distance to the eye, once by leaving out
+the beam profile — and a third fault only surfaced when the mirror was tested: the beam's
+depression was being taken from the incidence cosine on the facet, so a tilted wave pulled the
+beam down to itself. Arguments did not catch any of them.
+
+And the illuminance on the water follows: `E = I cos(incidence) / d²`, which on a level sea is
+`I h / d³` — **the cube**, because the incidence angle worsens as the range grows.
+
+**With the beam pointed at the water, which it is not** — this table is the geometry alone, and
+the one further up is what is actually drawn:
+
+| | 50 m | 100 m | 300 m |
+|---|---:|---:|---:|
+| 6 NM masthead, 20 m up | 0.012 lx | 0.0018 lx | 0.00007 lx |
+| 3 NM sidelight, 8 m up | 0.0015 lx | 0.0002 lx | 0.00001 lx |
+
+Starlight is about 0.002 lx, a full moon 0.25, and the reference case's 41 per cent moon 0.018.
+**Once the vertical spread is in, a ship's own masthead light puts about a quarter of starlight
+on the water at a hundred metres** — 0.00049 lx, peaking at 0.00053 around 78 m out where the
+beam grazes — and a fortieth of what that moon did. Quoting the table above instead reports the
+lamp four times brighter than the picture draws it, which is a thing to watch for: the two
+tables differ by the one factor this renderer had to declare. Written as an inverse square on
+the horizontal range with no height in it — which is how this went in — the same lamp lit the
+sea for hundreds of metres ahead of her, and it was the first thing anyone said about the
+night view.
+
+So the ratios are arithmetic: one lamp against another, a lamp at one range against the same
+lamp at another, and a lamp against the moon. **What stays declared is one figure per
+condition — what a lux draws as** — and it is chosen so that a full moon's 0.25 lx lands on the
+body's own exposure, which puts the moon and the lamps on one scale.
+
+The two reflectances are the other declared part, and they are reflectances rather than
+brightnesses: clean sea water scatters a few per cent back diffusely, and what is actually in
+the water decides the rest.
+
+**And it is its own figure, not a factor of the streak's.** Folded together — which is how this
+went in — the pool came out at `streak × pool` rather than at `pool`, and turning the mirror
+down took the light the lamp casts with it. Two different things a lamp does to water need two
+exposures; the lamp's uniform carries only the lamp's own brightness, and both exposures are
+scalars beside it.
+
 ### The arc is answered at the water, not at the eye
 
 A lamp lights only its own sector, so what decides whether a patch of sea carries its colour is
@@ -910,10 +1089,14 @@ the streaks are gated on the arc at the water rather than on whether the lamp is
 ### It has to die before the lamp does
 
 A reflection is dimmer than its source, so a streak visible where the light is not would be the
-picture **inventing a detection**. There is nothing to settle it with: Rule 22 gives a minimum
-RANGE and no candela, and how much of a reflection reaches an eye depends on the sea and the
-air. So the inequality is declared and enforced — the streak is gone by half the lamp's own
-Rule 22 range — rather than derived. Half is a choice; that it is less than one is not.
+picture **inventing a detection**. **The candela is not what is missing** — Rule 22's range
+gives it through Annex I section 8, and this renderer computes it. What no rule settles is what
+becomes of the light after it leaves the lamp: how much of it the sea throws back rather than
+absorbs, how much the air takes over two legs instead of one, and how much has to arrive before
+an eye at night calls it something. Three unknowns multiplied together, none of them in any
+source this format reads. So the inequality is declared and enforced — the streak is gone by
+half the lamp's own Rule 22 range — rather than derived. Half is a choice; that it is less than
+one is not.
 
 **The cut-off is applied to the whole path: lamp to water to eye.** A reflected ray takes two
 sides of a triangle where the direct one takes the third, so the path is never shorter than the
@@ -922,8 +1105,25 @@ ones somebody thought of. Measured on the lamp-to-water leg alone — which is t
 write it — water lying close under a lamp still carries a streak to an eye standing four miles
 off a three-mile light.
 
-The peak falls as the inverse square inside that, which is a point source's light on the water,
-and is held flat inside a hundred metres so that a lamp close aboard does not divide by nothing.
+**And the pool must be kept out of it.** All of the above is about the streak, which is the lamp
+seen in the water. The pool is the lamp's light landing on the water, and an observer is not in
+that: where somebody stands decides how much of it comes back to them, never how much arrived.
+Fading it over the whole path — which is what falls out of writing one `fall` and multiplying
+both by it — makes the illumination of the sea a function of the camera. Measured on the water
+200 m under a 6 NM masthead: the pool fell by a factor of 84 between an eye alongside and one
+3 km off, and went out altogether at 5.4 km while the lamp itself was nominally good to 11.1 km.
+So the pool is gated and faded on the lamp's own leg, and `test/lamps.spec.ts` pins it by moving
+only the eye and requiring the pool to be unchanged.
+
+Inside that, the streak scales with the light reaching the patch — `candela x verticalSpread /
+slant²`, the same quantity the pool takes — so it peaks where the beam grazes the water rather
+than under the lamp. **The old flattening inside a hundred metres is gone with the model that
+needed it.** `streakBrightness` and `STREAK_FULL_METRES` described the shader as it stood before
+the lamps were put on a photometric scale: an inverse square on the whole path, held flat close
+aboard so it did not divide by nothing. The shader no longer does either, and a core function
+still describing the old curve is a second definition of the rule waiting to be believed, so it
+was removed. `STREAK_REACH_OF_NOMINAL` stays, because the reach rule is still declared and
+`render/lamps.ts` still enforces it.
 
 ### A mark's streak carries its rhythm
 
@@ -934,7 +1134,11 @@ same instant — `showingAt` — and is absent for every dark phase.
 
 A mark's own light range is not in this format. Rule 22 answers it for a ship and says nothing
 about a buoy, so `ASSUMED_MARK.lightRangeNauticalMiles` is a middling figure for a lit one and
-it is chosen; it decides only how far the streak may reach before it has to be gone.
+it is chosen. **It decides two things, not one.** How far the streak may reach before it has to
+be gone; and, because a range is exactly what Annex I section 8 turns into a candela, how
+brightly the mark draws at all — its streak and the light it lands on the water alike. For a
+ship that chain starts at a rule and is computed the whole way down. For a mark it starts here,
+at this tool's own number, so the panel says so wherever a lit mark is in the scene.
 
 ### What does not fit
 

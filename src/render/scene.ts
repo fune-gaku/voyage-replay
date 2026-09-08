@@ -209,7 +209,9 @@ const NIGHT = {
   land: 0x03050a,
   ambient: 0.28,
   bodyLobe: 1,
-  streak: 0.35,
+  streak: 1,
+  lampPool: 0.03,
+  luxToScreen: 4,
 };
 const DAY = {
   sky: 0x9dc0e6,
@@ -218,18 +220,33 @@ const DAY = {
   land: 0x6b7a5e,
   ambient: 0.55,
   bodyLobe: 0.6,
-  streak: 0.35,
+  streak: 1,
+  lampPool: 0.03,
+  luxToScreen: 6e-6,
 };
 
 /**
  * **How bright a reflection may draw, which is a property of the CONDITION and not of what is
  * reflected.**
  *
- * `bodyLobe` is the sun's or a full moon's own peak; `streak` is a lamp's. Both are declared,
- * for the reason the panels give: Rule 22 states a range and no candela, cloud is never in the
- * file, and this renderer is not photometrically calibrated. What is computed is the RATIO -
- * the sun against a full moon, one phase against another - and only the absolute scale is
- * chosen here.
+ * `bodyLobe` is the sun's or a full moon's own peak. `streak` and `lampPool` are what a lamp
+ * gives back off the water - the first its image in it, the second the light it lands ON it,
+ * which is there from every bearing and is what makes a lamp look like a lamp. Both are now
+ * REFLECTANCES rather than brightnesses: a lamp's candela comes out of Rule 22 by Annex I's
+ * own relation, the lux on the water are computed from it, and `luxToScreen` is the single
+ * figure per condition that says what a lux draws as.
+ *
+ * **It is chosen so the moon and the lamps land on one scale.** A full moon is about 0.25 lx
+ * and draws at `bodyLobe`, so a lux draws at four - which puts a 6 mile masthead light, at
+ * 0.00049 lx on the water a hundred metres off once Annex I's vertical spread is in, at a
+ * five-hundredth of a full moon and a fortieth of the 41 per cent one the reference night
+ * had. That is the relation the night actually has, and it is why a ship's own lights do not
+ * light the sea ahead of her. What remains declared here is what happens to the light AFTER
+ * it leaves the lamp - how much of it the sea throws back, and what a lux is worth on a
+ * screen - because cloud is never in the file and this renderer is not photometrically
+ * calibrated. The candela itself is no longer among them: Rule 22's range gives it through
+ * Annex I section 8. What is computed is that, and the RATIO - the sun against a full moon,
+ * one phase against another - and only the absolute scale is chosen here.
  *
  * **It has to be per condition, and once was not.** A night sky here is 0.003 and a day sky
  * 0.60, two hundred times apart; one number served both, and the middle of a daylight path
@@ -482,6 +499,11 @@ function viewControls(
   };
 }
 
+/** What a lamp gives back off the water in this condition. See `Palette`. */
+function exposureOf(palette: Palette): { streak: number; pool: number; luxToScreen: number } {
+  return { streak: palette.streak, pool: palette.lampPool, luxToScreen: palette.luxToScreen };
+}
+
 /**
  * The three that answer to the water rather than to the camera: when it is, how finely it can
  * be drawn, and what it comes to under a given point.
@@ -496,7 +518,7 @@ function seaControls(
 ): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "setLamps" | "drawnSurfaceAt"> {
   return {
     setLamps: (lamps: LitLamp[]): void => {
-      setLamps(parts.waves.lamps, lamps, palette.streak);
+      setLamps(parts.waves.lamps, lamps, exposureOf(palette));
     },
     setSky: (conditions: Conditions): void => {
       // The night the PICTURE is drawn in, not the one the sun is in: a file saying night

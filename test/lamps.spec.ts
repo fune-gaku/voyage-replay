@@ -2,12 +2,14 @@ import { Color } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
-  STREAK_FULL_METRES,
+  minimumCandelaForRange,
+  lampLuxOnWater,
+  verticalSpread,
   STREAK_REACH_OF_NOMINAL,
-  streakBrightness,
 } from "../src/core/illumination.js";
 import { METRES_PER_NAUTICAL_MILE } from "../src/core/geodesy.js";
 import {
+  lampLight,
   LAMPS_GLSL,
   litFromLamp,
   makeLampUniforms,
@@ -16,15 +18,15 @@ import {
   type LitLamp,
 } from "../src/render/lamps.js";
 
-/** How bright the brightest streak may draw here, which the scene's palette decides. */
-const EXPOSURE = 0.35;
+/** How brightly a streak and a pool may draw here, which the scene's palette decides. */
+const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
 
 /** A lamp somewhere, with an arc and a range, for the claims below to be about. */
 function lamp(over: Partial<LitLamp> = {}): LitLamp {
   return {
     at: { x: 0, y: 12, z: 0 },
     colour: new Color(0xff4d4d),
-    relativeBrightness: 1,
+    minimumCandela: minimumCandelaForRange(3),
     headingDegreesTrue: 0,
     arcStartDegrees: 0,
     arcEndDegrees: 360,
@@ -101,16 +103,40 @@ describe("which water a lamp lights", () => {
 
 /**
  * **A reflection is dimmer than its source**, so a streak that outlived the lamp would be the
- * picture inventing a detection. There is no photometry to settle it with - Rule 22 gives a
- * range and no candela - so the inequality is declared and enforced.
+ * picture inventing a detection. The candela is not what is missing - Rule 22's range gives it
+ * through Annex I section 8 - but what becomes of the light after it leaves the lamp is: the
+ * sea's reflectance, the air over two legs rather than one, and the threshold an eye calls
+ * something at. So the inequality is declared and enforced.
  */
 describe("how far a streak reaches", () => {
   const nominal = 3 * METRES_PER_NAUTICAL_MILE;
+  const UP_HERE = { x: 0, y: 1, z: 0 };
+  const FULL = { streak: 1, pool: 1, luxToScreen: 1 };
+
+  /** One lamp 12 m up at the origin, one patch of water, one eye: what streak comes back. */
+  function streakAt(waterX: number, eyeX: number, range = nominal): number {
+    const lit = lamp({
+      nominalRangeMetres: range,
+      minimumCandela: minimumCandelaForRange(range / METRES_PER_NAUTICAL_MILE),
+    });
+    return lampLight(
+      lit,
+      { at: { x: waterX, y: 0, z: 0 }, up: UP_HERE },
+      { eye: { x: eyeX, y: 11, z: 0 }, lobeWidthRadians: Math.sqrt(2 * 0.0525) },
+      FULL,
+    ).streak;
+  }
 
   it("is gone well inside the range the lamp itself must carry", () => {
-    expect(streakBrightness(nominal, nominal)).toBe(0);
-    expect(streakBrightness(nominal * STREAK_REACH_OF_NOMINAL, nominal)).toBe(0);
     expect(STREAK_REACH_OF_NOMINAL).toBeLessThan(1);
+    const reach = nominal * STREAK_REACH_OF_NOMINAL;
+    const slant = Math.hypot(50, 12);
+    // Water fifty metres from the lamp, with the eye set so the whole path is at the reach.
+    expect(streakAt(50, 50 + (reach - slant))).toBe(0);
+    // And nothing at all by the range the lamp itself has to carry.
+    expect(streakAt(50, 50 + (nominal - slant))).toBe(0);
+    // Inside it there is something.
+    expect(streakAt(50, 300)).toBeGreaterThan(0);
   });
 
   /**
@@ -122,46 +148,148 @@ describe("how far a streak reaches", () => {
    * lamp would carry one to an eye four miles off a three-mile light.
    */
   it("cannot reach an eye standing beyond the lamp's own range", () => {
-    const lampAt = { x: 0, z: 0 };
-    const eyeAt = { x: 4 * METRES_PER_NAUTICAL_MILE, z: 0 };
-    const direct = Math.hypot(eyeAt.x - lampAt.x, eyeAt.z - lampAt.z);
-    expect(direct).toBeGreaterThan(nominal);
+    const eye = 4 * METRES_PER_NAUTICAL_MILE;
+    expect(eye).toBeGreaterThan(nominal);
 
-    // Every patch of water between them, and a few off to the side.
+    // Every patch of water between them, including the one right under the lamp.
     for (let along = 0; along <= 1; along += 0.05) {
-      for (const off of [0, 500, 2000]) {
-        const water = { x: lampAt.x + along * (eyeAt.x - lampAt.x), z: off };
-        const path =
-          Math.hypot(water.x - lampAt.x, water.z - lampAt.z) +
-          Math.hypot(eyeAt.x - water.x, eyeAt.z - water.z);
-        expect(path).toBeGreaterThanOrEqual(direct - 1e-6);
-        expect(streakBrightness(path, nominal), `${along} ${off}`).toBe(0);
-      }
+      expect(streakAt(along * eye, eye), `${along}`).toBe(0);
     }
   });
 
-  it("falls away with range, as a point source's light on the water does", () => {
-    let last = Infinity;
-    for (const range of [50, 200, 400, 800, 1600, 2400]) {
-      const brightness = streakBrightness(range, nominal);
-      expect(brightness, `${range} m`).toBeLessThan(last);
-      last = brightness;
-    }
+  /**
+   * **The light a lamp puts on the water is computable, and it was not being computed.**
+   * Rule 22 gives the range, Annex I section 8 gives the minimum candela it was set from, and the
+   * rest is the inverse square with an incidence cosine - which on a level sea makes it the
+   * cube of the slant range, not the square of the horizontal one.
+   */
+  /**
+   * **A navigation light is a horizontal-beam fitting, and that is what keeps it off the
+   * water at its own feet.** Annex I section 10 fixes the intensity within five degrees of
+   * the horizontal and sixty per cent of it at seven and a half; a real one falls away fast
+   * below that. Modelled as a bare point source, a ship's own masthead light floods the sea
+   * ahead of her - which is exactly what it did.
+   */
+  it("holds the rule's own two points, and falls away under them", () => {
+    expect(verticalSpread(0)).toBe(1);
+    expect(verticalSpread(5)).toBe(1);
+    expect(verticalSpread(7.5)).toBeCloseTo(0.6, 6);
+    // **The tail is pinned to the value and not to a bound**, because the table in
+    // `core/illumination.ts` drifted off the curve it documents while bounds went on passing:
+    // it said 0.14 at fifteen degrees where the curve gives 0.130, and 0.001 at sixty where
+    // it gives 0.000013. A `toBeLessThan(0.15)` is true of both, so nothing said.
+    expect(verticalSpread(10)).toBeCloseTo(0.36, 4);
+    expect(verticalSpread(15)).toBeCloseTo(0.1296, 4);
+    expect(verticalSpread(30)).toBeCloseTo(0.006047, 6);
+    expect(verticalSpread(60)).toBeCloseTo(1.316e-5, 8);
+    // The depression of the water thirty metres ahead of a masthead twenty metres up, which
+    // the prose in `core/illumination.ts` quotes. Thirty METRES is not thirty degrees, and
+    // writing the one figure under the other is how that sentence went wrong.
+    expect(verticalSpread(33.6901)).toBeCloseTo(0.002845, 6);
   });
 
-  /** Close aboard it is at its brightest rather than dividing by a range near nothing. */
-  it("holds at full brightness inside the reference range", () => {
-    expect(streakBrightness(1, nominal)).toBeCloseTo(
-      streakBrightness(STREAK_FULL_METRES / 2, nominal),
-      1,
-    );
-    expect(streakBrightness(STREAK_FULL_METRES / 2, nominal)).toBeGreaterThan(0.9);
+  /**
+   * **Where this curve is a bound on a real lamp and where it is not - in three parts, not
+   * two.** Section 10 gives two BANDS with a floor each: the full intensity within five
+   * degrees, sixty per cent within seven and a half, and nothing below. So the curve equals
+   * the floor inside five degrees, runs ABOVE the sixty per cent floor between five and seven
+   * and a half - a complying lamp may legally be dimmer than the picture there - and below
+   * seven and a half has no floor to be above at all.
+   *
+   * On the water those bands are RANGES, because a patch's depression falls as it gets
+   * further off. The bright near field is in the unregulated part and the faint far field is
+   * on the floor, and this suite has already had that sentence wrong in both directions: once
+   * calling the whole of it a floor, once calling the whole of it a choice.
+   */
+  it("binds a real lamp in three bands, which fall on the water as three ranges", () => {
+    // At and inside the first band the drawn curve IS the floor.
+    expect(verticalSpread(5)).toBe(1);
+    // In the second band it sits above the floor: a complying lamp may be dimmer here.
+    expect(verticalSpread(6)).toBeCloseTo(0.8152, 4);
+    expect(verticalSpread(6)).toBeGreaterThan(0.6);
+    expect(verticalSpread(7.5)).toBeCloseTo(0.6, 6);
+    // **A patch of sea's depression falls as it gets further off, so the bands are RANGES.**
+    // For a masthead twenty metres up: 7.5 degrees lands at 152 m, 5 degrees at 229 m. Water
+    // beyond 229 m is drawn at the floor and IS a bound on a real lamp; water inside 152 m
+    // rests on the tail. Saying either of those about all of the water is an overclaim, and
+    // this suite has now had it both ways round.
+    const depressionAt = (r: number) => (Math.asin(20 / Math.hypot(r, 20)) * 180) / Math.PI;
+    expect(depressionAt(151.9)).toBeCloseTo(7.5, 2);
+    expect(depressionAt(228.6)).toBeCloseTo(5.0, 2);
+    expect(depressionAt(300)).toBeLessThan(5);
+    expect(verticalSpread(depressionAt(300))).toBe(1);
+
+    // But the bright part is the part with no rule under it: the peak is well inside 152 m.
+    const masthead = minimumCandelaForRange(6);
+    const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
+    expect(depressionAt(78)).toBeCloseTo(14.38, 2);
+    expect(depressionAt(100)).toBeCloseTo(11.31, 2);
+    expect(at(78)).toBeGreaterThan(at(30));
+    expect(at(78)).toBeGreaterThan(at(300));
+    // And it is 3.4 times the light at the range where the FULL floor starts (the 60 per
+    // cent one has already started at 152 m).
+    expect(at(78) / at(228.6)).toBeCloseTo(3.4, 1);
+    // Symmetric: five degrees up is as much within the band as five degrees down.
+    expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);
+  });
+
+  /**
+   * The light a lamp puts on the water therefore peaks well out from the ship rather than at
+   * her own feet - where its beam grazes the surface, which is where a lamp on a dark night
+   * actually shows. Seventy-eight metres for a masthead twenty metres up, and the figures
+   * either side of it are pinned so that the ones quoted in prose have somewhere to be
+   * checked against.
+   */
+  it("lights the water where its beam grazes it, not underneath itself", () => {
+    const masthead = minimumCandelaForRange(6);
+    const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
+
+    expect(at(20)).toBeCloseTo(0.0000235, 7);
+    expect(at(30)).toBeCloseTo(0.000114, 6);
+    expect(at(78)).toBeCloseTo(0.000531, 6);
+    expect(at(100)).toBeCloseTo(0.000489, 6);
+    expect(at(300)).toBeCloseTo(0.0000693, 7);
+    // The peak is out there and not underneath, which is the whole point of the profile.
+    expect(at(78)).toBeGreaterThan(at(30));
+    expect(at(78)).toBeGreaterThan(at(300));
+    // And it is a quarter of starlight at its brightest: a signature, not a floodlight.
+    expect(at(78)).toBeLessThan(0.002 / 3);
+  });
+
+  it("puts a quarter of starlight on the water at a hundred metres", () => {
+    // A 6 mile masthead light is 94 candela; twenty metres up, at a hundred metres off.
+    const masthead = minimumCandelaForRange(6);
+    expect(masthead).toBeCloseTo(94.2, 0);
+
+    // **Pinned rather than bounded, because the bound is what let the page overstate it.**
+    // 0.0018 lx is the geometry with the fitting pointed at the water; the beam is pointed
+    // at the horizon, and eleven degrees down takes it to 0.00049 - a quarter of the 0.002
+    // starlight gives, and a fortieth of the reference case's moon at 0.018.
+    const drawn = lampLuxOnWater(masthead, 20, Math.hypot(100, 20));
+    expect(drawn).toBeCloseTo(0.00049, 5);
+    expect(drawn / 0.002).toBeCloseTo(0.245, 2);
+    expect(drawn / 0.018).toBeCloseTo(0.027, 2);
+  });
+
+  /** And it falls as the cube, so it is gone a few hundred metres out rather than lingering. */
+  it("falls away with range past where the beam meets the water", () => {
+    const masthead = minimumCandelaForRange(6);
+    const near = lampLuxOnWater(masthead, 20, Math.hypot(100, 20));
+    const far = lampLuxOnWater(masthead, 20, Math.hypot(300, 20));
+    expect(near).toBeGreaterThan(far * 5);
+  });
+
+  /** A dimmer light by Rule 22 is a dimmer light in minimumCandela, in the ratio the rule implies. */
+  it("makes a sidelight an eighth of a masthead, which is what the ranges say", () => {
+    expect(minimumCandelaForRange(3)).toBeCloseTo(12.1, 1);
+    expect(minimumCandelaForRange(6) / minimumCandelaForRange(3)).toBeCloseTo(7.8, 1);
   });
 
   /** A lamp with a shorter range lays a shorter streak, which is the whole of the rule. */
   it("shortens with the lamp's own range", () => {
-    const far = 6 * METRES_PER_NAUTICAL_MILE;
-    expect(streakBrightness(2500, far)).toBeGreaterThan(streakBrightness(2500, nominal));
+    // 3500 m of path is past half of a three mile lamp's range and inside half of a six.
+    expect(streakAt(50, 3500)).toBe(0);
+    expect(streakAt(50, 3500, 6 * METRES_PER_NAUTICAL_MILE)).toBeGreaterThan(0);
   });
 });
 
@@ -171,7 +299,12 @@ describe("what reaches the shader", () => {
     setLamps(uniforms, [lamp({ at: { x: 40, y: 12, z: -70 }, arcEndDegrees: 112.5 })], EXPOSURE);
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
-    expect(uniforms.uLamp.value[0]?.w).toBe(EXPOSURE);
+    // The lamp's own figure, with no exposure folded into it.
+    // The lamp's own minimum candela, out of Rule 22 by Annex I: a 3 mile sidelight is about 12.
+    expect(uniforms.uLamp.value[0]?.w).toBeCloseTo(12.1, 1);
+    expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
+    expect(uniforms.uLampStreak.value).toBe(EXPOSURE.streak);
+    expect(uniforms.uLampLux.value).toBe(EXPOSURE.luxToScreen);
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -185,7 +318,7 @@ describe("what reaches the shader", () => {
   it("puts out the slots nothing is using", () => {
     const uniforms = makeLampUniforms();
     setLamps(uniforms, [lamp(), lamp()], EXPOSURE);
-    expect(uniforms.uLamp.value[1]?.w).toBe(EXPOSURE);
+    expect(uniforms.uLamp.value[1]?.w).toBeGreaterThan(0);
 
     setLamps(uniforms, [lamp()], EXPOSURE);
     expect(uniforms.uLamp.value[1]?.w).toBe(0);
@@ -202,14 +335,189 @@ describe("what reaches the shader", () => {
 });
 
 /**
+ * **Each lamp on a ship lays its own lane, and they are not in the same place.**
+ *
+ * Two masthead lights sit at different heights and different points along her, so the water
+ * that shows each of them is different water: the specular point divides the distance between
+ * the eye and the lamp in the ratio of their heights, and their heights differ.
+ *
+ * This block exists because the shader was reasoned about three times and wrong three times -
+ * once by scaling a streak with the distance to the eye, which merges every lamp on a ship
+ * into one lane; once by leaving the beam profile out, which floods the sea under a ship's
+ * own bow; and once by fading the pool over the way round through the eye, which makes the
+ * light landing on a patch of water a function of where the camera is. None survived being
+ * measured, and none could be measured until the rule was written where a test could reach it.
+ */
+describe("what each lamp puts on the water", () => {
+  const EYE = { x: 0, y: 11, z: 0 };
+  const UP = { x: 0, y: 1, z: 0 };
+  const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
+  /** The lobe a 2 m sea gives, from `core/illumination.ts`. */
+  const WHERE = { eye: EYE, lobeWidthRadians: Math.sqrt(2 * 0.0525) };
+
+  /** A lamp on a ship 300 m ahead, at a height and a place along her. */
+  function aboard(heightMetres: number, alongMetres: number, range = 6): LitLamp {
+    return lamp({
+      at: { x: 0, y: heightMetres, z: -300 + alongMetres },
+      minimumCandela: minimumCandelaForRange(range),
+      headingDegreesTrue: 180,
+      arcStartDegrees: 247.5,
+      arcEndDegrees: 112.5,
+      nominalRangeMetres: range * METRES_PER_NAUTICAL_MILE,
+    });
+  }
+
+  /** How bright this lamp makes the water, at a distance from the eye along the sight line. */
+  function along(lit: LitLamp, fromEye: number): number {
+    const light = lampLight(lit, { at: { x: 0, y: 0, z: -fromEye }, up: UP }, WHERE, EXPOSURE);
+    return light.streak + light.pool;
+  }
+
+  /** Where it makes it brightest, to the nearest twenty metres. */
+  function brightestAt(lit: LitLamp): number {
+    let best = { at: 0, value: -1 };
+    for (let fromEye = 20; fromEye <= 280; fromEye += 20) {
+      const value = along(lit, fromEye);
+      if (value > best.value) best = { at: fromEye, value };
+    }
+    return best.at;
+  }
+
+  /**
+   * **The pool is the light landing on the water, and the observer is not in it.** Lambert's
+   * law spreads the light over the area it falls on; where somebody is standing decides which
+   * of that comes back to them, not how much arrived. Faded over the way round through the
+   * eye - as this was - the same water two hundred metres under a six-mile masthead lost a
+   * factor of eighty between an eye alongside and one three kilometres off.
+   *
+   * The streak is the other way about and must stay so: it is the lamp seen in the water, and
+   * Rule 22's range has to bind it over the whole path or a reflection outlives the lamp.
+   */
+  it("holds the pool still when only the eye moves, and moves the streak", () => {
+    const masthead = aboard(42, -32);
+    const water = { at: { x: 0, y: 0, z: -280 }, up: UP };
+    const near = lampLight(masthead, water, WHERE, EXPOSURE);
+    const far = lampLight(masthead, water, { ...WHERE, eye: { x: 0, y: 11, z: 3000 } }, EXPOSURE);
+
+    expect(far.pool).toBe(near.pool);
+    expect(far.pool).toBeGreaterThan(0);
+    expect(far.streak).not.toBeCloseTo(near.streak, 12);
+  });
+
+  /**
+   * And the streak's cut-off may not take the pool with it. Half of a six-mile lamp's range
+   * is 5.6 km; an eye beyond that sees no reflection of it in this water, but the water is
+   * fifty metres from the lamp and is still lit.
+   */
+  it("puts the streak out beyond the reach without putting the water out", () => {
+    const masthead = aboard(42, -32);
+    const water = { at: { x: 0, y: 0, z: -300 }, up: UP };
+    const beyond = { ...WHERE, eye: { x: 0, y: 11, z: 5400 } };
+    const light = lampLight(masthead, water, beyond, EXPOSURE);
+
+    expect(light.streak).toBe(0);
+    expect(light.pool).toBeGreaterThan(0);
+    expect(light.pool).toBe(lampLight(masthead, water, WHERE, EXPOSURE).pool);
+  });
+
+  it("puts two mastheads' lanes in two different places, because they are", () => {
+    const forward = aboard(42, -32);
+    const after = aboard(53, 47);
+    expect(brightestAt(forward)).not.toBe(brightestAt(after));
+    // The higher lamp's specular point is nearer the eye: it divides the distance in the
+    // ratio of the heights, and a taller mast takes a bigger share of it.
+    expect(brightestAt(after)).toBeLessThan(brightestAt(forward));
+  });
+
+  /** And a dimmer light by Rule 22 lays a dimmer lane, in the ratio the rule implies. */
+  it("lays a sidelight's lane well under a masthead's", () => {
+    const masthead = along(aboard(42, -32), 60);
+    const sidelight = along(aboard(24, 50, 3), 60);
+    expect(sidelight).toBeLessThan(masthead / 2);
+  });
+
+  /**
+   * **The beam profile is what keeps a lamp off the water at its own feet.** Water close
+   * under a masthead lies far below its beam, where Annex I requires nothing and a real
+   * fitting sends almost nothing.
+   */
+  it("leaves the water under a lamp darker than the water its beam reaches", () => {
+    const masthead = aboard(42, -32);
+    // Twenty metres from her, against a hundred and eighty.
+    expect(along(masthead, 280)).toBeLessThan(along(masthead, 120));
+  });
+
+  it("gives nothing at all outside the lamp's own arc", () => {
+    // Her sternlight, which shows away from the observer and lights no water this side.
+    const astern = lamp({
+      at: { x: 0, y: 24, z: -250 },
+      headingDegreesTrue: 180,
+      arcStartDegrees: 112.5,
+      arcEndDegrees: 247.5,
+    });
+    expect(along(astern, 100)).toBe(0);
+  });
+
+  /**
+   * The pool takes Lambert's cosine and the streak does not, which is the difference between
+   * light spread over an area and a mirror that does not care how obliquely it arrived.
+   */
+  it("takes the incidence cosine on the pool and not on the streak", () => {
+    const masthead = aboard(42, -32);
+    const at = { x: 0, y: 0, z: -60 };
+    const upright = lampLight(masthead, { at, up: UP }, WHERE, EXPOSURE);
+    // A facet tilted away from the lamp: the pool goes, the mirror is a different question.
+    const tilted = lampLight(masthead, { at, up: { x: 0.7, y: 0.71, z: 0 } }, WHERE, EXPOSURE);
+    expect(tilted.pool).toBeLessThan(upright.pool);
+  });
+});
+
+/**
  * The GLSL and the rules above are the same thing written twice, because nothing in Node can
  * compile a shader to ask it. What can be checked is that the shapes match.
  */
 describe("the copy that runs on the card", () => {
   it("declares every uniform it is given", () => {
     for (const name of Object.keys(makeLampUniforms())) {
-      expect(LAMPS_GLSL, name).toMatch(new RegExp(`uniform (vec3|vec4) ${name}\\[`));
+      // An array of lamps or a single figure: a missed declaration compiles nothing.
+      expect(LAMPS_GLSL, name).toMatch(new RegExp(`uniform (vec3|vec4) ${name}\\[|float ${name};`));
     }
+  });
+
+  /**
+   * **A lamp lights the water as well as being reflected in it**, and the second is what
+   * makes it look like a lamp: a reflection is only where the geometry lines up, while light
+   * landing on the sea is there from every bearing. Lambert's cosine on the surface's own
+   * normal, and it comes back separately because it must not take the Fresnel factor.
+   */
+  it("hands the water it lights back separately from the water it is mirrored in", () => {
+    expect(LAMPS_GLSL).toContain("out vec3 lit");
+    expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
+    // The beam's own depression comes from the geometry, not from the facet standing there:
+    // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
+    expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
+    expect(LAMPS_GLSL).toContain(
+      "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * lampFade( slant, reach );",
+    );
+  });
+
+  /**
+   * **The two exposures cannot be folded into one another.** They are two different things a
+   * lamp does to water - one is its image and one is the light it casts - so turning the
+   * mirror down must not take the light with it. Folded together, as this was at first, the
+   * pool came out at `streak * pool` and vanished entirely with the streak.
+   */
+  it("keeps the streak's exposure out of the pool's", () => {
+    const uniforms = makeLampUniforms();
+    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.03, luxToScreen: 4 });
+
+    // The lamp is still there and still lighting the water, with nothing mirrored in it.
+    expect(uniforms.uLamp.value[0]?.w).toBeGreaterThan(0);
+    expect(uniforms.uLampPool.value).toBe(0.03);
+    expect(uniforms.uLampStreak.value).toBe(0);
+    // Each is its own factor in the shader, so neither multiplies the other.
+    expect(LAMPS_GLSL).toContain("uLampStreak * uLampLux * reaching");
+    expect(LAMPS_GLSL).toContain("uLampPool * uLampLux * reaching");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {
@@ -218,14 +526,34 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("if ( uSeaSlope < 0.0 ) return sum;");
   });
 
-  it("measures the reach over the whole path, lamp to water to eye", () => {
-    expect(LAMPS_GLSL).toContain("length( towards ) + distance( at, cameraPosition )");
-    expect(LAMPS_GLSL).toContain("if ( path >= reach ) continue;");
+  it("measures the streak's reach over the whole path, lamp to water to eye", () => {
+    expect(LAMPS_GLSL).toContain("float path = slant + distance( at, cameraPosition );");
+    expect(LAMPS_GLSL).toContain("lampFade( path, reach )");
   });
 
-  it("carries the same two figures the range rule uses", () => {
+  /**
+   * **The pool is light landing on water, so nothing about the observer may enter it.** The
+   * loop is left on the lamp's own leg and the pool fades on it, or a patch of sea goes out
+   * because somebody moved.
+   */
+  it("gates the loop and the pool on the lamp's own leg", () => {
+    expect(LAMPS_GLSL).toContain("if ( slant >= reach ) continue;");
+    expect(LAMPS_GLSL).toContain("lampFade( slant, reach )");
+  });
+
+  it("carries the reach the range rule sets, and the light it works in", () => {
     expect(LAMPS_GLSL).toContain(STREAK_REACH_OF_NOMINAL.toFixed(2));
-    expect(LAMPS_GLSL).toContain(STREAK_FULL_METRES.toFixed(1));
+    // **Both take the light reaching THIS patch**: the lamp's intensity in this direction
+    // over the distance to it, which is the glitter radiance of a point source. Scaled by
+    // the distance to the EYE instead, every lamp lays one lane of one brightness and the
+    // three a ship carries come out as one.
+    expect(LAMPS_GLSL).toContain("float reaching = lamp.w * spread / ( slant * slant );");
+    expect(LAMPS_GLSL).not.toContain("dot( toEye, toEye )");
+    // The pool takes the incidence cosine on the surface's own normal; the mirror does not.
+    expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
+    // The beam's own depression comes from the geometry, not from the facet standing there:
+    // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
+    expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
   });
 
   /** The bearing of the water from the lamp, off that bow - the direction that is 180 out. */

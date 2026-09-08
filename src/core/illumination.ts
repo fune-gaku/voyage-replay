@@ -186,54 +186,164 @@ export function glitterSpreadRadians(
 }
 
 /**
+ * A navigation light's MINIMUM intensity in candela, from the range Rule 22 gives it.
+ *
+ * **It is computable, and this project spent a while saying it was not.** Rule 22 states a
+ * minimum RANGE and no candela, which is true - but Annex I, section 8 gives the relation
+ * between them, and it is the relation the rule's own ranges were set by:
+ *
+ * `I = 3.43e6 * T * D^2 * K^(-D)`
+ *
+ * with `T` the threshold illuminance of a lamp at the limit of visibility, 2e-7 lux, `K` the
+ * atmospheric transmissivity of 0.8 per mile, and `D` the range in nautical miles. A 6 mile
+ * masthead light is 94 cd; a 3 mile sidelight is 12; a 2 mile sidelight is 4.3.
+ *
+ * So the ratios between lamps, and between a lamp and the moon, are arithmetic rather than
+ * taste. What stays declared is one exposure per condition - how many lux draw as how bright -
+ * and `render/scene.ts` holds it.
+ *
+ * **But read the word MINIMUM in the title of section 8, because it is doing work.** What the
+ * formula gives is `I ... under service conditions` for a light that only just complies. A
+ * real fitting is at least that bright and may be a good deal brighter. The annex asks only
+ * that the maximum be limited to avoid undue glare - a note at the end of section 8, with no
+ * figure on it - so the rules put no number above this one, and where a particular lamp sat is
+ * in no report this project has met. So this is a lower envelope drawn as though it were the
+ * lamp: the 94-to-12 between a masthead and a sidelight is the ratio of two floors rather than
+ * of two lamps, and nothing here should be quoted as what a lamp measured.
+ *
+ * **This much is a floor. What `verticalSpread` does with it below is not** - see there.
+ *
+ * The transmissivity is a clear-weather figure and is the rule's own; a real night's air is
+ * not stated in any report this project has met.
+ */
+export function minimumCandelaForRange(nauticalMiles: number): number {
+  const threshold = 2e-7;
+  const transmissivity = 0.8;
+  return 3.43e6 * threshold * nauticalMiles ** 2 * transmissivity ** -nauticalMiles;
+}
+
+/**
+ * How much of a navigation light's intensity goes this far below the horizontal.
+ *
+ * **A navigation light is a horizontal-beam fitting, and modelling it as a bare point source
+ * lights the sea under the ship carrying it.** Annex I, section 10 specifies the vertical
+ * spread: the required intensity from 5 degrees above the horizontal to 5 below, and at
+ * least 60 per cent of it out to 7.5 degrees either way. Below that the rule requires
+ * nothing, and a real fitting falls away fast - which is why a watchkeeper does not see her
+ * own masthead light flooding the water ahead of her, and why the first version of this did.
+ *
+ * The shape between the rule's two points is this project's, and it is written as a
+ * declaration rather than a fit to anything: 1 within five degrees, 0.6 at seven and a half,
+ * and away to almost nothing by thirty.
+ *
+ * **The rule's two points are floors, and this curve is only one of them.** Section 10 says AT
+ * LEAST the required intensity within five degrees, and AT LEAST sixty per cent of it within
+ * seven and a half - two BANDS with a floor each, not two points on a curve. So:
+ *
+ * | depression | drawn | the floor section 10 guarantees | |
+ * |---:|---:|---:|---|
+ * | 0-5 deg | 1.000 | 1.00 | the floor exactly |
+ * | 6 deg | 0.815 | 0.60 | **above it** - a complying lamp may be dimmer here |
+ * | 7.5 deg | 0.600 | 0.60 | the floor again |
+ * | below 7.5 | 0.54 down | none | **the rule requires nothing at all** |
+ *
+ * A patch of sea's depression falls as it gets further off, so those bands are RANGES on the
+ * water. For a masthead twenty metres up: 7.5 degrees is 152 m out and 5 degrees is 229 m.
+ *
+ * | water | depression | what the drawn value is |
+ * |---|---:|---|
+ * | inside 152 m | over 7.5 deg | this project's tail; the rule requires nothing |
+ * | 152-229 m | 7.5 to 5 deg | above the 60 per cent floor; a lamp may be dimmer |
+ * | beyond 229 m | under 5 deg | the floor exactly, and a bound on a real lamp |
+ *
+ * **The bright part is the part with no rule under it.** The peak is at 78 m and the figure
+ * quoted throughout is at 100 m; both are inside 152 and rest entirely on the chosen tail, and
+ * the peak is 3.4 times the light at 229 m where the FULL floor starts. So the near field - the
+ * lit patch anyone would notice - is this project's curve rather than a bound on anybody's
+ * lamp, while the faint water further out is a floor. What survives as a bound everywhere is
+ * the intensity itself, out of section 8.
+ *
+ * | depression | of the nominal |
+ * |---:|---:|
+ * | 0-5 deg | 1.000 |
+ * | 7.5 deg | 0.600 |
+ * | 10 deg | 0.360 |
+ * | 15 deg | 0.130 |
+ * | 30 deg | 0.0060 |
+ * | 60 deg | 0.000013 |
+ */
+export function verticalSpread(depressionDegrees: number): number {
+  const below = Math.abs(depressionDegrees);
+  if (below <= ANNEX_I_FULL_DEGREES) return 1;
+  return Math.exp(-BEAM_FALL_PER_DEGREE * (below - ANNEX_I_FULL_DEGREES));
+}
+
+/** Annex I section 10: the required intensity holds to five degrees either side. */
+export const ANNEX_I_FULL_DEGREES = 5;
+/** And at least sixty per cent of it to seven and a half. */
+const ANNEX_I_AT_SEVEN_AND_A_HALF = 0.6;
+/**
+ * The rate that follows, per degree below the rule's full-intensity band.
+ *
+ * Exported because `render/lamps.ts` writes the same curve in GLSL and nothing in Node can
+ * compile a shader to check it - so at least the two constants are one.
+ */
+export const BEAM_FALL_PER_DEGREE =
+  Math.log(1 / ANNEX_I_AT_SEVEN_AND_A_HALF) / (7.5 - ANNEX_I_FULL_DEGREES);
+
+/**
+ * How brightly a lamp lights a patch of water, in lux.
+ *
+ * `E = I cos(incidence) / d^2`, and the cosine off a level surface is the lamp's height over
+ * the slant range - so `E = I h / d^3`. **The cube is the part that was missing**: written as
+ * an inverse square on the horizontal range, with no height in it, a ship's own masthead light
+ * lit the sea for hundreds of metres ahead of her. It does not:
+ *
+ * | lamp | 50 m | 100 m | 300 m |
+ * |---|---|---|---|
+ * | 6 mile masthead, 20 m up | 0.012 lx | 0.0018 lx | 0.00007 lx |
+ * | 3 mile sidelight, 8 m up | 0.0015 lx | 0.0002 lx | 0.00001 lx |
+ *
+ * **Those are with the beam pointed at the water, which it is not.** `verticalSpread` takes
+ * the depression into account and cuts the near field away: the same masthead lights the sea
+ * thirty metres ahead of its own ship at 0.00011 lx rather than 0.04, because that water lies
+ * 33.7 degrees below its beam, where under three thousandths of it is left.
+ *
+ * Starlight is about 0.002 lx and a full moon 0.25. **The drawn figure is the one with the
+ * beam profile in, and it is a quarter of starlight**: 0.00049 lx at a hundred metres,
+ * peaking at 0.00053 about seventy-eight metres out where the beam grazes the surface, and a
+ * fortieth of what the 41 per cent moon gave on the night of the reference case. That is the
+ * scale it has to be drawn at. The table above is four times it at a hundred metres because
+ * the table is the beam pointed at the water, and quoting the table as though it were the
+ * picture is a mistake this file's readers have now made three times over.
+ */
+export function lampLuxOnWater(
+  minimumCandela: number,
+  lampHeightMetres: number,
+  slantRangeMetres: number,
+): number {
+  if (slantRangeMetres <= 0) return 0;
+  const height = Math.max(lampHeightMetres, 0);
+  // How far below the horizontal this patch of water lies from the lamp, which is what
+  // decides how much of the fitting's beam reaches it at all.
+  const depression = (Math.asin(Math.min(height / slantRangeMetres, 1)) * 180) / Math.PI;
+  return (minimumCandela * verticalSpread(depression) * height) / slantRangeMetres ** 3;
+}
+
+/**
  * How far a lamp's streak is allowed to reach, against the range the lamp itself must carry.
  *
  * **A reflection is dimmer than the lamp**, so a streak visible where the light is not would
  * be the picture inventing a detection - which is the one thing #39 named as making it a lie.
- * There is no photometry to settle it with: Rule 22 gives a minimum RANGE and not a candela,
- * and how much of a reflection reaches an eye depends on the sea and the air. So the
- * inequality is declared and enforced rather than derived, at half the lamp's own range.
+ *
+ * **The candela is not what is missing here.** Rule 22's range gives it, through Annex I
+ * section 8, and `minimumCandelaForRange` above computes it. What no rule settles is what
+ * happens to the light after it leaves the lamp: how much of it the sea throws back rather
+ * than absorbing, how much the air takes on two legs instead of one, and how much has to
+ * arrive before an eye at night calls it something. Three unknowns multiplied together, none
+ * of them in any source this format reads. So the inequality is declared and enforced rather
+ * than derived, at half the lamp's own range.
  *
  * Half is a choice. What is not a choice is that it must be less than one.
  */
 export const STREAK_REACH_OF_NOMINAL = 0.5;
-
-/**
- * How bright a lamp's streak is over this path, as a fraction of its brightest.
- *
- * **`pathMetres` is the whole way round: lamp to water to eye**, and that is what makes the
- * rule hold rather than nearly hold. A reflected ray travels the two legs of a triangle where
- * the direct one travels the third, so the path is never shorter than the lamp's own range to
- * the observer - and a cut-off applied to it therefore puts the streak out before the lamp
- * goes out, at every geometry rather than at the ones somebody thought of. Measured on the
- * first leg alone, water close under a lamp would still carry a streak to an eye standing
- * well beyond the range Rule 22 gives that light, which is the picture inventing a detection.
- *
- * Two things in it, and only the first is physics: a point source's irradiance falls as the
- * inverse square, which is why a streak shortens as a ship draws off. The second is the
- * cut-off above.
- *
- * `nominalRangeMetres` is Rule 22's, carried on the light itself.
- */
-export function streakBrightness(pathMetres: number, nominalRangeMetres: number): number {
-  const reach = nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
-  if (pathMetres >= reach) return 0;
-  // Full out to the reference range and inverse-square beyond it, so a lamp close aboard does
-  // not divide by nothing.
-  const spread = Math.min(1, (STREAK_FULL_METRES / Math.max(pathMetres, 1e-6)) ** 2);
-  // And smoothed to nothing at the reach, or the streak would end at a visible edge.
-  const t = Math.min(Math.max(pathMetres / reach, 0), 1);
-  return spread * (1 - t * t * (3 - 2 * t));
-}
-
-/**
- * Inside this, a streak is at its brightest; outside, it falls as the inverse square.
- *
- * A hundred metres is about where a lamp stops being close aboard. The figure sets how quickly
- * the streak dies away with range and nothing else - the reach above is what decides where it
- * ends - and it is chosen, which `ui/panels.ts` says.
- *
- * Exported for `render/lamps.ts`, whose GLSL writes the same fall a second time because
- * nothing in Node can compile a shader. The constants at least are shared.
- */
-export const STREAK_FULL_METRES = 100;

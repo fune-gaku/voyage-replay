@@ -1287,10 +1287,46 @@ describe("the streaks the lamps lay", () => {
 
   it("names the arc, the range and the brightness it will not claim", () => {
     const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
-    expect(html).toContain("Each lamp lays a streak on the water");
+    expect(html).toContain("Each lamp does two things to the water");
     expect(html).toContain("inside the lamp");
     expect(html).toContain("inventing a detection");
-    expect(html).toContain("Rule 22 states a range and no candela");
+    expect(html).toContain("Annex I section 8 gives the minimum candela");
+    // **The drawn figure, not the one with the beam pointed at the water.** The page quoted
+    // the upper bound and called it what the stars do; it is a quarter of that.
+    expect(html).toContain("about 0.0005 lux on the sea a hundred metres off");
+    expect(html).toContain("a quarter of what the stars do");
+    // And says which part of the beam profile is the rule's and which is this tool's.
+    expect(html).toContain("the fall-off drawn here is THIS TOOL");
+    // **The intensity is a floor; the spread that puts it on the water is not.** Section 8
+    // gives a minimum with no figure on the maximum, so the candela is a floor. Section 10 requires
+    // nothing below 7.5 degrees, and every lit patch of sea is below it - so calling the
+    // whole photometric chain a floor would be the same overclaim facing the other way.
+    expect(html).toContain("the ratio of two legal minima rather than of two fittings");
+    expect(html).toContain("those two angles fall on the sea at 229 and 152");
+    // **All three zones, because two of them was the last version of this mistake.** The far
+    // water is on the full floor, the middle band has a 60 per cent floor the curve exceeds,
+    // and only the near field - which is where the light is - has no floor at all.
+    expect(html).toContain("Beyond 229 m the drawn value IS the full floor");
+    expect(html).toContain("Between 152 and 229 m the rule asks for 60 per cent");
+    expect(html).toContain("Inside 152 m no floor applies at all");
+    expect(html).toContain("The lit patch anyone would notice is this tool");
+    // And not the two overclaims this sentence has already been, in both directions.
+    expect(html).not.toContain("All of that is a FLOOR");
+    expect(html).not.toContain("the sea a lamp lights is all below");
+  });
+
+  /**
+   * **A reflection is directional and light is not.** The streak is the lamp's image in a
+   * rough mirror, visible only where the geometry lines up; the pool is the sea the lamp
+   * lights, there from every bearing. Drawing only the first makes a lamp look like it
+   * shines at whoever is looking - which is what it looked like.
+   */
+  it("tells the water a lamp lights from the water it is mirrored in", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("LIGHTS the sea around");
+    expect(html).toContain("there from every bearing");
+    // And the arcs are what shape it: a circle under a buoy, a wedge under a sidelight.
+    expect(html).toContain("112.5 degree wedge under a sidelight");
   });
 
   /**
@@ -1334,6 +1370,37 @@ describe("the streaks the lamps lay", () => {
 
     expect(html).toContain("More lamps can be lit at once here than the water can reflect");
     expect(html).toContain("17 against 16");
+  });
+
+  /**
+   * **The computed chain stops at the marks, and the page has to say where.** A ship's lamp
+   * gets its candela from Rule 22 by Annex I; a buoy's range is nowhere in this format, so
+   * the figure that sets how brightly it draws is this tool's own. Reporting that under the
+   * same sentence that says the brightness is computed would hide the tool's choice behind
+   * the rule's authority.
+   */
+  it("says a lit mark's brightness rests on a range it chose", () => {
+    const subject = atNight({ significantHeightMetres: 2, derivation: "measured" });
+    subject.marks = [
+      {
+        id: "starboard-hand",
+        kind: "buoy" as const,
+        at: { lat: 33.9, lon: 131.7 },
+        heightMetres: 3,
+        light: { character: "Fl G 4s" },
+      },
+    ];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("One thing in that chain is not computed");
+    expect(html).toContain("4 miles is assumed for each of the 1 lit mark");
+  });
+
+  /** And says none of it where there is no lit mark, which is the same overclaim reversed. */
+  it("says nothing about marks' ranges when no mark is lit", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("Each lamp does two things to the water");
+    expect(html).not.toContain("One thing in that chain is not computed");
   });
 
   /** A day has no navigation lights drawn, so it has nothing to say about their streaks. */

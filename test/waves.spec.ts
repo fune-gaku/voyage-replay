@@ -130,7 +130,11 @@ describe("patching the water's shader", () => {
     expect(shader.fragmentShader).toContain("gCarriedSlope +=");
     expect(shader.fragmentShader).toContain("skyTowards( back, gCarriedSlope )");
     // And the lamps are reflected in the same water, added to the sky rather than over it.
-    expect(shader.fragmentShader).toContain("lampsTowards( back, vWaveWorld, gCarriedSlope )");
+    expect(shader.fragmentShader).toContain(
+      "lampsTowards( back, vWaveWorld, gWorldNormal, gCarriedSlope, lit )",
+    );
+    // And what the lamps LIGHT is added after the mix, because it is not a reflection.
+    expect(shader.fragmentShader).toContain("outgoingLight += lit;");
 
     // **The reflection starts from the water as DRAWN**, so the world position is taken
     // again after everything that moves it - the waves here and the curvature's drop, which
