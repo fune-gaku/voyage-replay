@@ -8,7 +8,6 @@ import {
 } from "../src/core/illumination.js";
 import { METRES_PER_NAUTICAL_MILE } from "../src/core/geodesy.js";
 import {
-  BRIGHTEST_STREAK,
   LAMPS_GLSL,
   litFromLamp,
   makeLampUniforms,
@@ -17,12 +16,15 @@ import {
   type LitLamp,
 } from "../src/render/lamps.js";
 
+/** How bright the brightest streak may draw here, which the scene's palette decides. */
+const EXPOSURE = 0.35;
+
 /** A lamp somewhere, with an arc and a range, for the claims below to be about. */
 function lamp(over: Partial<LitLamp> = {}): LitLamp {
   return {
     at: { x: 0, y: 12, z: 0 },
     colour: new Color(0xff4d4d),
-    peak: BRIGHTEST_STREAK,
+    relativeBrightness: 1,
     headingDegreesTrue: 0,
     arcStartDegrees: 0,
     arcEndDegrees: 360,
@@ -166,10 +168,10 @@ describe("how far a streak reaches", () => {
 describe("what reaches the shader", () => {
   it("packs each lamp's place, colour, arc and range", () => {
     const uniforms = makeLampUniforms();
-    setLamps(uniforms, [lamp({ at: { x: 40, y: 12, z: -70 }, arcEndDegrees: 112.5 })]);
+    setLamps(uniforms, [lamp({ at: { x: 40, y: 12, z: -70 }, arcEndDegrees: 112.5 })], EXPOSURE);
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
-    expect(uniforms.uLamp.value[0]?.w).toBe(BRIGHTEST_STREAK);
+    expect(uniforms.uLamp.value[0]?.w).toBe(EXPOSURE);
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -182,10 +184,10 @@ describe("what reaches the shader", () => {
    */
   it("puts out the slots nothing is using", () => {
     const uniforms = makeLampUniforms();
-    setLamps(uniforms, [lamp(), lamp()]);
-    expect(uniforms.uLamp.value[1]?.w).toBe(BRIGHTEST_STREAK);
+    setLamps(uniforms, [lamp(), lamp()], EXPOSURE);
+    expect(uniforms.uLamp.value[1]?.w).toBe(EXPOSURE);
 
-    setLamps(uniforms, [lamp()]);
+    setLamps(uniforms, [lamp()], EXPOSURE);
     expect(uniforms.uLamp.value[1]?.w).toBe(0);
   });
 
@@ -193,7 +195,7 @@ describe("what reaches the shader", () => {
     const uniforms = makeLampUniforms();
     const many = Array.from({ length: SHADER_LAMPS + 4 }, () => lamp());
     expect(() => {
-      setLamps(uniforms, many);
+      setLamps(uniforms, many, EXPOSURE);
     }).not.toThrow();
     expect(uniforms.uLamp.value).toHaveLength(SHADER_LAMPS);
   });

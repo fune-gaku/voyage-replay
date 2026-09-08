@@ -279,9 +279,10 @@ const LIT_FROM_NOWHERE =
  */
 const BRIGHTNESS_IS_A_BOUND =
   "How bright it was is not drawn from anything: cloud decides that and the source does not " +
-  "state it, so it is drawn at a readable brightness rather than a measured one. What does " +
-  "carry is the RATIO between phases - a half moon is about a ninth of a full one, not half " +
-  "of it.";
+  "state it, so it is drawn at a readable brightness rather than a measured one - and at one " +
+  "chosen for the condition, since a night and a day here are two hundred times apart and no " +
+  "single exposure serves both. What does carry is the RATIO between phases: a half moon is " +
+  "about a ninth of a full one, not half of it.";
 
 /**
  * The streaks the lamps lay, which are the only reflection here that a reader can use.
@@ -322,7 +323,8 @@ function streakNote(scenario: Scenario, conditions: Conditions): string {
     "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
     "light. It fades out inside the range Rule 22 gives that light, because a reflection is " +
     "dimmer than its source and one that outlived the lamp would be inventing a detection. " +
-    "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, and how " +
+    "**How bright it was is nobody's figure**: Rule 22 states a range and no candela, so the " +
+    "streak is drawn at a brightness chosen for the night rather than measured, and how " +
     `much of a reflection reaches an eye depends on the sea and the air. ${LENGTH_RESTS_ON_HEIGHTS}` +
     over
   );
