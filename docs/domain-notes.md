@@ -960,13 +960,19 @@ hundred metres out for a masthead twenty metres up — and is nearly nothing und
 | depression | 45° | 34° | 11° | 4° |
 | lux on the water | 0.00002 | 0.0001 | 0.0005 | 0.00007 |
 
-### The streak scales with the lamp, the pool with the light landing here
+### Both scale with the light reaching the patch, and only one takes the cosine
 
-Two different quantities, and using one for both is what put a bright core at a lamp's own
-feet. **The streak is the lamp SEEN in the water**, so it scales with how bright the lamp is
-from where the observer is standing — its illuminance at the eye — and is the same all along
-the lane. **The pool is the light arriving at this patch of water**, so it scales with the
-patch's own distance from the lamp and takes the incidence cosine.
+A lane is made of water lit by the lamp, patch by patch; the eye only decides which patches
+are pointing at it. So both halves scale with **the lamp's intensity in that direction over
+the distance to that patch** — which is Cox and Munk's glitter radiance for a point source —
+and the difference between them is Lambert's cosine, which the pool takes because that is what
+spreading light over an area means, and the mirror does not, because a mirror does not care
+how obliquely the light arrived.
+
+**Scaled by the distance to the EYE instead, every lamp lays one lane of one brightness, and
+the three a ship carries come out as one.** That was tried, as a fix for a bright core under a
+lamp's own feet — a core whose real cause was the missing beam profile above. Two half-fixes
+for one fault, and the second undid what the picture had to show.
 
 And the illuminance on the water follows: `E = I cos(incidence) / d²`, which on a level sea is
 `I h / d³` — **the cube**, because the incidence angle worsens as the range grows.

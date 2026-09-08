@@ -295,7 +295,9 @@ describe("the copy that runs on the card", () => {
   it("hands the water it lights back separately from the water it is mirrored in", () => {
     expect(LAMPS_GLSL).toContain("out vec3 lit");
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
-    expect(LAMPS_GLSL).toContain("lit += uLampColour[ i ] * uLampPool * uLampLux * lux * fall;");
+    expect(LAMPS_GLSL).toContain(
+      "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;",
+    );
   });
 
   /**
@@ -313,8 +315,8 @@ describe("the copy that runs on the card", () => {
     expect(uniforms.uLampPool.value).toBe(0.03);
     expect(uniforms.uLampStreak.value).toBe(0);
     // Each is its own factor in the shader, so neither multiplies the other.
-    expect(LAMPS_GLSL).toContain("uLampStreak * uLampLux * atEye");
-    expect(LAMPS_GLSL).toContain("uLampPool * uLampLux * lux");
+    expect(LAMPS_GLSL).toContain("uLampStreak * uLampLux * reaching");
+    expect(LAMPS_GLSL).toContain("uLampPool * uLampLux * reaching");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {
@@ -328,16 +330,15 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("if ( path >= reach ) continue;");
   });
 
-  it("carries the reach the range rule sets, and the lux it works in", () => {
+  it("carries the reach the range rule sets, and the light it works in", () => {
     expect(LAMPS_GLSL).toContain(STREAK_REACH_OF_NOMINAL.toFixed(2));
-    // The illuminance itself: candela over the slant range squared, with the incidence
-    // cosine on the surface's own normal - which on a level sea makes it the cube.
-    expect(LAMPS_GLSL).toContain("float lux = lamp.w * spread * landing / ( slant * slant );");
-    // And the streak scales with how bright the lamp is FROM HERE, not with the light
-    // landing on the patch doing the reflecting.
-    expect(LAMPS_GLSL).toContain(
-      "float atEye = lamp.w * spread / max( dot( toEye, toEye ), 1.0 );",
-    );
+    // **Both take the light reaching THIS patch**: the lamp's intensity in this direction
+    // over the distance to it, which is the glitter radiance of a point source. Scaled by
+    // the distance to the EYE instead, every lamp lays one lane of one brightness and the
+    // three a ship carries come out as one.
+    expect(LAMPS_GLSL).toContain("float reaching = lamp.w * spread / ( slant * slant );");
+    expect(LAMPS_GLSL).not.toContain("dot( toEye, toEye )");
+    // The pool takes the incidence cosine on the surface's own normal; the mirror does not.
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
   });
 

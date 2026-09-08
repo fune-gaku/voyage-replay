@@ -240,7 +240,6 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // before the lamp goes out, whatever the geometry. Measured on the first leg alone,
     // water close under a lamp carries a streak to an eye standing beyond the light's own
     // range, which is the picture inventing a detection.
-    vec3 toEye = lamp.xyz - cameraPosition;
     float path = length( towards ) + distance( at, cameraPosition );
     float reach = uLampArc[ i ].w * ${STREAK_REACH_OF_NOMINAL.toFixed(2)};
     if ( path >= reach ) continue;
@@ -273,20 +272,24 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     float t = clamp( path / reach, 0.0, 1.0 );
     float fall = 1.0 - t * t * ( 3.0 - 2.0 * t );
 
-    // **The streak is the lamp SEEN in the water, so it scales with how bright the lamp is
-    // from here** - its illuminance at the eye - and not with how much light lands on the
-    // patch doing the reflecting. Scaled the second way, a streak is brightest at the lamp's
-    // own feet and fades towards the observer, which is a spotlight and not a reflection.
-    float atEye = lamp.w * spread / max( dot( toEye, toEye ), 1.0 );
+    // **Both scale with the light reaching THIS patch of water**, which is the lamp's
+    // intensity in this direction over the distance to it. That is Cox and Munk's glitter
+    // radiance for a point source - intensity times the slope density over the square of the
+    // distance - and it is not the lamp's brightness
+    // at the eye: a lane is made of water lit by the lamp, patch by patch, and the eye only
+    // decides which patches are pointing at it. Scaled by the distance to the eye instead,
+    // every lamp lays one lane of one brightness and the three on a ship become one.
+    float reaching = lamp.w * spread / ( slant * slant );
+
+    // The reflection takes no incidence cosine - a mirror does not care how obliquely the
+    // light arrives, only where it goes.
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * uLampLux * atEye * fall
+    sum += uLampColour[ i ] * uLampStreak * uLampLux * reaching * fall
       * exp( -0.5 * pow( away / width, 2.0 ) );
 
-    // **And the water it lands on**, which is the other quantity: the light arriving HERE,
-    // with the incidence cosine on the surface's own normal. There from every bearing, where
-    // the streak is only where the geometry lines up.
-    float lux = lamp.w * spread * landing / ( slant * slant );
-    lit += uLampColour[ i ] * uLampPool * uLampLux * lux * fall;
+    // The pool does, because that is what Lambert's law is: light spread over the area it
+    // falls on. There from every bearing, where the streak is only where the geometry lines up.
+    lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;
   }
   return sum;
 }
