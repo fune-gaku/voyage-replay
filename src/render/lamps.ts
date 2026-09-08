@@ -85,7 +85,15 @@ export interface LitLamp {
 }
 
 export interface LampUniforms {
-  /** (x, y, z, peak) per lamp. A peak of zero is a lamp that is out. */
+  /**
+   * (x, y, z, relative brightness) per lamp. **The lamp's own figure, with no exposure in
+   * it**: zero is an empty slot, one is a lamp that is simply lit.
+   *
+   * The exposures are the two scalars below, and they are separate because the two things a
+   * lamp does to water are. Folding one of them in here - which is what this held at first -
+   * made the pool come out at `streak * pool` rather than at `pool`, and turning the streak
+   * off took the light the lamp casts with it.
+   */
   uLamp: { value: Vector4[] };
   uLampColour: { value: Color[] };
   /** (heading, arc start, arc end) in radians, and the lamp's own range in metres. */
@@ -100,6 +108,8 @@ export interface LampUniforms {
    * `streak` and `bodyLobe`.
    */
   uLampPool: { value: number };
+  /** How brightly the brightest streak may draw here. The condition's, not the lamp's. */
+  uLampStreak: { value: number };
 }
 
 export function makeLampUniforms(): LampUniforms {
@@ -108,6 +118,7 @@ export function makeLampUniforms(): LampUniforms {
     uLampColour: { value: Array.from({ length: SHADER_LAMPS }, () => new Color()) },
     uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
     uLampPool: { value: 0 },
+    uLampStreak: { value: 0 },
   };
 }
 
@@ -128,6 +139,7 @@ export function setLamps(
   exposure: { streak: number; pool: number },
 ): void {
   uniforms.uLampPool.value = exposure.pool;
+  uniforms.uLampStreak.value = exposure.streak;
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -137,7 +149,9 @@ export function setLamps(
       slot.set(0, 0, 0, 0);
       continue;
     }
-    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, exposure.streak * lamp.relativeBrightness);
+    // The lamp's own figure. The exposures are uniforms of their own, so that turning one of
+    // them down cannot move the other - they are two different things a lamp does.
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.relativeBrightness);
     uniforms.uLampColour.value[i]?.copy(lamp.colour);
     arc.set(
       (lamp.headingDegreesTrue * Math.PI) / 180,
@@ -188,6 +202,7 @@ uniform vec4 uLamp[${SHADER_LAMPS}];
 uniform vec3 uLampColour[${SHADER_LAMPS}];
 uniform vec4 uLampArc[${SHADER_LAMPS}];
 uniform float uLampPool;
+uniform float uLampStreak;
 
 // What the lamps do to this patch of water: its own image of each of them, and the light
 // each of them lands on it. The second comes back through the out parameter, because it is
@@ -226,7 +241,7 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     float fall = spread * ( 1.0 - t * t * ( 3.0 - 2.0 * t ) );
     vec3 toLamp = normalize( towards );
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );
+    sum += uLampColour[ i ] * uLampStreak * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );
 
     // **And the water it lands on.** Lambert's cosine on the surface's own normal, falling
     // with the same range, so a lamp lights a pool of sea around itself that is there from
