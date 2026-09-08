@@ -751,11 +751,8 @@ function hullNote(
     "readings of one instant. Whether they touch or pass, the moment comes off those hulls " +
     "rather than off the search - but the positions between samples are joined by straight " +
     `lines, so the times are this tool's interpolation and not the source's. It looked every ` +
-    `${hulls.stepSeconds} s and then halved every interval it could not prove empty, down to ` +
-    `${(hulls.finestSeconds * 1000).toFixed(0)} ms. An approach or a touch lasting less than ` +
-    "that could sit inside the one interval nothing can prove empty - where a track states a " +
-    "direction one way at one sample and another way at the next, and the hull jumps rather " +
-    "than turns."
+    `${hulls.stepSeconds} s and then halved every interval until it could prove nothing was in ` +
+    `it. ${leftOver(hulls)}`
   );
 }
 
@@ -778,6 +775,33 @@ function dimensionSource(both: [Prepared, Prepared]): string {
   // one of them was measured off her offsets reports the wrong derivation for that hull, and
   // the derivation is the whole of what makes this figure checkable.
   return named.map((ship) => `${ship.id} from ${ship.where}`).join(", and ");
+}
+
+/**
+ * What the search could not account for, in as many words - and it is measured, not assumed.
+ *
+ * **The place it always gives up is where the drawn ship jumps**: a track that states her
+ * direction in one field at one sample and another at the next has `sampleAt` swap the source
+ * at the midpoint, and nothing bounds a jump. But naming that as the only one would be a claim
+ * about the whole search rather than a report of it - a proof can also run out of halvings, or
+ * the refining out of budget, and a page cannot tell a reader which without being told.
+ *
+ * So `hullApproach` measures the longest interval it stopped on, and this says that.
+ */
+function leftOver(hulls: HullApproach): string {
+  if (hulls.unprovenSeconds <= 0) {
+    return "Every interval was accounted for, so nothing passed between two looks unseen.";
+  }
+  const span =
+    hulls.unprovenSeconds < 1
+      ? `${(hulls.unprovenSeconds * 1000).toFixed(0)} ms`
+      : `${hulls.unprovenSeconds.toFixed(1)} s`;
+  return (
+    `The longest stretch it could not account for is ${span}, so an approach or a touch ` +
+    "shorter than that could have passed inside it. That happens where the hull jumps rather " +
+    "than turns - a track stating her direction in one field at one sample and another at the " +
+    "next - and wherever the halving reached its own floor."
+  );
 }
 
 /**

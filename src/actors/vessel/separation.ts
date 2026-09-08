@@ -203,18 +203,21 @@ export interface HullApproach {
   /** The step the coarse pass ran at, before anything was refined. */
   stepSeconds: number;
   /**
-   * **The shortest interval the search ever left unexamined, which is the real floor.**
+   * **The longest stretch the search could not prove empty**, in seconds, and zero where it
+   * proved all of them.
    *
-   * The step is not it: intervals are halved until two proofs discharge, so most of a
-   * reconstruction is settled at the step and the neighbourhood of an encounter is settled far
-   * below it. What stops the halving is this - a time floor for the one interval that cannot
-   * discharge at all, where a track's direction changes which field it comes from and the drawn
-   * ship jumps rather than turns.
+   * Not the step, and not a constant. Intervals are halved until two proofs discharge, so most
+   * of a reconstruction is settled at the step and the neighbourhood of an encounter far below
+   * it - reporting the step as the limit understated the search by three orders of magnitude.
+   * Nor is it the floor the halving stops at: what a reader wants is what was actually left,
+   * which is only ever measured by leaving it.
    *
-   * Reporting the step as the limit understated the search by three orders of magnitude and
-   * described a method it no longer uses. `ui/panels.ts` prints this.
+   * Something is always left where the drawn ship JUMPS - where a track states her direction in
+   * one field at one sample and another at the next, and nothing bounds a jump - and something
+   * may be left wherever a proof runs out of halvings or the search runs out of budget.
+   * `ui/panels.ts` prints it without guessing which.
    */
-  finestSeconds: number;
+  unprovenSeconds: number;
 }
 
 /**
@@ -237,8 +240,12 @@ export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullA
   if (to < from) return null;
   const scan = walk(a, b, { from, to, stepSeconds });
   if (!scan.closest) return null;
-  const finestSeconds = Math.max(FINEST_SECONDS, stepSeconds / 2 ** DEEPEST);
-  return { ...scan.closest, contacts: scan.contacts, stepSeconds, finestSeconds };
+  return {
+    ...scan.closest,
+    contacts: scan.contacts,
+    stepSeconds,
+    unprovenSeconds: scan.unprovenSeconds,
+  };
 }
 
 /**
@@ -485,10 +492,26 @@ function middleOf(outline: LocalPosition[]): LocalPosition {
   return { east: east / count, north: north / count };
 }
 
-/** The state one pass carries: every look taken, and the least gap any of them showed. */
+/** The state one pass carries, including what it had to give up on. */
 interface Search {
   taken: Look[];
   least: number;
+  /**
+   * Looks left to spend on refining.
+   *
+   * **A grazing contact will halve for ever otherwise.** `overlapDepth` measures how far a
+   * corner or a middle of one hull lies inside the other, and two hulls crossing at their ends
+   * have neither inside: the depth is nought, no interval can be proved to hold no change, and
+   * the halving runs to the floor for as long as the grazing lasts. Positions are rounded and
+   * the outlines are generated, so a shallow crossing that persists is not exotic - a ship
+   * alongside, or the minutes after a collision - and a page that renders it would sit there
+   * doing millions of polygon comparisons.
+   *
+   * So the search stops rather than hangs, and says how much it left.
+   */
+  budget: number;
+  /** The longest interval it stopped on without proving empty. */
+  unproven: number;
 }
 
 /**
@@ -515,7 +538,7 @@ function looks(
   a: HullTrack,
   b: HullTrack,
   over: { from: number; to: number; stepSeconds: number },
-): Look[] {
+): Search {
   // **The coarse pass first, all of it.** The second proof is a branch and bound, and a bound
   // is only worth what is already in hand: refining left to right spends its whole first half
   // proving there is nothing nearer than a figure it is about to beat. One sweep of the step
@@ -525,13 +548,18 @@ function looks(
     const look = lookAt(a, b, at);
     if (look) coarse.push(look);
   }
-  const search: Search = { taken: [], least: Math.min(...coarse.map((look) => look.gap)) };
+  const search: Search = {
+    taken: [],
+    least: Math.min(...coarse.map((look) => look.gap)),
+    budget: REFINEMENTS,
+    unproven: 0,
+  };
   for (const [index, look] of coarse.entries()) {
     const previous = coarse[index - 1];
     if (previous) split(a, b, { before: previous, after: look }, search);
     search.taken.push(look);
   }
-  return search.taken;
+  return search;
 }
 
 /** Everything strictly between two looks that neither proof can rule out, in order. */
@@ -542,10 +570,15 @@ function split(
   search: Search,
 ): void {
   const depth = span.depth ?? 0;
+  const span_ = span.after.at - span.before.at;
   if (settled(span.before, span.after, search.least)) return;
-  if (span.after.at - span.before.at <= FINEST_SECONDS || depth >= DEEPEST) return;
+  if (span_ <= FINEST_SECONDS || depth >= DEEPEST || search.budget <= 0) {
+    search.unproven = Math.max(search.unproven, span_);
+    return;
+  }
   const middle = lookAt(a, b, (span.before.at + span.after.at) / 2);
   if (!middle) return;
+  search.budget -= 1;
   search.least = Math.min(search.least, middle.gap);
   split(a, b, { before: span.before, after: middle, depth: depth + 1 }, search);
   search.taken.push(middle);
@@ -583,18 +616,32 @@ const DEEPEST = 20;
  */
 const FINEST_SECONDS = 1e-3;
 
+/**
+ * How many extra looks the refining may take before it gives up and reports what it left.
+ *
+ * Enough for every encounter in a reconstruction and far short of a page that stops
+ * responding: a look is a few thousand arithmetic operations, so this is a fraction of a
+ * second even when it is all spent.
+ */
+const REFINEMENTS = 20000;
+
 /** Everything one pass over the window finds: the least gap, and where contact opened and shut. */
 function walk(
   a: HullTrack,
   b: HullTrack,
   over: { from: number; to: number; stepSeconds: number },
-): { closest: { metres: number; epochSeconds: number } | null; contacts: Contact[] } {
+): {
+  closest: { metres: number; epochSeconds: number } | null;
+  contacts: Contact[];
+  unprovenSeconds: number;
+} {
   let closest: { metres: number; epochSeconds: number } | null = null;
   const contacts: Contact[] = [];
   let began: number | null = null;
   let lastClear: number | null = null;
 
-  for (const { at, gap } of looks(a, b, over)) {
+  const search = looks(a, b, over);
+  for (const { at, gap } of search.taken) {
     if (!closest || gap < closest.metres) closest = { metres: gap, epochSeconds: at };
     if (gap > 0) {
       // **The spell ends here, and this is what was missing.** Left open, a second contact
@@ -608,7 +655,7 @@ function walk(
     began ??= lastClear === null ? at : edge(a, b, lastClear, at);
   }
   if (began !== null) contacts.push({ fromEpochSeconds: began, toEpochSeconds: over.to });
-  return { closest, contacts };
+  return { closest, contacts, unprovenSeconds: search.unproven };
 }
 
 /**

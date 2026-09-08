@@ -352,12 +352,30 @@ describe("renderPanels", () => {
 
     expect(overlapping).toContain("in contact");
     // And says what the search could have missed, which is anything shorter than its step.
-    // The real floor, which is not the step: the search halves until it can prove an
-    // interval empty, so saying "every 1 s" as the limit understates it by a thousand.
-    expect(overlapping).toContain("halved every interval it could not prove empty, down to 1 ms");
+    // **What it could not account for, measured rather than assumed.** These two tracks are
+    // the same, so nothing moves with respect to anything and every interval discharges.
+    expect(overlapping).toContain("halved every interval until it could prove nothing was in it");
+    expect(overlapping).toContain("Every interval was accounted for");
     expect(overlapping).toMatch(/\d\d:\d\d:\d\d to \d\d:\d\d:\d\d local, [\d.]+ s/);
     // And not a range in metres, which is what it would have printed before.
     expect(overlapping).not.toContain("Between hulls</th><td>0.0 m");
+  });
+
+  /**
+   * And where something IS left, it says how much rather than naming a cause it cannot check.
+   * A ship whose direction changes which field it comes from makes the drawn hull jump at the
+   * midpoint of the span, and nothing bounds a jump.
+   */
+  it("says how long a stretch it could not account for", () => {
+    const swapping = actor("B", westboundPoints(), BIG_SHIP);
+    swapping.track.points = swapping.track.points.map((point, index) => ({
+      ...point,
+      ...(index === 0 ? {} : { headingDegreesTrue: 90 }),
+    }));
+    const html = panelsFor(scenario([actor("A", northboundPoints(), BIG_SHIP), swapping]));
+
+    expect(html).toMatch(/longest stretch it could not account for is [\d.]+ (ms|s)/);
+    expect(html).toContain("the hull jumps rather than turns");
   });
 
   /** Where a ship carries no particulars there is no hull to measure, and the page says so. */

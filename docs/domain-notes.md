@@ -181,12 +181,27 @@ nothing in it to look for. The coarse pass runs to the end before any refining s
 bound is worth what is already in hand.
 
 Most of a reconstruction discharges on the first test, the ships being miles apart, and the
-halving goes deep only where they are about to touch. What is left is a floor — **a millisecond,
-not the step**. One interval can never be discharged: where a track states a direction one way
-at one sample and another way at the next, `sampleAt` swaps the source at the midpoint and the
-drawn ship jumps rather than turns, and nothing bounds a jump. That floor is carried on the
-result and printed, because reporting the step as the limit understated the search by three
-orders of magnitude and described a method it no longer uses.
+halving goes deep only where they are about to touch.
+
+**What it could not account for is measured, not assumed.** Reporting the step as the limit
+understated the search by three orders of magnitude and described a method it no longer uses;
+naming the floor instead would still be a claim about the search rather than a report of it. So
+the longest interval the halving stopped on is carried out on the result and printed, and the
+page says how long it is rather than guessing why.
+
+Three things stop it. The floor of a millisecond, which is far below what positions interpolated
+between samples a minute apart can mean. The depth cap. And a budget on the refining, which
+exists because one case will otherwise halve for ever: `overlapDepth` measures how far a corner
+or a middle of one hull lies inside the other, and two hulls **grazing** — crossing at their
+ends with neither inside — measure nought, so no interval of that can be proved to hold no
+change of state. Rounded positions and a generated outline make a shallow crossing that persists
+quite ordinary, a ship alongside or the minutes after a collision, and a page that rendered one
+would sit there doing millions of polygon comparisons.
+
+And something is always left where the drawn ship **jumps**: a track that states her direction
+in one field at one sample and another at the next has `sampleAt` swap the source at the
+midpoint, so she turns with her course and then snaps to her heading. Nothing bounds a jump.
+Asking only whether SOME direction was available misses it, both halves having one.
 
 ## How a ship actually moves
 

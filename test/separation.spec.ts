@@ -512,14 +512,79 @@ describe("contact over a track", () => {
     expect(coarse?.epochSeconds).toBeCloseTo(fine?.epochSeconds ?? 0, 0);
   });
 
-  /** And the floor it stopped at is carried, because the step is not the floor. */
-  it("carries the finest interval it left unexamined", () => {
+  /**
+   * **What it could not account for is measured, not assumed.** Two identical tracks never move
+   * with respect to each other, so every interval discharges on the first test and nothing is
+   * left; a pair whose direction changes which field it comes from always leaves something,
+   * because nothing bounds the jump the drawn hull makes at the midpoint.
+   */
+  it("reports nothing unaccounted for where every interval discharges", () => {
     const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
     const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
     const approach = hullApproach({ track: a, ...ship }, { track: a, ...ship });
 
     expect(approach?.stepSeconds).toBe(1);
-    expect(approach?.finestSeconds).toBe(1e-3);
+    expect(approach?.unprovenSeconds).toBe(0);
+  });
+
+  /**
+   * **The change this iteration is about: a heading appearing beside a course.** `sampleAt`
+   * hands back the course for the first half of the span and the heading for the second, so
+   * the drawn ship turns with one and snaps to the other at the midpoint. Both halves have A
+   * direction, so asking only whether one was available finds nothing wrong - and a bound read
+   * off two ends that happen to agree certifies that she never turned.
+   */
+  it("cannot account for the moment a heading takes over from a course", () => {
+    const a = prepareActor(actor("A", alongside([0, 0, 0]), BIG_SHIP), ORIGIN);
+    const swapping = actor("B", alongside([0.0004, 0.0004, 0.0004]), BIG_SHIP);
+    // Course throughout; a heading from the second sample on, so the source swaps mid-span.
+    swapping.track.points = swapping.track.points.map((point, index) => ({
+      ...point,
+      cogDegreesTrue: 0,
+      ...(index === 0 ? {} : { headingDegreesTrue: 90 }),
+    }));
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const approach = hullApproach(
+      { track: a, ...ship },
+      { track: prepareActor(swapping, ORIGIN), ...ship },
+    );
+
+    expect(approach?.unprovenSeconds).toBeGreaterThan(0);
+    expect(approach?.unprovenSeconds).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * **A grazing contact has no depth to certify, and would halve for ever.** `overlapDepth`
+   * measures how far a corner or a middle of one hull lies inside the other; two hulls crossing
+   * at their ends have neither inside, so it comes back nought, no interval can be proved to
+   * hold no change of state, and the halving runs to the floor for as long as the grazing
+   * lasts. Positions are rounded and the outlines generated, so a shallow crossing that
+   * persists is not exotic - a ship alongside, or the minutes after a collision - and a page
+   * that renders one must not sit there doing millions of polygon comparisons.
+   *
+   * The budget is what stops it, and what it left is reported rather than hidden.
+   */
+  it("stops rather than hangs on a long shallow crossing, and says what it left", () => {
+    // Overlapping by about a metre for a quarter of an hour, edges crossing and nothing inside.
+    const minutes = Array.from({ length: 16 }, (_, index) => index);
+    const track = (lon: number): TrackPoint[] =>
+      minutes.map((minute) => ({
+        t: new Date(Date.UTC(2025, 0, 1, 0, minute)).toISOString(),
+        lat: minute * 0.00001,
+        lon,
+        cogDegreesTrue: 0,
+        headingDegreesTrue: 0,
+      }));
+    const a = prepareActor(actor("A", track(0), BIG_SHIP), ORIGIN);
+    const b = prepareActor(actor("B", track(0.00025), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+
+    const began = Date.now();
+    const approach = hullApproach({ track: a, ...ship }, { track: b, ...ship });
+    const took = Date.now() - began;
+
+    expect(approach).not.toBeNull();
+    expect(took).toBeLessThan(4000);
   });
 
   /**
