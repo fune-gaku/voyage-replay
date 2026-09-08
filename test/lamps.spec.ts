@@ -11,6 +11,7 @@ import {
 } from "../src/core/illumination.js";
 import { METRES_PER_NAUTICAL_MILE } from "../src/core/geodesy.js";
 import {
+  lampLight,
   LAMPS_GLSL,
   litFromLamp,
   makeLampUniforms,
@@ -275,6 +276,106 @@ describe("what reaches the shader", () => {
 });
 
 /**
+ * **Each lamp on a ship lays its own lane, and they are not in the same place.**
+ *
+ * Two masthead lights sit at different heights and different points along her, so the water
+ * that shows each of them is different water: the specular point divides the distance between
+ * the eye and the lamp in the ratio of their heights, and their heights differ.
+ *
+ * This block exists because the shader was reasoned about twice and wrong twice - once by
+ * scaling a streak with the distance to the eye, which merges every lamp on a ship into one
+ * lane, and once by leaving the beam profile out, which floods the sea under a ship's own
+ * bow. Neither survived being measured, and neither could be measured until the rule was
+ * written where a test could reach it.
+ */
+describe("what each lamp puts on the water", () => {
+  const EYE = { x: 0, y: 11, z: 0 };
+  const UP = { x: 0, y: 1, z: 0 };
+  const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
+  /** The lobe a 2 m sea gives, from `core/illumination.ts`. */
+  const WHERE = { eye: EYE, lobeWidthRadians: Math.sqrt(2 * 0.0525) };
+
+  /** A lamp on a ship 300 m ahead, at a height and a place along her. */
+  function aboard(heightMetres: number, alongMetres: number, range = 6): LitLamp {
+    return lamp({
+      at: { x: 0, y: heightMetres, z: -300 + alongMetres },
+      candela: candelaFromNominalRange(range),
+      headingDegreesTrue: 180,
+      arcStartDegrees: 247.5,
+      arcEndDegrees: 112.5,
+      nominalRangeMetres: range * METRES_PER_NAUTICAL_MILE,
+    });
+  }
+
+  /** How bright this lamp makes the water, at a distance from the eye along the sight line. */
+  function along(lit: LitLamp, fromEye: number): number {
+    const light = lampLight(lit, { at: { x: 0, y: 0, z: -fromEye }, up: UP }, WHERE, EXPOSURE);
+    return light.streak + light.pool;
+  }
+
+  /** Where it makes it brightest, to the nearest twenty metres. */
+  function brightestAt(lit: LitLamp): number {
+    let best = { at: 0, value: -1 };
+    for (let fromEye = 20; fromEye <= 280; fromEye += 20) {
+      const value = along(lit, fromEye);
+      if (value > best.value) best = { at: fromEye, value };
+    }
+    return best.at;
+  }
+
+  it("puts two mastheads' lanes in two different places, because they are", () => {
+    const forward = aboard(42, -32);
+    const after = aboard(53, 47);
+    expect(brightestAt(forward)).not.toBe(brightestAt(after));
+    // The higher lamp's specular point is nearer the eye: it divides the distance in the
+    // ratio of the heights, and a taller mast takes a bigger share of it.
+    expect(brightestAt(after)).toBeLessThan(brightestAt(forward));
+  });
+
+  /** And a dimmer light by Rule 22 lays a dimmer lane, in the ratio the rule implies. */
+  it("lays a sidelight's lane well under a masthead's", () => {
+    const masthead = along(aboard(42, -32), 60);
+    const sidelight = along(aboard(24, 50, 3), 60);
+    expect(sidelight).toBeLessThan(masthead / 2);
+  });
+
+  /**
+   * **The beam profile is what keeps a lamp off the water at its own feet.** Water close
+   * under a masthead lies far below its beam, where Annex I requires nothing and a real
+   * fitting sends almost nothing.
+   */
+  it("leaves the water under a lamp darker than the water its beam reaches", () => {
+    const masthead = aboard(42, -32);
+    // Twenty metres from her, against a hundred and eighty.
+    expect(along(masthead, 280)).toBeLessThan(along(masthead, 120));
+  });
+
+  it("gives nothing at all outside the lamp's own arc", () => {
+    // Her sternlight, which shows away from the observer and lights no water this side.
+    const astern = lamp({
+      at: { x: 0, y: 24, z: -250 },
+      headingDegreesTrue: 180,
+      arcStartDegrees: 112.5,
+      arcEndDegrees: 247.5,
+    });
+    expect(along(astern, 100)).toBe(0);
+  });
+
+  /**
+   * The pool takes Lambert's cosine and the streak does not, which is the difference between
+   * light spread over an area and a mirror that does not care how obliquely it arrived.
+   */
+  it("takes the incidence cosine on the pool and not on the streak", () => {
+    const masthead = aboard(42, -32);
+    const at = { x: 0, y: 0, z: -60 };
+    const upright = lampLight(masthead, { at, up: UP }, WHERE, EXPOSURE);
+    // A facet tilted away from the lamp: the pool goes, the mirror is a different question.
+    const tilted = lampLight(masthead, { at, up: { x: 0.7, y: 0.71, z: 0 } }, WHERE, EXPOSURE);
+    expect(tilted.pool).toBeLessThan(upright.pool);
+  });
+});
+
+/**
  * The GLSL and the rules above are the same thing written twice, because nothing in Node can
  * compile a shader to ask it. What can be checked is that the shapes match.
  */
@@ -295,6 +396,9 @@ describe("the copy that runs on the card", () => {
   it("hands the water it lights back separately from the water it is mirrored in", () => {
     expect(LAMPS_GLSL).toContain("out vec3 lit");
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
+    // The beam's own depression comes from the geometry, not from the facet standing there:
+    // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
+    expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
     expect(LAMPS_GLSL).toContain(
       "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;",
     );
@@ -340,6 +444,9 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).not.toContain("dot( toEye, toEye )");
     // The pool takes the incidence cosine on the surface's own normal; the mirror does not.
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
+    // The beam's own depression comes from the geometry, not from the facet standing there:
+    // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
+    expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
   });
 
   /** The bearing of the water from the lamp, off that bow - the direction that is 180 out. */

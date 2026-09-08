@@ -974,6 +974,31 @@ the three a ship carries come out as one.** That was tried, as a fix for a brigh
 lamp's own feet — a core whose real cause was the missing beam profile above. Two half-fixes
 for one fault, and the second undid what the picture had to show.
 
+### Each lamp's lane is in a different place, and it can now be measured
+
+The specular point divides the distance between the eye and the lamp in the ratio of their
+heights, so lamps at different heights show on different water. Measured on a 180 m ship
+300 m ahead of an 11 m eye, against a night sea drawn at about 0.010:
+
+| from the eye | forward masthead (42 m) | after masthead (53 m) | starboard sidelight (24 m) |
+|---:|---:|---:|---:|
+| 40 m | 0.0021 | **0.0012** | 0.0007 |
+| 60 m | **0.0023** | 0.0011 | 0.0008 |
+| 100 m | 0.0022 | 0.0006 | **0.0009** |
+| 220 m | 0.0007 | 0.0000 | 0.0000 |
+
+Three lanes, three peaks, three brightnesses — and all of them at a tenth to a fifth of the
+sea's own drawn brightness, which is why they read as one faint wash. **The lamps are on a
+photometric scale now and the sea is not**: `0x0a121d` was chosen to look like a dark sea, not
+to be starlight on water, and the true faintness of a navigation light's reflection disappears
+into it.
+
+**This is written where a test can reach it**, which it was not before. The shader was reasoned
+about twice and wrong twice — once by scaling with the distance to the eye, once by leaving out
+the beam profile — and a third fault only surfaced when the mirror was tested: the beam's
+depression was being taken from the incidence cosine on the facet, so a tilted wave pulled the
+beam down to itself. Arguments did not catch any of them.
+
 And the illuminance on the water follows: `E = I cos(incidence) / d²`, which on a level sea is
 `I h / d³` — **the cube**, because the incidence angle worsens as the range grows.
 
