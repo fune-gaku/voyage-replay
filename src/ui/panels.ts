@@ -134,11 +134,7 @@ function sky(scenario: Scenario): string {
  */
 function pathNote(conditions: Conditions): string {
   const lit = lightingAt(conditions, isNight(conditions.statedLight));
-  // **The absence of a path is a fact about the night, not a gap in the page.** A moonless
-  // watch is darker than a moonlit one by more than an order of magnitude, and a reader who
-  // saw nothing here would be left to work out from the altitudes above whether the water
-  // should have carried a lane of light.
-  if (!lit) return NOTHING_IS_UP;
+  if (!lit) return noPathBecause(conditions);
 
   const drawn = conditions.sea
     ? drawable(
@@ -182,16 +178,39 @@ function widthSentence(drawn: WaveComponent[]): string {
 }
 
 /**
- * Neither body is up - which is worth a sentence, because it is a fact about the watch.
+ * Why nothing lays a path - and **there are two different reasons, which must not be run
+ * together.**
  *
- * A moonless night is darker than a moonlit one by more than an order of magnitude, and the
- * water carries no lane of light to see a hull against. Saying nothing here would leave a
+ * The first is a fact about the watch: neither body is up, and a moonless night is darker
+ * than a moonlit one by more than an order of magnitude. Saying nothing at all would leave a
  * reader to work that out from two altitudes in the table above.
+ *
+ * The second is a fact about the DRAWING. A body can be well up and still lay no path here,
+ * because the picture is drawn night or day from the light condition the file states, and
+ * only the matching body may light it. That happens exactly when the file and the sun
+ * disagree - a mistyped date or time zone - and calling it "neither body is above the
+ * horizon" would contradict the altitudes printed one line above and hide the real reason.
  */
-const NOTHING_IS_UP =
-  "Neither the sun nor the moon is above the horizon at this moment, so nothing lays a path " +
-  "on the water and the sea reflects only the sky's own colour. On a night that is the whole " +
-  "difference between a hull seen against a lane of light and one seen against nothing.";
+function noPathBecause(conditions: Conditions): string {
+  const { sun, moon } = conditions;
+  if (sun.altitudeDegrees <= 0 && moon.altitudeDegrees <= 0) {
+    return (
+      "Neither the sun nor the moon is above the horizon at this moment, so nothing lays a " +
+      "path on the water and the sea reflects only the sky's own colour. On a night that is " +
+      "the whole difference between a hull seen against a lane of light and one seen against " +
+      "nothing."
+    );
+  }
+  const up = sun.altitudeDegrees > 0 ? "sun" : "moon";
+  const drawnAs = isNight(conditions.statedLight) ? "night" : "day";
+  return (
+    `No path is drawn, and this one is about the picture rather than the sky: the ${up} is ` +
+    `above the horizon, but the view is drawn as ${drawnAs} because that is what the file ` +
+    `says, and a ${drawnAs} is not lit by the ${up}. The two disagree, which the line above ` +
+    "says in words - putting it in the water instead would be a picture arguing with a " +
+    "table, and only one of them can be checked."
+  );
+}
 
 /**
  * Said once, under every path. The renderer is not photometrically calibrated, so the only

@@ -1211,12 +1211,33 @@ describe("the path on the water", () => {
    */
   it("says when nothing is up to lay one", () => {
     const subject = scenario();
-    subject.meta = { ...subject.meta, occurredAt: "2025-11-27T18:13:30+09:00" };
+    // Small hours at the fixture's position: the sun well down and the moon down with it.
+    subject.meta = { ...subject.meta, occurredAt: "2025-11-27T12:00:00+09:00" };
     subject.environment = { lightCondition: "night" };
     const html = panelsFor(subject);
 
     expect(html).toContain("Neither the sun nor the moon is above the horizon");
     expect(html).not.toContain("so its reflection lies on that bearing");
+  });
+
+  /**
+   * **A body can be well up and still lay no path, and that is a different sentence.** The
+   * picture is drawn night or day from the light condition the FILE states, and only the
+   * matching body may light it - so a file saying night with the sun computed above the
+   * horizon draws no path at all. Calling that "neither body is above the horizon" would
+   * contradict the altitude printed one line above it, and hide the real reason.
+   */
+  it("tells a body that is down from one the drawn scene will not take", () => {
+    const subject = scenario();
+    // Nine in the morning at the fixture's position, with the file insisting it was night.
+    subject.meta = { ...subject.meta, occurredAt: "2025-11-27T18:13:30+09:00" };
+    subject.environment = { lightCondition: "night" };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("46.8 deg altitude");
+    expect(html).not.toContain("Neither the sun nor the moon is above the horizon");
+    expect(html).toContain("about the picture rather than the sky");
+    expect(html).toContain("a night is not lit by the sun");
   });
 
   /**
