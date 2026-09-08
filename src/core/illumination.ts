@@ -270,9 +270,13 @@ export const BEAM_FALL_PER_DEGREE =
  * thirty metres ahead of its own ship at 0.0012 lx rather than 0.04, because that water lies
  * thirty-four degrees below its beam.
  *
- * Starlight is about 0.002 lx and a full moon 0.25. **A ship's own masthead light puts about
- * as much on the water at a hundred metres as the stars do**, and a tenth of what the moon
- * did on the night of the reference case. That is the scale it has to be drawn at.
+ * Starlight is about 0.002 lx and a full moon 0.25. **The drawn figure is the one with the
+ * beam profile in, and it is a quarter of starlight**: 0.00049 lx at a hundred metres,
+ * peaking at 0.00053 about seventy-eight metres out where the beam grazes the surface, and a
+ * fortieth of what the 41 per cent moon gave on the night of the reference case. That is the
+ * scale it has to be drawn at. The table above is four times it at a hundred metres because
+ * the table is the beam pointed at the water, and quoting the table as though it were the
+ * picture is a mistake this file's readers have now made three times over.
  */
 export function lampLuxOnWater(
   candela: number,

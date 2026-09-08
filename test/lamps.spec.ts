@@ -191,17 +191,19 @@ describe("how far a streak reaches", () => {
     expect(at(100)).toBeLessThan(0.002);
   });
 
-  it("puts about as much light on the water at a hundred metres as the stars do", () => {
+  it("puts a quarter of starlight on the water at a hundred metres", () => {
     // A 6 mile masthead light is 94 candela; twenty metres up, at a hundred metres off.
     const masthead = candelaFromNominalRange(6);
     expect(masthead).toBeCloseTo(94.2, 0);
 
-    const slant = Math.hypot(100, 20);
-    // Under the beam's own spread, which takes most of it: 0.0018 lx with the fitting
-    // pointed at the water, a quarter of that with it pointed where a fitting points.
-    expect(lampLuxOnWater(masthead, 20, slant)).toBeLessThan(0.0018);
-    // Starlight is about 0.002 lx and the reference case's moon 0.018.
-    expect(lampLuxOnWater(masthead, 20, slant)).toBeLessThan(0.018 / 5);
+    // **Pinned rather than bounded, because the bound is what let the page overstate it.**
+    // 0.0018 lx is the geometry with the fitting pointed at the water; the beam is pointed
+    // at the horizon, and eleven degrees down takes it to 0.00049 - a quarter of the 0.002
+    // starlight gives, and a fortieth of the reference case's moon at 0.018.
+    const drawn = lampLuxOnWater(masthead, 20, Math.hypot(100, 20));
+    expect(drawn).toBeCloseTo(0.00049, 5);
+    expect(drawn / 0.002).toBeCloseTo(0.245, 2);
+    expect(drawn / 0.018).toBeCloseTo(0.027, 2);
   });
 
   /** And it falls as the cube, so it is gone a few hundred metres out rather than lingering. */

@@ -364,11 +364,18 @@ const WHAT_A_LAMP_DOES =
   "reflects; the light on the sea over the lamp's own leg alone, because where an observer " +
   "stands decides how much of it comes back to them and never how much arrived. " +
   "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
-  "gives each light a range, Annex I gives the candela that range was set from, and the rest " +
-  "is the inverse square with the incidence angle - so a six mile masthead light twenty " +
-  "metres up lays about 0.002 lux on the sea a hundred metres off, which is what the stars " +
-  "do and a tenth of what the moon did. What stays chosen is one figure per condition saying " +
-  "what a lux draws as, and it is set so that a lamp and the moon are on one scale. ";
+  "gives each light a range, Annex I section 8 gives the candela that range was set from, " +
+  "and the rest is the inverse square with the incidence angle and the vertical spread of " +
+  "the fitting - a navigation light points at the horizon, not at the water. Annex I " +
+  "section 10 fixes that spread only at two depressions, full intensity to 5 degrees and 60 " +
+  "per cent at 7.5; below that the rule requires nothing and the fall-off drawn here is " +
+  "THIS TOOL'S, not the rule's. With it in, a six mile masthead light twenty metres up lays " +
+  "about 0.0005 lux on the sea a hundred metres off - a quarter of what the stars do, and a " +
+  "fortieth of what the moon did - and its brightest patch of sea is under 80 metres away. " +
+  "Without the spread it would be four times that, which is the figure to be careful of: it " +
+  "is the beam pointed where it is not pointed. What stays chosen besides the tail is one " +
+  "figure per condition saying what a lux draws as, set so that a lamp and the moon are on " +
+  "one scale. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

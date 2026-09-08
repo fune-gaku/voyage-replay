@@ -238,9 +238,10 @@ const DAY = {
  *
  * **It is chosen so the moon and the lamps land on one scale.** A full moon is about 0.25 lx
  * and draws at `bodyLobe`, so a lux draws at four - which puts a 6 mile masthead light, at
- * 0.0018 lx on the water a hundred metres off, at about a hundredth of the moon. That is the
- * relation the night actually has, and it is why a ship's own lights do not light the sea
- * ahead of her. All of them are declared,
+ * 0.00049 lx on the water a hundred metres off once Annex I's vertical spread is in, at a
+ * five-hundredth of a full moon and a fortieth of the 41 per cent one the reference night
+ * had. That is the relation the night actually has, and it is why a ship's own lights do not
+ * light the sea ahead of her. All of them are declared,
  * for the reason the panels give: Rule 22 states a range and no candela, cloud is never in the
  * file, and this renderer is not photometrically calibrated. What is computed is the RATIO -
  * the sun against a full moon, one phase against another - and only the absolute scale is
