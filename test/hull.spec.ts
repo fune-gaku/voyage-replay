@@ -72,6 +72,28 @@ describe("where the bridge is put", () => {
   });
 
   /**
+   * **Four zeroes are stated and measure nothing, so the bridge falls back with the size.**
+   * Taking them would put her wheelhouse amidships and report it as measured, on a hull the
+   * same page says came from the particulars - a plausible position with nothing behind it,
+   * which is the one thing this field exists to rule out.
+   */
+  it("falls back where her offsets are stated but measure no hull", () => {
+    const zeroed = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 0,
+        fromSternMetres: 0,
+        fromPortMetres: 0,
+        fromStarboardMetres: 0,
+      },
+    };
+    const { bridgeOffsetForwardMetres, bridgeFromOffsets } = buildHull(zeroed, 0x888888);
+
+    expect(bridgeFromOffsets).toBe(false);
+    expect(bridgeOffsetForwardMetres).toBeCloseTo(-BIG_SHIP.loaMetres * 0.32, 6);
+  });
+
+  /**
    * The eye has to stay inside her however the bridge was placed. A wheelhouse put 50 m
    * abaft the middle of a 180 m ship is still aboard; one put there on a 60 m ship is in
    * the water astern.

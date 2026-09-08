@@ -8,8 +8,8 @@ import { Color, Group, Vector3, WebGLRenderer, type Camera, type OrthographicCam
 
 import {
   hullCentreOffset,
-  NO_OFFSET,
   offsetMetres,
+  placementFor,
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
@@ -130,10 +130,8 @@ interface Cast {
  * is issue #12 rather than something to paper over here.
  */
 function placementOf(member: Cast, state: SampledState): { heading: number; offset: OffsetMetres } {
-  const stated = state.headingDegreesTrue ?? state.cogDegreesTrue;
-  return stated === undefined
-    ? { heading: 0, offset: NO_OFFSET }
-    : { heading: stated, offset: member.hullOffset };
+  const placed = placementFor(state.headingDegreesTrue ?? state.cogDegreesTrue, member.hullOffset);
+  return { heading: placed.headingDegreesTrue, offset: placed.offset };
 }
 
 /** The watchkeeper the picture is being drawn for: which ship, where her eyes are, and her bow. */

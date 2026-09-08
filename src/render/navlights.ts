@@ -38,6 +38,7 @@ import {
   type LightKind,
   type NavigationLight,
 } from "../actors/vessel/lights.js";
+import { hullDimensions } from "../actors/vessel/hull-shape.js";
 import type { Vessel } from "../core/types.js";
 
 const COLOURS: Record<string, ColorRepresentation> = {
@@ -202,7 +203,11 @@ function showFor(
  * thing the whole tool is about would render as nothing.
  */
 function lampPoints(light: NavigationLight, vessel: Vessel, freeboard: number): Points {
-  const [x, y, z] = lampPosition(light.kind, vessel.loaMetres, vessel.beamMetres, freeboard);
+  // The hull that is drawn, not the particulars: a sidelight is at the ship's side, and the
+  // two sources differ by 0.4 m of beam on the reference case's tanker - enough to hang her
+  // sidelights over the water beside her.
+  const hull = hullDimensions(vessel);
+  const [x, y, z] = lampPosition(light.kind, hull.lengthMetres, hull.beamMetres, freeboard);
   return new Points(
     new BufferGeometry().setAttribute("position", new Float32BufferAttribute([x, y, z], 3)),
     new PointsMaterial({

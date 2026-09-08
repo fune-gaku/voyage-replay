@@ -9,7 +9,9 @@
 
 import { assumedHeights } from "../actors/vessel/heights.js";
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
+import { hullDimensions, offsetsMeasureHull } from "../actors/vessel/hull-shape.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
+import { hullApproach, type Contact, type HullApproach } from "../actors/vessel/separation.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
@@ -569,7 +571,9 @@ function hullOffsetCell(prepared: Prepared): string {
 function hullShapeCell(vessel: Vessel | undefined): string {
   if (!vessel) return "-";
   const bow = vessel.type === "pushing-ahead" ? "box bow" : "generic";
-  return vessel.referencePointOffsets ? `${bow}, bridge measured` : `${bow}, bridge assumed`;
+  // The same test `render/hull.ts` places the bridge by: four offsets that measure no hull are
+  // stated and useless, and calling that measured describes the wrong ship in one word.
+  return offsetsMeasureHull(vessel) ? `${bow}, bridge measured` : `${bow}, bridge assumed`;
 }
 
 /**
@@ -611,14 +615,63 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
 
   const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
+  const hulls = hullApproach2(both);
+  const zone = scenario.meta.timeZone;
 
   return (
     keyValueTable([
       ["Between", `${first.actor.id} and ${second.actor.id}`],
-      ["At", `${formatClock(cpa.epochSeconds, scenario.meta.timeZone)} local`],
-      ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
-    ]) + note(approachCaveat(both, cpa.epochSeconds))
+      ["Reported positions", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
+      ["...at", `${formatClock(cpa.epochSeconds, zone)} local`],
+      ...hullRows(hulls, zone),
+    ]) +
+    note(approachCaveat(both, cpa.epochSeconds)) +
+    note(hullNote(both, hulls, cpa.epochSeconds))
   );
+}
+
+/**
+ * The same question asked of the hulls, where both ships carry the particulars to draw one.
+ *
+ * `core/track.ts` cannot answer it - a range between hulls needs their shapes, and `core/` is
+ * not allowed to know what a ship is - so it comes from `actors/vessel/separation.ts`, off the
+ * outline the renderer draws.
+ */
+function hullApproach2(both: [Prepared, Prepared]): HullApproach | null {
+  const ships = both.map(({ actor, track }) =>
+    actor.vessel ? { track, vessel: actor.vessel, positionAt: actor.track.positionAt } : null,
+  );
+  const [first, second] = ships;
+  return first && second ? hullApproach(first, second) : null;
+}
+
+/** What the hulls did, as rows: a gap and its moment, or every spell of contact. */
+function hullRows(hulls: HullApproach | null, timeZone: string): [string, string][] {
+  if (!hulls) return [["Between hulls", "-, needs both ships' particulars"]];
+  const [first, ...rest] = hulls.contacts;
+  if (!first) {
+    return [
+      ["Between hulls", `${hulls.metres.toFixed(1)} m`],
+      ["...at", `${formatClock(hulls.epochSeconds, timeZone)} local`],
+    ];
+  }
+  const label = rest.length === 0 ? "in contact" : `in contact, ${hulls.contacts.length} times`;
+  return [["Between hulls", label], ...hulls.contacts.map((spell) => spellRow(spell, timeZone))];
+}
+
+/**
+ * One spell, as a clock time and a length.
+ *
+ * **The length is the difference between the two, not the number of samples that showed
+ * contact.** Those differ by one step every time, and this page printed the count: 18:13:28 to
+ * 18:13:37 is nine seconds, and it said ten.
+ */
+function spellRow(spell: Contact, timeZone: string): [string, string] {
+  const seconds = spell.toEpochSeconds - spell.fromEpochSeconds;
+  return [
+    "...from",
+    `${formatClock(spell.fromEpochSeconds, timeZone)} to ${formatClock(spell.toEpochSeconds, timeZone)} local, ${seconds.toFixed(1)} s`,
+  ];
 }
 
 /**
@@ -645,7 +698,145 @@ function approachCaveat(both: [Prepared, Prepared], epochSeconds: number): strin
     : "";
 
   const caveat = viewCaveat(both, epochSeconds);
-  return `Measured ${between}, which is what the sources state.${howFar} ${caveat}`;
+  // **What the sources state is the SAMPLES, and this figure is not one of them.** Adding a
+  // step and an interpolation to the hull row while leaving this one flat made the older
+  // number look like the measured one, which is the opposite of true: both are picked from
+  // positions this tool put between the reported ones, a second apart.
+  const found =
+    " The least of it is picked from one-second steps along positions joined by straight " +
+    "lines between the reported ones, so the figure and its moment are this tool's arithmetic " +
+    "over the source's points rather than anything the source measured.";
+  return `Measured ${between}, which is what the sources state.${howFar}${found} ${caveat}`;
+}
+
+/**
+ * What the hull figure is worth, which is less than it looks and more than the other one.
+ *
+ * Four things have to be said with it and each is a different kind of caveat.
+ *
+ * The SHAPE is generated. A length and a beam is all a scenario carries, so the outline is
+ * this tool's plan of a plausible ship of that size, not either ship's lines - and every
+ * metre of the answer is a metre of that. It is the shape the picture draws, which is the
+ * only property that makes the number and the view agree.
+ *
+ * The DIMENSIONS come from the AIS offsets where the file has them, because the four
+ * distances measure the ship and the particulars' length is often a registered length. AIS
+ * rounds them to the metre.
+ *
+ * The INSTANT is not the other row's instant. Hulls close before antennae do, or after,
+ * depending on where the antennae sit; on the reference case the hulls touch about eight
+ * seconds before the reported positions are nearest.
+ *
+ * And the WINDOW is interpolated. Positions between samples are joined by straight lines, so
+ * a contact lasting seconds is measured inside a segment the source says nothing about.
+ */
+function hullNote(
+  both: [Prepared, Prepared],
+  hulls: HullApproach | null,
+  antennaeAt: number,
+): string {
+  if (!hulls) {
+    return (
+      "The range between hulls is not given because at least one of these actors carries no " +
+      "particulars, and a hull cannot be drawn - or measured against - without a length and " +
+      "a beam."
+    );
+  }
+  return (
+    "That second figure is between the hulls as DRAWN, which is the question a collision " +
+    "asks and the first figure cannot answer. Three things bound it. The outline is " +
+    "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
+    `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
+    `And ${against(hulls, antennaeAt)} the reported positions are nearest, so the two rows are not two ` +
+    "readings of one instant. Whether they touch or pass, the moment comes off those hulls " +
+    "rather than off the search - but the positions between samples are joined by straight " +
+    `lines, so the times are this tool's interpolation and not the source's. It looked every ` +
+    `${hulls.stepSeconds} s and then halved every interval until it could prove nothing was in ` +
+    `it. ${leftOver(hulls)}`
+  );
+}
+
+/**
+ * Which of the file's two answers about a hull's size this range was measured at.
+ *
+ * Both are in the file and they differ - on the reference case's tanker by 0.4 m of beam,
+ * which moves first contact by a second - so saying which one was used is the difference
+ * between a figure a reader can check and a figure they have to accept.
+ */
+function dimensionSource(both: [Prepared, Prepared]): string {
+  const named = both.map(({ actor }) => ({ id: actor.id, where: sizedFrom(actor) }));
+  const [first, second] = named;
+  if (first?.where === second?.where && second) {
+    return second.where === "no particulars"
+      ? "nowhere: neither is drawn"
+      : `${second.where}, for both`;
+  }
+  // **Per ship, because the answer is per ship.** Saying "the particulars" over a pair where
+  // one of them was measured off her offsets reports the wrong derivation for that hull, and
+  // the derivation is the whole of what makes this figure checkable.
+  return named.map((ship) => `${ship.id} from ${ship.where}`).join(", and ");
+}
+
+/**
+ * What the search could not account for, in as many words - and it is measured, not assumed.
+ *
+ * **The length and what it means, and nothing about why.** `unprovenSeconds` is the longest
+ * interval the halving stopped on; it does not carry a reason, and the halving stops for three
+ * of them - its floor, its depth, and a budget that keeps a grazing contact from refining for
+ * ever. Naming one or two of those beside a figure that cannot tell them apart puts a cause in
+ * front of a reader that the page does not know, which is the fault this whole area has been
+ * about, arriving in the sentence that reports it.
+ */
+function leftOver(hulls: HullApproach): string {
+  if (hulls.unprovenSeconds <= 0) {
+    return "Every interval was accounted for, so nothing passed between two looks unseen.";
+  }
+  const span =
+    hulls.unprovenSeconds < 1
+      ? `${(hulls.unprovenSeconds * 1000).toFixed(0)} ms`
+      : `${hulls.unprovenSeconds.toFixed(1)} s`;
+  return (
+    `The longest stretch it could not account for is ${span}, so an approach or a touch that ` +
+    "began and ended inside one of those could have gone unseen."
+  );
+}
+
+/**
+ * How the hulls' moment stands to the antennae's, measured from the moment the ROW shows.
+ *
+ * **Where they touch, the row prints an end bisected off the hulls and this used the grid
+ * instant the search happened to land on** - so the page said "in contact from 18:13:27.961"
+ * and, two lines down, "7 s before", computed from 18:13:28. Changing the step moved the prose
+ * and not the row, under a paragraph claiming the ends come off the hulls.
+ */
+function against(hulls: HullApproach, antennaeAt: number): string {
+  const [spell] = hulls.contacts;
+  const gap = (spell ? spell.fromEpochSeconds : hulls.epochSeconds) - antennaeAt;
+  const what = spell ? "they first touch" : "it happens";
+  if (gap === 0) return `${what} at the same moment as`;
+  const size = Math.abs(gap);
+  const rounded = size < 10 ? size.toFixed(1) : size.toFixed(0);
+  return `${what} ${rounded} s ${gap < 0 ? "before" : "after"} the moment`;
+}
+
+/**
+ * Which of the file's answers about one ship's size was used, in as many words.
+ *
+ * **Three outcomes, not two.** A ship may state no offsets; she may state four that measure
+ * her; or she may state four that measure nothing - all zeroes is a valid file, and the
+ * dimensions then fall back. Reporting that last case as "no offsets stated" says something
+ * false about the file, which is a different fault from getting the number wrong and a worse
+ * one, because it cannot be checked against the source.
+ */
+function sizedFrom({ vessel }: Actor): string {
+  if (!vessel) return "no particulars";
+  const dimensions = hullDimensions(vessel);
+  if (dimensions.from === "offsets") {
+    return "the four AIS offsets, which measure the ship where the particulars describe her";
+  }
+  return dimensions.offsetsStated
+    ? "the particulars, her four AIS offsets being stated but measuring no hull"
+    : "the particulars, no AIS offsets being stated for her";
 }
 
 /** How the picture stands to that figure, at the moment the figure is about. */

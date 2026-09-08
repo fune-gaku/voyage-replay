@@ -65,3 +65,35 @@ export function hullCentreOffset(
 export function offsetMetres(offset: HullOffset): OffsetMetres {
   return offset.kind === "offset" ? offset : NO_OFFSET;
 }
+
+/** Which way a hull points at an instant and how far her centre is from her reported position. */
+export interface Placement {
+  headingDegreesTrue: number;
+  offset: OffsetMetres;
+  /** Whether anything in the track said which way she was pointing at that instant. */
+  headingStated: boolean;
+}
+
+/**
+ * Where to put a hull at an instant, from what the track states about that instant.
+ *
+ * **The offset only applies along a direction somebody stated.** It acts along the ship's own
+ * axes, so applying it with no heading and no course invents a displacement - "fifty metres
+ * due north" - and moves her off the reported position, which is the only thing the source
+ * actually says. She still has to be DRAWN pointing somewhere, and north is as good as
+ * anything, but drawn and moved are different verbs.
+ *
+ * **One answer, because two consumers ask.** `render/player.ts` places her by this and
+ * `actors/vessel/separation.ts` measures between hulls by it; working it out twice would let
+ * the range describe a ship in a place the picture is not drawing her. `plans/done/
+ * antenna-offset-6.md` is where the rule came from and `ui/panels.ts` reports it.
+ */
+export function placementFor(
+  statedDegreesTrue: number | undefined,
+  offset: OffsetMetres,
+): Placement {
+  if (statedDegreesTrue === undefined) {
+    return { headingDegreesTrue: 0, offset: NO_OFFSET, headingStated: false };
+  }
+  return { headingDegreesTrue: statedDegreesTrue, offset, headingStated: true };
+}

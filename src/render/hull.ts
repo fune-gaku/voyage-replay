@@ -23,6 +23,12 @@ import {
 } from "three";
 
 import { assumedHeights } from "../actors/vessel/heights.js";
+import {
+  hullDimensions,
+  isBoxBowed,
+  offsetsMeasureHull,
+  planOutline,
+} from "../actors/vessel/hull-shape.js";
 import type { Vessel } from "../core/types.js";
 
 /**
@@ -56,7 +62,12 @@ export interface HullParts {
  */
 function bridgeOffsetOf(vessel: Vessel): { metres: number; fromOffsets: boolean } {
   const offsets = vessel.referencePointOffsets;
-  if (!offsets) return { metres: -vessel.loaMetres * BRIDGE_FRACTION_AFT, fromOffsets: false };
+  // **Stated is not measured, and the same test decides it as decides her size.** Four zeroes
+  // are a valid file and measure nothing; taking them here would put her bridge amidships and
+  // call it measured, on a hull the page has already said fell back to the particulars.
+  if (!offsets || !offsetsMeasureHull(vessel)) {
+    return { metres: -vessel.loaMetres * BRIDGE_FRACTION_AFT, fromOffsets: false };
+  }
   return {
     metres: -(offsets.fromBowMetres - offsets.fromSternMetres) / 2,
     fromOffsets: true,
@@ -64,50 +75,23 @@ function bridgeOffsetOf(vessel: Vessel): { metres: number; fromOffsets: boolean 
 }
 
 /**
- * Whether the bow comes to a point or is square across.
+ * The outline as a three.js `Shape`, from the points `actors/vessel/hull-shape.ts` holds.
  *
- * One of the three things that actually resolve at the sizes these hulls occupy - at a 3 km
- * view the reference case's pushing unit is twelve pixels wide, where block coefficient is
- * invisible and a square bow is not. A pushing unit is a pusher against the stern of a
- * barge, and a barge is a box; drawn with a raked stem it reads as a ship she is not.
+ * **The shape used to be defined here, and that is why a range between hulls disagreed with
+ * the hulls.** It is generated rather than imported - a borrowed model scaled to fit is a
+ * picture of a different ship - so it has to be reachable by everything that measures against
+ * it, and `render/` is not somewhere `actors/` may reach.
  *
- * From `type`, which is a statement the file already makes, rather than from a catalogue.
+ * Working in (x = starboard, y = forward) and converting to the XZ plane on extrude.
  */
-function isBoxBowed(vessel: Vessel): boolean {
-  return vessel.type === "pushing-ahead";
-}
-
-/**
- * Plan-view outline as fractions of length, measured from the stern. Squared off aft,
- * parallel through the middle, and forward either pointed or square - enough for the
- * silhouette to read as the right kind of ship from overhead and from another bridge.
- */
-function planOutline(length: number, beam: number, boxBow: boolean): Shape {
-  const halfBeam = beam / 2;
+function outlineShape(vessel: Vessel): Shape {
+  const points = planOutline(hullDimensions(vessel), isBoxBowed(vessel));
   const shape = new Shape();
-
-  // Working in (x = starboard, y = forward) and converting to the XZ plane on extrude.
-  const stern = -length / 2;
-  const bow = length / 2;
-  const shoulder = stern + length * 0.68;
-
-  shape.moveTo(0, stern);
-  shape.lineTo(halfBeam * 0.85, stern);
-  shape.lineTo(halfBeam, stern + length * 0.12);
-  shape.lineTo(halfBeam, shoulder);
-  if (boxBow) {
-    // Straight out to the stem and square across it: the rake of a barge's bow is above the
-    // waterline, so from overhead it is a rectangle.
-    shape.lineTo(halfBeam, bow);
-    shape.lineTo(-halfBeam, bow);
-  } else {
-    shape.quadraticCurveTo(halfBeam, stern + length * 0.92, 0, bow);
-    shape.quadraticCurveTo(-halfBeam, stern + length * 0.92, -halfBeam, shoulder);
-  }
-  shape.lineTo(-halfBeam, stern + length * 0.12);
-  shape.lineTo(-halfBeam * 0.85, stern);
+  const [first, ...rest] = points;
+  if (!first) return shape;
+  shape.moveTo(first.starboardMetres, first.forwardMetres);
+  for (const point of rest) shape.lineTo(point.starboardMetres, point.forwardMetres);
   shape.closePath();
-
   return shape;
 }
 
@@ -131,13 +115,10 @@ export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullPart
 }
 
 function hullMesh(vessel: Vessel, freeboard: number, colour: ColorRepresentation): Mesh {
-  const geometry = new ExtrudeGeometry(
-    planOutline(vessel.loaMetres, vessel.beamMetres, isBoxBowed(vessel)),
-    {
-      depth: freeboard,
-      bevelEnabled: false,
-    },
-  );
+  const geometry = new ExtrudeGeometry(outlineShape(vessel), {
+    depth: freeboard,
+    bevelEnabled: false,
+  });
   // The shape was drawn in (starboard, forward) and extruded along +Z. rotateX(-90 deg)
   // maps (x, y, z) to (x, z, -y): the extrusion becomes height above the waterline, and
   // the bow - drawn at +y - lands at -Z, which is the forward this project uses.
@@ -155,8 +136,11 @@ function bridgeMesh(
   height: number,
   offsetForward: number,
 ): Mesh {
+  // Scaled off the hull that is drawn, not off the particulars, or the house sits on a ship
+  // of a slightly different size from the one under it.
+  const hull = hullDimensions(vessel);
   const bridge = new Mesh(
-    new BoxGeometry(vessel.beamMetres * 0.62, height, vessel.loaMetres * 0.1),
+    new BoxGeometry(hull.beamMetres * 0.62, height, hull.lengthMetres * 0.1),
     new MeshStandardMaterial({ color: 0xdfe6ee, roughness: 0.7 }),
   );
   bridge.position.set(0, freeboard + height / 2, -offsetForward);

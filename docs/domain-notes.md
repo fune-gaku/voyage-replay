@@ -67,6 +67,144 @@ same, looking like nothing at all.
 The reference case in `examples/` is a clean instance: five consecutive minutes at 267.0°–267.1°
 while the range falls from 3,400 m to 470 m.
 
+## Two ships, two answers, two moments
+
+`closestPointOfApproach` measures between the two REPORTED positions, and an AIS position is
+the GPS antenna. On the Suo-nada case that is **39.6 m at 18:13:35** — and the drawn hulls are
+through each other for **9.41 seconds from 18:13:27.96**, so the checkable figure is read from
+the middle of the collision. Both are true about different things. The page prints both, labelled,
+for the reason it prints a wind speed beside a contradicting force: hiding one input is not
+answering with the other.
+
+**The hulls' moment is not the antennae's.** They first touch seven seconds earlier here,
+because both antennae sit well aft and the sterns close last. Anything that says "at the moment
+of closest approach" has to say which moment.
+
+### Not a rectangle
+
+Issue #10 proposed treating both hulls as rectangles. The renderer does not draw rectangles —
+the outline has a drawn-in transom and a raked bow — and a bounding box reaches out past a raked
+stem by up to half a beam. Measured twelve seconds before contact:
+
+| model | gap |
+|---|---:|
+| rectangle, particulars | 5.8 m |
+| rectangle, AIS offsets | 5.9 m |
+| **the outline that is drawn** | **8.2 m** |
+
+A rectangle says the two ships are forty per cent closer than the picture shows them. A
+rectangle is still the right tool for *containment* — `test/examples.spec.ts` asks whether one
+stem falls inside another hull, and for that the box the offsets describe is exactly the
+question — but never for a range.
+
+### One shape, one pair of dimensions
+
+There were two hull models and they disagreed on both counts: the renderer's curved outline at
+the particulars, and the test's rectangle at the AIS offsets. `actors/vessel/hull-shape.ts`
+holds one of each now. The renderer builds its `Shape` from the same point list the range is
+measured against, vertex for vertex.
+
+Dimensions come from the four offsets where the file has them **and they measure something** —
+the schema's floor on each is zero, so a ship whose dimensions never came through is a valid
+file, and summing her zeroes would give a hull of no length to draw, light or measure against.
+Either sum being zero goes back to the particulars. Where they do measure her they are preferred,
+because those measure the ship where the particulars describe her: a particulars length is often the *registered* length, and
+on the reference case's tanker the two sources give beams of 9.4 and 9.0 m — a difference that
+moves first contact by a second. The two are never mixed. Anything sitting on the hull moves
+with it: a sidelight placed at the particulars' half-beam would hang 0.2 m over the water beside
+a hull drawn at the offsets'.
+
+### Zero, not a depth
+
+Once they overlap the answer is zero and a window, not a penetration. The outline is generated
+from a length and a beam — a plausible plan of a ship of the right size, not either ship's lines
+— so a hull "three metres into" another is three metres of this tool's invention. Same judgement
+as declining to bend a hull for the earth's curvature. What the shape supports is whether and
+when, so that is what comes back.
+
+And the window is interpolated: on the reference case the whole contact falls inside sample gaps
+of 13 s and 20 s, joined by straight lines. Its length is a property of this tool as much as of
+the ships, and the panel says so.
+
+Three things about that window were wrong in the first version of this and are worth keeping
+written down.
+
+**Every spell, not one window.** Two ships that touch, come clear and touch again on the swing
+are ordinary in a casualty. A window that opened at the first meeting and closed at the last
+asserted contact across the clear water between them — a collision the data says did not happen.
+
+**Its length is the difference between its ends, not the count of samples inside them.** A spell
+seen at ten one-second samples is nine seconds long. This project printed ten.
+
+**Its ends come off the hulls, not off the search.** A replay can be paused anywhere, so
+reporting the first second that happened to show contact puts the page up to a step away from
+the picture. Positions between samples are straight lines, so the moment the drawn hulls meet is
+exactly defined: 18:13:27.961 to 18:13:37.371 here.
+
+Finding it needs care, because **two hulls that are turning do not approach monotonically**.
+Which pair of vertex and edge is nearest switches as they swing, so the gap over time is
+piecewise: it can hold two valleys inside a second, and a pair can touch, come clear and touch
+again inside one step. Every search that assumed otherwise reported something false —
+a ternary search on the least gap walked away from the deeper valley, and bisecting between one
+clear look and one touching look joined two spells into one across the clear water between them.
+Neither missed a contact; both invented one.
+
+So nothing here assumes; it certifies. The scan looks at **every sample either track states**,
+because that is where a ship's straight line bends: two looks a minute apart can find both ships
+back where they started with a whole encounter in between.
+
+Between two adjacent looks it asks whether anything COULD have happened, and halves the interval
+until the answer is no. Three parts to that.
+
+**How far they can have gone.** Between samples the reported position runs in a straight line
+and the hull turns through the difference of two headings, so no point of her travels further
+than that line plus the arc her own radius sweeps. The chord between where a point started and
+where it finished will not do — that was the first version — because a ship translating and
+turning at once carries every point along a curve, and a swing that comes back hides its whole
+journey from the two ends.
+
+**How far they are from changing.** Water between them is how much they must close to touch; a
+pair already through each other must back the deepest part of one out of the other to come
+apart. If the two together cannot travel that far in the time, the interval holds no change of
+state. That depth is a certificate and never a figure on the page — the argument against
+reporting one is about what a page may claim, not about what an interval may be discharged with.
+It counts each outline's middle as well as its corners, because two hulls exactly on top of each
+other have every corner of one lying ON the other's side and would otherwise measure nothing.
+
+**And whether anything nearer hides in it**, which is a different question and went unasked for
+a while. An interval whose ends are 100 m apart where the pair can only close 90 m holds no
+contact — and can still hold a pass at 10 m. Skipping it and reporting whatever smaller number
+another look happened to hold is a plausible figure for a range nobody came within. So the least
+gap is a branch and bound: an interval can hold nothing nearer than its lesser end less what the
+two can travel, floored at nothing, and where that beats nothing already in hand there is
+nothing in it to look for. The coarse pass runs to the end before any refining starts, because a
+bound is worth what is already in hand.
+
+Most of a reconstruction discharges on the first test, the ships being miles apart, and the
+halving goes deep only where they are about to touch.
+
+**What it could not account for is measured, not assumed.** Reporting the step as the limit
+understated the search by three orders of magnitude and described a method it no longer uses;
+naming the floor instead would still be a claim about the search rather than a report of it. So
+the longest interval the halving stopped on is carried out on the result and printed, and the
+page says how long it is and nothing about why — one number cannot tell the reasons below apart,
+and naming one of them beside it would put a cause in front of a reader that the page does not
+have.
+
+Three things stop it. The floor of a millisecond, which is far below what positions interpolated
+between samples a minute apart can mean. The depth cap. And a budget on the refining, which
+exists because one case will otherwise halve for ever: `overlapDepth` measures how far a corner
+or a middle of one hull lies inside the other, and two hulls **grazing** — crossing at their
+ends with neither inside — measure nought, so no interval of that can be proved to hold no
+change of state. Rounded positions and a generated outline make a shallow crossing that persists
+quite ordinary, a ship alongside or the minutes after a collision, and a page that rendered one
+would sit there doing millions of polygon comparisons.
+
+And something is always left where the drawn ship **jumps**: a track that states her direction
+in one field at one sample and another at the next has `sampleAt` swap the source at the
+midpoint, so she turns with her course and then snaps to her heading. Nothing bounds a jump.
+Asking only whether SOME direction was available misses it, both halves having one.
+
 ## How a ship actually moves
 
 A ship is not a point that changes velocity. Three things a straight line between two samples gets

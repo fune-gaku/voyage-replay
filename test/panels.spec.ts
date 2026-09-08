@@ -204,6 +204,195 @@ describe("renderPanels", () => {
     expect(html).toContain("A&#39;s GPS antenna to B&#39;s reference point");
   });
 
+  /**
+   * **Two rows, because they answer two questions and the page cannot answer both with one.**
+   * The reported positions are what the report's appendix supports and what a reader can
+   * check by hand; the hulls are what "did they hit" is asking. Printing only the first is
+   * the state this issue found; printing only the second throws away the checkable number.
+   */
+  /**
+   * **Neither row is a measurement, and hedging only one made the other look like one.** The
+   * reported-position range is picked from one-second steps along straight lines drawn between
+   * the source's points; what the source states is the points. Saying so beside "which is what
+   * the sources state" is the difference between citing a source and hiding behind one.
+   */
+  it("says the reported-position range is also picked off steps and interpolation", () => {
+    expect(html).toContain("picked from one-second steps along positions joined by straight");
+    expect(html).toContain("this tool&#39;s arithmetic over the source&#39;s points");
+  });
+
+  it("reports the reported positions and the hulls as separate rows", () => {
+    expect(html).toContain("Reported positions");
+    expect(html).toContain("Between hulls");
+    expect(html).toContain("between the hulls as DRAWN");
+  });
+
+  /**
+   * **And says the shape is invented, because every metre of that row rests on it.** A length
+   * and a beam is all a scenario carries, so the outline is this tool's plan of a plausible
+   * ship of the right size and not either ship's lines.
+   */
+  it("says the hull it measured against is generated", () => {
+    expect(html).toContain("The outline is generated");
+    expect(html).toContain("a metre of this tool");
+  });
+
+  /**
+   * **Which of the file's two answers about her size, per ship, since it is per ship.** They
+   * differ - 9.4 m against 9.0 on the reference case's tanker - and a pair where one ship was
+   * measured off her offsets and the other off her particulars is the ordinary state of a
+   * two-ship reconstruction. Reporting one source for both names the wrong derivation for one
+   * of the hulls, and the derivation is what makes the figure checkable.
+   */
+  it("names which source each hull's length and beam came from", () => {
+    // A carries no offsets and B does, which is this fixture's whole point.
+    expect(html).toContain("A from the particulars, no AIS offsets being stated for her");
+    expect(html).toContain("B from the four AIS offsets, which measure the ship");
+
+    const bothStated = panelsFor(
+      scenario([actor("A", northboundPoints(), BIG_SHIP), actor("B", westboundPoints(), BIG_SHIP)]),
+    );
+    expect(bothStated).toContain(
+      "which measure the ship where the particulars describe her, for both",
+    );
+
+    const neither = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), COASTER)]),
+    );
+    expect(neither).toContain("no AIS offsets being stated for her, for both");
+  });
+
+  /**
+   * **Stated and unusable is a third answer, and merging it with "not stated" is a claim
+   * about the file rather than about the arithmetic.** All four offsets at zero is valid -
+   * the schema's floor on each is zero - and the size then falls back to the particulars;
+   * saying she stated none would be false where a reader can check.
+   */
+  /** And the actor table says "bridge assumed" for her, by the same test. */
+  it("does not call a bridge measured from offsets that measure no hull", () => {
+    const zeroed = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 0,
+        fromSternMetres: 0,
+        fromPortMetres: 0,
+        fromStarboardMetres: 0,
+      },
+    };
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), zeroed), actor("B", westboundPoints(), COASTER)]),
+    );
+
+    expect(html).not.toContain("bridge measured");
+    expect(html).toContain("bridge assumed");
+  });
+
+  it("separates offsets that were not stated from offsets that measure nothing", () => {
+    const zeroed = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 0,
+        fromSternMetres: 0,
+        fromPortMetres: 0,
+        fromStarboardMetres: 0,
+      },
+    };
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), zeroed), actor("B", westboundPoints(), zeroed)]),
+    );
+
+    expect(html).toContain("her four AIS offsets being stated but measuring no hull");
+    expect(html).not.toContain("no AIS offsets being stated for her");
+  });
+
+  /**
+   * **The two rows are not two readings of one instant.** Hulls close before antennae do, or
+   * after, depending where the antennae sit - seven seconds earlier on the reference case -
+   * so a page that printed both under one "At" would be inventing a coincidence.
+   */
+  it("says whether the hulls' moment is the reported positions' moment", () => {
+    expect(html).toMatch(/at the same moment as|[\d.]+ s (before|after) the moment/);
+  });
+
+  /**
+   * **And measures that difference from the moment the row shows.** Where they touch, the row
+   * prints an end bisected off the hulls while this sentence used to print the grid instant
+   * the search happened to land on - so the page said "in contact from 18:13:27.961" and, two
+   * lines down, "7 s before", computed from 18:13:28. Changing the step moved the prose and
+   * not the row, under a paragraph claiming the ends come off the hulls.
+   */
+  it("measures that difference from the moment it printed, once they touch", () => {
+    const touching = panelsFor(
+      scenario([
+        actor("A", northboundPoints(), BIG_SHIP),
+        actor("B", northboundPoints(), BIG_SHIP),
+      ]),
+    );
+
+    expect(touching).toContain("they first touch");
+    expect(touching).not.toContain("it happens");
+  });
+
+  /**
+   * **The row the whole issue is about: two hulls that touch.**
+   *
+   * A gap in metres is the wrong shape of answer once there is no gap, so the page reports
+   * the window instead - which is also the only thing a generated outline can support. It
+   * cannot say how deep one hull went into the other, because that would be three metres of
+   * this tool's plan shape rather than of either ship.
+   */
+  it("reports a window rather than a distance once the hulls are touching", () => {
+    // Two big ships on the same track, a hundred metres apart along a 180 m hull.
+    const overlapping = panelsFor(
+      scenario([
+        actor("A", northboundPoints(), BIG_SHIP),
+        actor("B", northboundPoints(), BIG_SHIP),
+      ]),
+    );
+
+    expect(overlapping).toContain("in contact");
+    // And says what the search could have missed, which is anything shorter than its step.
+    // **What it could not account for, measured rather than assumed.** These two tracks are
+    // the same, so nothing moves with respect to anything and every interval discharges.
+    expect(overlapping).toContain("halved every interval until it could prove nothing was in it");
+    expect(overlapping).toContain("Every interval was accounted for");
+    expect(overlapping).toMatch(/\d\d:\d\d:\d\d to \d\d:\d\d:\d\d local, [\d.]+ s/);
+    // And not a range in metres, which is what it would have printed before.
+    expect(overlapping).not.toContain("Between hulls</th><td>0.0 m");
+  });
+
+  /**
+   * And where something IS left, it says how much - and nothing about why.
+   *
+   * **The figure cannot tell the reasons apart.** The halving stops at its floor, at its depth,
+   * or at a budget that keeps a grazing contact from refining for ever, and one number carries
+   * none of that. Naming a cause beside it would put in front of a reader something the page
+   * does not know, which is the fault this whole section is about arriving in the sentence
+   * that reports it.
+   */
+  it("says how long a stretch it could not account for, and not why", () => {
+    const swapping = actor("B", westboundPoints(), BIG_SHIP);
+    swapping.track.points = swapping.track.points.map((point, index) => ({
+      ...point,
+      ...(index === 0 ? {} : { headingDegreesTrue: 90 }),
+    }));
+    const html = panelsFor(scenario([actor("A", northboundPoints(), BIG_SHIP), swapping]));
+
+    expect(html).toMatch(/longest stretch it could not account for is [\d.]+ (ms|s)/);
+    expect(html).toContain("began and ended inside one of those could have gone unseen");
+    expect(html).not.toContain("the hull jumps rather than turns");
+  });
+
+  /** Where a ship carries no particulars there is no hull to measure, and the page says so. */
+  it("declines the hull row where a ship has no particulars", () => {
+    const noVessel = actor("B", westboundPoints(), BIG_SHIP);
+    delete noVessel.vessel;
+    const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), noVessel]));
+
+    expect(html).toContain("needs both ships&#39; particulars");
+    expect(html).toContain("a hull cannot be drawn - or measured against - without a length");
+  });
+
   it("still says what the range runs between when only the second ship states offsets", () => {
     // A carries no offsets at all; the caveat used to vanish with them.
     expect(html).toContain("A&#39;s GPS antenna to B&#39;s GPS antenna");
