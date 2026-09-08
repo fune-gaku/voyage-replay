@@ -76,8 +76,14 @@ export interface AssumedMark {
    *
    * COLREG Rule 22 answers this for a ship and says nothing about a buoy, and IALA's ranges
    * are per light rather than in general - so this is a middling figure for a lit buoy and
-   * it is chosen. It decides one thing: how far the streak on the water may reach before it
-   * has to be gone, which `core/illumination.ts` holds to half of it.
+   * it is chosen.
+   *
+   * **It decides two things now, and the second is new.** How far the streak may reach before
+   * it has to be gone, which `core/illumination.ts` holds to half of it; and, since a range is
+   * what Annex I section 8 turns into a candela, how BRIGHT this mark's light is - both its
+   * streak and the light it lands on the water. For a ship that chain starts at Rule 22 and is
+   * computed the whole way. For a mark it starts here, at a figure this tool chose, so
+   * `ui/panels.ts` says so wherever a lit mark is in the scene.
    */
   lightRangeNauticalMiles: number;
 }

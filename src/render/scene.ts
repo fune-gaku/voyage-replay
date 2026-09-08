@@ -497,6 +497,11 @@ function viewControls(
   };
 }
 
+/** What a lamp gives back off the water in this condition. See `Palette`. */
+function exposureOf(palette: Palette): { streak: number; pool: number; luxToScreen: number } {
+  return { streak: palette.streak, pool: palette.lampPool, luxToScreen: palette.luxToScreen };
+}
+
 /**
  * The three that answer to the water rather than to the camera: when it is, how finely it can
  * be drawn, and what it comes to under a given point.
@@ -504,11 +509,6 @@ function viewControls(
  * Together because they are one surface seen three ways, and a caller that had the clock but
  * not the band would be asking about a sea nobody is drawing.
  */
-/** What a lamp gives back off the water in this condition. See `Palette`. */
-function exposureOf(palette: Palette): { streak: number; pool: number; luxToScreen: number } {
-  return { streak: palette.streak, pool: palette.lampPool, luxToScreen: palette.luxToScreen };
-}
-
 function seaControls(
   parts: Switchable,
   lights: Lights,

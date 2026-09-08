@@ -317,7 +317,30 @@ function streakNote(scenario: Scenario, conditions: Conditions): string {
     lamps + marks > SHADER_LAMPS
       ? ` More lamps can be lit at once here than the water can reflect - ${lamps + marks} against ${SHADER_LAMPS} - so some of them lay no streak.`
       : "";
-  return WHAT_A_LAMP_DOES + LENGTH_RESTS_ON_HEIGHTS + over;
+  return WHAT_A_LAMP_DOES + LENGTH_RESTS_ON_HEIGHTS + markRange(marks) + over;
+}
+
+/**
+ * **Where the computed chain stops being computed.**
+ *
+ * A ship's lamp brightness follows the whole way from Rule 22's range through Annex I's
+ * relation, and the paragraph above says so. Rule 22 is about ships. Nothing in this format
+ * states how far a buoy's or a beacon's light carries, and IALA's ranges are per light rather
+ * than in general - so a mark's range is this tool's own figure, and it is that figure, not a
+ * rule, that decides how brightly a mark draws on the water. Said only when a lit mark is
+ * actually in the scene, because a sentence about marks over a picture with none in it is the
+ * same overclaim in the other direction.
+ */
+function markRange(lit: number): string {
+  if (lit === 0) return "";
+  return (
+    ` One thing in that chain is not computed. Rule 22 is about ships, and nothing here says ` +
+    `how far a mark's light carries, so ${ASSUMED_MARK.lightRangeNauticalMiles} miles is ` +
+    `assumed for each of the ${lit} lit ${lit === 1 ? "mark" : "marks"} - and since a range ` +
+    `is what the candela is computed FROM, that assumption sets how bright they draw, both ` +
+    `in the water and on it. Read a mark's lane for where it lies, not for how it compares ` +
+    `with a ship's.`
+  );
 }
 
 /**

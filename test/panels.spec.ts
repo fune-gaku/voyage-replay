@@ -1351,6 +1351,37 @@ describe("the streaks the lamps lay", () => {
     expect(html).toContain("17 against 16");
   });
 
+  /**
+   * **The computed chain stops at the marks, and the page has to say where.** A ship's lamp
+   * gets its candela from Rule 22 by Annex I; a buoy's range is nowhere in this format, so
+   * the figure that sets how brightly it draws is this tool's own. Reporting that under the
+   * same sentence that says the brightness is computed would hide the tool's choice behind
+   * the rule's authority.
+   */
+  it("says a lit mark's brightness rests on a range it chose", () => {
+    const subject = atNight({ significantHeightMetres: 2, derivation: "measured" });
+    subject.marks = [
+      {
+        id: "starboard-hand",
+        kind: "buoy" as const,
+        at: { lat: 33.9, lon: 131.7 },
+        heightMetres: 3,
+        light: { character: "Fl G 4s" },
+      },
+    ];
+    const html = panelsFor(subject);
+
+    expect(html).toContain("One thing in that chain is not computed");
+    expect(html).toContain("4 miles is assumed for each of the 1 lit mark");
+  });
+
+  /** And says none of it where there is no lit mark, which is the same overclaim reversed. */
+  it("says nothing about marks' ranges when no mark is lit", () => {
+    const html = panelsFor(atNight({ significantHeightMetres: 2, derivation: "measured" }));
+    expect(html).toContain("Each lamp does two things to the water");
+    expect(html).not.toContain("One thing in that chain is not computed");
+  });
+
   /** A day has no navigation lights drawn, so it has nothing to say about their streaks. */
   it("says nothing at all over a day", () => {
     const day = scenario();
