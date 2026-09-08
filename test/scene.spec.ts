@@ -62,9 +62,9 @@ describe("light condition", () => {
     );
 
     const atNight = ambient!.intensity;
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     expect(ambient!.intensity).toBeGreaterThan(atNight);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     expect(ambient!.intensity).toBe(atNight);
   });
 });
@@ -92,9 +92,9 @@ describe("visibility", () => {
   it("clears the fog for the plan view and puts it back for a bridge", () => {
     const parts = buildScene({ lightCondition: "night", visibilityMetres: 2000 }, 1000);
 
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     expect(parts.scene.fog).toBeNull();
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     expect((parts.scene.fog as Fog).far).toBe(2000);
   });
 
@@ -151,7 +151,7 @@ describe("the sea under something floating", () => {
 
   it("moves less at a distance, where the range fade has not started yet", () => {
     const parts = buildScene(environment, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setEye({ east: 0, north: 0 }, 0);
 
     // **250 m is where `displacedFraction` is still exactly one**, so every bit of this
@@ -174,7 +174,7 @@ describe("the sea under something floating", () => {
    */
   it("keeps the sea dense about the same point the distances are measured from", () => {
     const parts = buildScene(environment, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     const water = parts.scene.children.find((child) => child.name === "water");
     const centre = { east: 4000, north: -2500 };
 
@@ -206,7 +206,7 @@ describe("the sea under something floating", () => {
       { waves: { significantHeightMetres: 0.004, derivation: "measured" } },
       1000,
     );
-    tiny.setDiagramView(false);
+    tiny.setDiagramView("world");
     tiny.setEye({ east: 0, north: 0 }, 0);
     expect(riseAt(tiny, { east: 0, north: 20 })).toBe(0);
 
@@ -215,7 +215,7 @@ describe("the sea under something floating", () => {
       { waves: { significantHeightMetres: 0.02, derivation: "measured" } },
       1000,
     );
-    small.setDiagramView(false);
+    small.setDiagramView("world");
     small.setEye({ east: 0, north: 0 }, 0);
     expect(riseAt(small, { east: 0, north: 20 })).toBeGreaterThan(0);
   });
@@ -223,7 +223,7 @@ describe("the sea under something floating", () => {
   /** Close in, the mesh has vertices for the sea's own waves and nothing is taken away. */
   it("leaves the water near the eye alone", () => {
     const parts = buildScene(environment, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setEye({ east: 0, north: 0 }, 0);
 
     // A 3 m sea has a surface standard deviation of Hs/4, and the swell that carries it is
@@ -265,7 +265,7 @@ describe("the sky the water hands back", () => {
 
   it("puts the body where the almanac puts it, in the scene's own axes", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setSky(conditionsAt(suoNada, sea, collision));
 
     // Bearing 191 at 41 degrees up: south and a little west, well above the water.
@@ -281,7 +281,7 @@ describe("the sky the water hands back", () => {
    */
   it("points the key light at the same body the water reflects", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setSky(conditionsAt(suoNada, sea, collision));
 
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
@@ -296,7 +296,7 @@ describe("the sky the water hands back", () => {
    */
   it("lays no path over a sea nobody stated", () => {
     const parts = buildScene({ lightCondition: "night" }, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setSky(conditionsAt(suoNada, { lightCondition: "night" }, collision));
     // The water is told there is no sea to reflect in; the body itself stays, because the
     // sky above the waterline shows it either way.
@@ -309,11 +309,11 @@ describe("the sky the water hands back", () => {
    */
   it("draws no path on the plan view", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     parts.setSky(conditionsAt(suoNada, sea, collision));
     expect(skyOf(parts)["uSeaSlope"]?.value).toBeLessThan(0);
 
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setSky(conditionsAt(suoNada, sea, collision));
     expect(skyOf(parts)["uSeaSlope"]?.value).toBeGreaterThan(0);
   });
@@ -325,7 +325,7 @@ describe("the sky the water hands back", () => {
    */
   it("puts a sky over the water and moves it with the eye", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     const dome = parts.scene.getObjectByName("sky");
     expect(dome).toBeDefined();
     expect(dome?.visible).toBe(true);
@@ -340,9 +340,9 @@ describe("the sky the water hands back", () => {
     const parts = buildScene(sea, 1000);
     const dome = parts.scene.getObjectByName("sky");
 
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     expect(dome?.visible).toBe(false);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     expect(dome?.visible).toBe(true);
   });
 
@@ -353,7 +353,7 @@ describe("the sky the water hands back", () => {
    */
   it("puts the key light out when nothing is up, whichever order the frames came in", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
 
     parts.setSky(conditionsAt(suoNada, sea, collision));
@@ -374,7 +374,7 @@ describe("the sky the water hands back", () => {
    */
   it("dims the key light with the moon's phase, and holds the sun at the full figure", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
 
     // A 41 per cent moon is a sixteenth of a full one by Allen's relation, not two fifths.
@@ -386,7 +386,7 @@ describe("the sky the water hands back", () => {
     // The sun is clamped to the full figure rather than four hundred thousand times it.
     const day = { ...sea, lightCondition: "day" } as const satisfies Environment;
     const lit = buildScene(day, 1000);
-    lit.setDiagramView(false);
+    lit.setDiagramView("world");
     const sun = lit.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
     lit.setSky(conditionsAt(suoNada, day, Date.parse("2025-11-27T12:00:00+09:00") / 1000));
     expect(sun.intensity).toBeCloseTo(1.75, 6);
@@ -405,7 +405,7 @@ describe("the sky the water hands back", () => {
     ] as const) {
       const environment = { ...sea, lightCondition: light } satisfies Environment;
       const parts = buildScene(environment, 1000);
-      parts.setDiagramView(false);
+      parts.setDiagramView("world");
       parts.setSky(conditionsAt(suoNada, environment, Date.parse(when) / 1000));
 
       const uniforms = skyOf(parts);
@@ -422,12 +422,12 @@ describe("the sky the water hands back", () => {
     const parts = buildScene(sea, 1000);
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
 
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     parts.setSky(conditionsAt(suoNada, sea, collision + 9 * 3600));
     expect(key.intensity).toBeCloseTo(0.8, 6);
 
     parts.setSky(conditionsAt(suoNada, sea, collision));
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     expect(key.intensity).toBeCloseTo(0.8, 6);
   });
 
@@ -438,7 +438,7 @@ describe("the sky the water hands back", () => {
    */
   it("follows the body across the length of a scenario", () => {
     const parts = buildScene(sea, 1000);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
 
     parts.setSky(conditionsAt(suoNada, sea, collision));
     const early = (skyOf(parts)["uSkyBody"]?.value as Vector3).clone();

@@ -1,4 +1,7 @@
+import type { AmbientLight } from "three";
 import { OrthographicCamera, PerspectiveCamera, Texture, Vector3 } from "three";
+
+import type { ViewSelection } from "../src/render/view.js";
 import type * as THREE from "three";
 import type {
   Group,
@@ -835,6 +838,135 @@ describe("a viewpoint that is neither a chart nor a bridge", () => {
     expect(diagramNow().visible, "over a chart").toBe(true);
     replay.setView(ALOFT);
     expect(diagramNow().visible, "over the world").toBe(false);
+  });
+
+  /** The scene's ambient light, which `setDiagramView` lifts for a chart and not for a place. */
+  function ambientNow(): number {
+    const light = lastFrame().scene.children.find(
+      (child): child is AmbientLight => child.type === "AmbientLight",
+    );
+    if (!light) throw new Error("no ambient light in the scene");
+    return light.intensity;
+  }
+
+  /**
+   * The lamps handed to the water on the frame just drawn.
+   *
+   * The uniforms only exist inside `onBeforeCompile`, which no renderer here ever runs, so
+   * the material is asked to fill a shader of its own - the same way the reflection suite
+   * below does it.
+   */
+  function lampsOnTheWater(): number {
+    const water = lastFrame().scene.children.find((child: Object3D) => child.name === "water");
+    const uniforms: Record<string, { value: unknown }> = {};
+    const shader = {
+      uniforms,
+      vertexShader: "#include <begin_vertex>\n#include <project_vertex>",
+      fragmentShader: "#include <normal_fragment_begin>\n#include <opaque_fragment>",
+    };
+    const material = (water as Mesh).material as MeshStandardMaterial;
+    material.onBeforeCompile(
+      shader as unknown as Parameters<MeshStandardMaterial["onBeforeCompile"]>[0],
+      null as unknown as WebGLRenderer,
+    );
+    return (uniforms["uLamp"]?.value as Vector4[]).filter((lamp) => lamp.w > 0).length;
+  }
+
+  /** Whether the map's credit is showing, which is the second caption drawn over the frame. */
+  function creditingTheMap(): boolean {
+    const captions = gl.frames.filter((f) => f.scene.name === "overlay").at(-1)?.scene.children;
+    return captions?.[1]?.visible ?? false;
+  }
+
+  /** A night with one flashing buoy in it, which is what a rhythm and a streak need. */
+  function withABuoy(): Scenario {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    };
+    subject.marks = [
+      { id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3, light: { character: "Fl G 4s" } },
+    ];
+    return subject;
+  }
+
+  /**
+   * **The rest of the eight, which the first version of this suite left uncovered.**
+   *
+   * Four of them were checked - the camera, the hulls' curvature, the chart's furniture, the
+   * lamp audience - and the other four were not, so they could go back to reading
+   * `view.kind === "bridge"` and every test would still pass. They are the ones that would
+   * break most quietly: the lighting a chart is lifted by, the rhythm a mark keeps, the
+   * streak a lamp lays, and which ground the credit names.
+   */
+  it("takes the world's lighting, as a bridge does and a chart does not", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const lifted = ambientNow();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const dark = ambientNow();
+    replay.setView(ALOFT);
+
+    expect(lifted, "a chart is lit for reading").toBeGreaterThan(dark);
+    expect(ambientNow(), "the world is lit by the sky").toBe(dark);
+  });
+
+  /** A chart is not a moment, so nothing flashes over one. Over a place, a mark keeps time. */
+  it("lets the marks keep their rhythm, as they do from a bridge", () => {
+    const over = (view: ViewSelection): boolean[] => {
+      const replay = replayOf(withABuoy());
+      replay.setView(view);
+      return [0, 0.75, 2, 3, 3.9].map((offset) => {
+        replay.seek(replay.startSeconds + offset);
+        return lastFrame().scene.getObjectByName("lamp:no-1")?.visible ?? false;
+      });
+    };
+
+    expect(over({ kind: "chart" }), "a chart is not an instant").not.toContain(true);
+    expect(over(ALOFT), "the world is").toContain(true);
+  });
+
+  /** And a lamp lays a streak on real water, which a chart has none of. */
+  it("lets the lamps lay streaks, as they do from a bridge", () => {
+    const replay = replayOf(withABuoy());
+    replay.setView({ kind: "chart" });
+    expect(lampsOnTheWater(), "nothing reflects in a drawing").toBe(0);
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const fromBridge = lampsOnTheWater();
+    replay.setView(ALOFT);
+
+    expect(fromBridge, "a bridge sees them on the water").toBeGreaterThan(0);
+    expect(lampsOnTheWater(), "and so does an eye aloft").toBe(fromBridge);
+  });
+
+  /**
+   * **The credit names the ground this picture is showing.** The world stands over elevation
+   * tiles; printing the pale basemap's credit under a free eye would be a chart seen from an
+   * angle, which is a different claim about what is on screen.
+   */
+  it("credits the ground the world shows, not the chart's", () => {
+    const replay = replayOf();
+    gl.tiles[0]?.(new Texture());
+    replay.setView({ kind: "chart" });
+    expect(creditingTheMap(), "a chart names the basemap it drew").toBe(true);
+
+    replay.setView(ALOFT);
+    expect(creditingTheMap(), "the world is over the land tiles, not the map").toBe(false);
+  });
+
+  /**
+   * **Framing belongs to the chart alone**, and it is not only a camera decision:
+   * `frameOverhead` tells the basemap which ground to fetch, so running it for a viewpoint in
+   * the world sends the map after a rectangle nothing is drawing.
+   */
+  it("does not send the basemap after ground no chart is framing", () => {
+    const replay = replayOf();
+    replay.setView(ALOFT);
+    gl.tileUrls = [];
+    replay.seek(replay.startSeconds + 30);
+
+    expect(gl.tileUrls, "nothing is framing anything").toHaveLength(0);
   });
 
   /**

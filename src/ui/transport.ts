@@ -12,7 +12,7 @@
  */
 
 import { formatClock } from "../core/time.js";
-import type { ViewSelection } from "../render/player.js";
+import type { ViewSelection } from "../render/view.js";
 
 /** How many positions the scrub bar has between the start and the end of the tracks. */
 const SCRUB_STEPS = 1000;

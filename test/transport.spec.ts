@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ViewSelection } from "../src/render/player.js";
+import type { ViewSelection } from "../src/render/view.js";
 import { wireTransport, type TransportParts, type TransportPlayback } from "../src/ui/transport.js";
 
 /** An element that remembers what was attached to it and what was done to it. */

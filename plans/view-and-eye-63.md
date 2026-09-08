@@ -75,6 +75,13 @@ interface Eye {
 「どのカメラか」には依存していない。関数の引数を `Picture` にすること。
 `shine(mark, diagramMode)` は `shine(mark, picture)` になり、真偽値の反転を読む必要が消える。
 
+**そして最初の実装でこれを踏んだ（レビュー 1 反復目）。** `pictureOf()` を呼んだ直後に
+`const chart = picture === "chart"` と真偽値へ潰し、消費者の契約は `diagramMode: boolean` の
+まま。眼の有無とカメラ選択も `this.view.kind === "chart"` を再判定していた。
+**罠として自分で書いた形に、そのまま落ちた。**
+`Picture` は `render/view.ts` に置いて `scene.ts` からも読めるようにする
+（`setDiagramView` も 8 つのうちの 1 つなので、player を import させるわけにいかない）。
+
 ### 2. 自由視点を「船橋カメラの位置を動かせるようにしたもの」として作る
 
 `placeBridgeCamera` は**船首方位に沿って向ける**（`camera.rotation.set(0, rotationY, 0)`）。
