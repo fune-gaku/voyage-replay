@@ -96,8 +96,10 @@ export interface LitLamp {
 
 export interface LampUniforms {
   /**
-   * (x, y, z, relative brightness) per lamp. **The lamp's own figure, with no exposure in
-   * it**: zero is an empty slot, one is a lamp that is simply lit.
+   * (x, y, z, candela) per lamp. **The lamp's own figure, with no exposure in it**: zero is an
+   * empty slot, and anything else is the intensity Annex I section 8 gives the range Rule 22
+   * sets - about 12 for a 3 mile sidelight and 94 for a 6 mile masthead, not a one for lit.
+   * The ratio between the two IS the picture, so nothing here may be normalised to on and off.
    *
    * The exposures are the two scalars below, and they are separate because the two things a
    * lamp does to water are. Folding one of them in here - which is what this held at first -
