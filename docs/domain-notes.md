@@ -104,8 +104,11 @@ the particulars, and the test's rectangle at the AIS offsets. `actors/vessel/hul
 holds one of each now. The renderer builds its `Shape` from the same point list the range is
 measured against, vertex for vertex.
 
-Dimensions come from the four offsets where the file has them, because those measure the ship
-where the particulars describe her: a particulars length is often the *registered* length, and
+Dimensions come from the four offsets where the file has them **and they measure something** —
+the schema's floor on each is zero, so a ship whose dimensions never came through is a valid
+file, and summing her zeroes would give a hull of no length to draw, light or measure against.
+Either sum being zero goes back to the particulars. Where they do measure her they are preferred,
+because those measure the ship where the particulars describe her: a particulars length is often the *registered* length, and
 on the reference case's tanker the two sources give beams of 9.4 and 9.0 m — a difference that
 moves first contact by a second. The two are never mixed. Anything sitting on the hull moves
 with it: a sidelight placed at the particulars' half-beam would hang 0.2 m over the water beside

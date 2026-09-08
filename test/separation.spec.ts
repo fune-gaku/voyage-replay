@@ -60,6 +60,47 @@ describe("how big a hull is", () => {
     expect(dimensions.beamMetres).not.toBe(mixed.beamMetres);
   });
 
+  /**
+   * **Stated is not the same as measured.** The schema's floor on each of the four distances
+   * is zero, so a ship whose dimensions never came through - transcribed as the zeroes AIS
+   * sent - is a valid file. Summing them would give a hull of no length or no beam: nothing
+   * drawn, lamps at the origin, and a degenerate polygon that the crossing and containment
+   * tests would still answer plausibly for. It goes back to the particulars, and says so.
+   */
+  it("falls back to the particulars where the offsets measure nothing", () => {
+    const zeroed = {
+      fromBowMetres: 0,
+      fromSternMetres: 0,
+      fromPortMetres: 0,
+      fromStarboardMetres: 0,
+    };
+    expect(hullDimensions({ ...COASTER, referencePointOffsets: zeroed })).toEqual({
+      lengthMetres: 49,
+      beamMetres: 9.4,
+      from: "particulars",
+    });
+  });
+
+  /** And where only one axis came through, because half a hull is not a hull either. */
+  it("falls back where only the length or only the beam came through", () => {
+    const noBeam = {
+      fromBowMetres: 39,
+      fromSternMetres: 10,
+      fromPortMetres: 0,
+      fromStarboardMetres: 0,
+    };
+    const noLength = {
+      fromBowMetres: 0,
+      fromSternMetres: 0,
+      fromPortMetres: 4,
+      fromStarboardMetres: 5,
+    };
+    expect(hullDimensions({ ...COASTER, referencePointOffsets: noBeam }).from).toBe("particulars");
+    expect(hullDimensions({ ...COASTER, referencePointOffsets: noLength }).from).toBe(
+      "particulars",
+    );
+  });
+
   /** A pushing unit is a pusher against the stern of a barge, and a barge is a box. */
   it("squares the bow of a pushing unit and rakes everyone else's", () => {
     expect(isBoxBowed({ ...COASTER, type: "pushing-ahead" })).toBe(true);

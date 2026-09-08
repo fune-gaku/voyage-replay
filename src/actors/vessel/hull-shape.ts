@@ -44,13 +44,26 @@ export interface HullDimensions {
  * AIS rounds the four to the metre, so the sums are a metre-grained measurement rather than a
  * precise one. That is still the better of the two, and mixing them - taking length from one
  * and beam from the other - would invent a hull neither source describes.
+ *
+ * **But present is not the same as usable.** The schema's floor on each of the four is zero, so
+ * a ship whose dimensions never came through - transcribed as the zeroes AIS sent - is a valid
+ * file, and the sums are then a hull of no length or no beam. Taking them would draw nothing,
+ * put her lamps at the origin, and hand a range a degenerate polygon that the crossing and
+ * containment tests would still answer plausibly for. Either sum being zero sends the whole
+ * pair back to the particulars, and the panel then says the particulars, which is true.
  */
 export function hullDimensions(vessel: Vessel): HullDimensions {
+  const particulars = {
+    lengthMetres: vessel.loaMetres,
+    beamMetres: vessel.beamMetres,
+    from: "particulars",
+  } as const;
   const offsets = vessel.referencePointOffsets;
-  if (!offsets) {
-    return { lengthMetres: vessel.loaMetres, beamMetres: vessel.beamMetres, from: "particulars" };
-  }
-  return { ...fromOffsets(offsets), from: "offsets" };
+  if (!offsets) return particulars;
+
+  const measured = fromOffsets(offsets);
+  if (measured.lengthMetres <= 0 || measured.beamMetres <= 0) return particulars;
+  return { ...measured, from: "offsets" };
 }
 
 function fromOffsets(offsets: ReferencePointOffsets): { lengthMetres: number; beamMetres: number } {
