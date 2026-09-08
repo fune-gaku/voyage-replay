@@ -929,11 +929,17 @@ I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in naut
 ```
 
 **Read the word MINIMUM in that section's title.** What the formula gives is the intensity a
-light must have *under service conditions* to comply — a floor. Section 9 puts a ceiling on the
-same lights so they do not dazzle, and a real fitting is somewhere in between; which point in
-that band a particular lamp occupied is in no casualty report this project has met. So the
-94-to-12 between a masthead and a sidelight is the ratio of two minima, not of two fittings,
-and none of these figures may be quoted as what a lamp measured.
+light must have *under service conditions* to comply — a floor. A real fitting is at least that
+bright and may be a good deal brighter: the only word about the other end is a note at the foot
+of section 8 asking that the maximum be limited to avoid undue glare, and it puts no figure on
+it. So the rules bound this from below and not from above, and where a particular lamp sat is in
+no casualty report this project has met. The 94-to-12 between a masthead and a sidelight is the
+ratio of two minima, not of two fittings, and none of these figures may be quoted as what a lamp
+measured.
+
+(Section 9 is *Horizontal sectors*. An earlier version of this paragraph cited it for the
+ceiling, which it does not contain — the sort of mistake that reads as authority because it has
+a number in it.)
 
 **The vertical spread is weaker than that, and it is the half that lights the water.** Section
 10 gives two BANDS with a floor each — at least the full intensity within 5°, at least 60 per

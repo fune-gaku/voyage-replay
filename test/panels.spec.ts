@@ -1298,7 +1298,7 @@ describe("the streaks the lamps lay", () => {
     // And says which part of the beam profile is the rule's and which is this tool's.
     expect(html).toContain("the fall-off drawn here is THIS TOOL");
     // **The intensity is a floor; the spread that puts it on the water is not.** Section 8
-    // gives a minimum and section 9 a ceiling, so the candela is a bound. Section 10 requires
+    // gives a minimum with no figure on the maximum, so the candela is a floor. Section 10 requires
     // nothing below 7.5 degrees, and every lit patch of sea is below it - so calling the
     // whole photometric chain a floor would be the same overclaim facing the other way.
     expect(html).toContain("the ratio of two legal minima rather than of two fittings");

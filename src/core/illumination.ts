@@ -204,11 +204,12 @@ export function glitterSpreadRadians(
  *
  * **But read the word MINIMUM in the title of section 8, because it is doing work.** What the
  * formula gives is `I ... under service conditions` for a light that only just complies. A
- * real fitting is somewhere between that and the CEILING section 9 puts on it to stop lights
- * dazzling, and where in that band a particular lamp sat is not in any report this project has
- * met. So this is a lower envelope drawn as though it were the lamp: the 94-to-12 between a
- * masthead and a sidelight is the ratio of two floors rather than of two lamps, and nothing
- * here should be quoted as what a lamp measured.
+ * real fitting is at least that bright and may be a good deal brighter. The annex asks only
+ * that the maximum be limited to avoid undue glare - a note at the end of section 8, with no
+ * figure on it - so the rules put no number above this one, and where a particular lamp sat is
+ * in no report this project has met. So this is a lower envelope drawn as though it were the
+ * lamp: the 94-to-12 between a masthead and a sidelight is the ratio of two floors rather than
+ * of two lamps, and nothing here should be quoted as what a lamp measured.
  *
  * **This much is a floor. What `verticalSpread` does with it below is not** - see there.
  *

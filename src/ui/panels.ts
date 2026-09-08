@@ -378,10 +378,12 @@ const WHAT_A_LAMP_DOES =
   "figure per condition saying what a lux draws as, set so that a lamp and the moon are on " +
   "one scale. " +
   "**Two different things there, and only one of them is a bound.** Section 8 computes the " +
-  "MINIMUM intensity a light must have to comply, and section 9 caps how bright it may be " +
-  "without dazzling, so a real lamp is somewhere in that band and no casualty report says " +
-  "where: the 94-to-12 between a masthead and a sidelight is the ratio of two legal minima " +
-  "rather than of two fittings. The vertical spread is weaker than that, and which water it " +
+  "MINIMUM intensity a light must have to comply. A real fitting is at least that bright " +
+  "and may be a good deal brighter - the annex asks only that the maximum be limited to " +
+  "avoid undue glare, and puts no figure on it, so how far above the minimum a particular " +
+  "lamp sat is not bounded here or stated in any report. The 94-to-12 between a masthead " +
+  "and a sidelight is therefore the ratio of two legal minima rather than of two fittings. " +
+  "The vertical spread is weaker still, and which water it " +
   "binds depends on how far off that water is. Section 10 requires the full intensity only " +
   "within 5 degrees of the horizontal and 60 per cent of it within 7.5, and nothing below - " +
   "and for a masthead twenty metres up those two angles fall on the sea at 229 and 152 " +
