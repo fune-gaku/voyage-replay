@@ -158,8 +158,9 @@ export interface WaveUniforms {
   /**
    * What the water reflects, as a function of direction rather than as one colour.
    *
-   * The scene's own sky, so the two cannot disagree - and the only place a sky is drawn at
-   * all, since there is no dome and no environment map. See `render/sky.ts`.
+   * The scene's own sky, and the same uniforms the dome above the waterline is drawn from,
+   * so the two cannot come to disagree - which would show first at the horizon. See
+   * `render/sky.ts`.
    */
   sky: SkyUniforms;
   /** The lamps reflected in the same water, each laying its own streak. See `render/lamps.ts`. */

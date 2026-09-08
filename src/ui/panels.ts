@@ -131,8 +131,8 @@ function sky(scenario: Scenario): string {
  * computed is how bright it was: cloud decides that and no report states it, the same gap
  * this section already declares about moonlight.
  *
- * The sky itself is drawn nowhere else. There is no dome over this scene, so the body appears
- * in the water and not above it - which a reader would otherwise be left to wonder about.
+ * The body stands in the sky above the waterline as well, drawn from the same gradient, so the
+ * path in the water lies under something a reader can see rather than under nothing.
  */
 function pathNote(conditions: Conditions): string {
   const lit = lightingAt(conditions, isNight(conditions.statedLight));
@@ -284,12 +284,6 @@ const BRIGHTNESS_IS_A_BOUND =
   "of it.";
 
 /**
- * Where the sky is, said wherever a body is up - because it is not where a reader looks.
- *
- * There is no dome over this scene and no environment map: the water IS the sky here, so the
- * body appears in the reflection and never above the horizon.
- */
-/**
  * The streaks the lamps lay, which are the only reflection here that a reader can use.
  *
  * **Direction is the whole of it.** A hull reflected in daylight is a broken column of light
@@ -349,9 +343,19 @@ const LENGTH_RESTS_ON_HEIGHTS =
   "the eye is, and neither of those is recorded - both are made up from the ship's beam " +
   "(issue #8).";
 
+/**
+ * What the drawn sky is, said wherever a body is up.
+ *
+ * Above the waterline and in the water it is one gradient drawn twice, so the body stands
+ * where the almanac puts it and is reflected beneath it. **The gradient itself is chosen**,
+ * which is worth saying beside a position that is not: a clear sky's own gradient needs a
+ * turbidity no report carries, so two colours and a curve between them is what there is.
+ */
 const SKY_ONLY_IN_THE_WATER =
-  "The sky is drawn nowhere but in the water: there is no dome over this scene, so the body " +
-  "appears in the reflection and not above the horizon.";
+  "The sky above the waterline and the sky in the water are the same one, so the body stands " +
+  "where it is computed to stand and is reflected under it. Its position is arithmetic; the " +
+  "colours of the sky are not - a clear sky's own gradient needs a turbidity no report " +
+  "carries, so what is drawn is a horizon colour, a zenith colour and a curve between them.";
 
 /**
  * What sky the view put over this scenario, which is a claim of its own.
@@ -391,7 +395,8 @@ function restrictedSky({ visibilityMetres }: Conditions): string {
   const fog =
     visibilityMetres === null
       ? "no distance is given, so no fog is drawn - only the word"
-      : `fog is drawn out to the stated ${visibilityMetres} m`;
+      : `fog is drawn out to the stated ${visibilityMetres} m, though not over the sky: a fog ` +
+        "you can see a clear sky above is not a fog, and this one draws the gradient anyway";
   return (
     `The file says restricted visibility, which is a statement about the air and not about ` +
     `the sun. The view therefore draws this as a day, and ${fog}. A fog in the dark carries ` +

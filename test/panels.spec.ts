@@ -1266,8 +1266,10 @@ describe("the path on the water", () => {
     const html = panelsFor(moonlit({ significantHeightMetres: 3, derivation: "measured" }));
     expect(html).toContain("readable brightness rather than a measured one");
     expect(html).toContain("a half moon is about a ninth of a full one");
-    // And where the sky is: nowhere but in the water, since there is no dome over the scene.
-    expect(html).toContain("drawn nowhere but in the water");
+    // And what the drawn sky is: one gradient above the water and in it, whose colours are
+    // chosen where the body's position is computed.
+    expect(html).toContain("the same one, so the body stands");
+    expect(html).toContain("the colours of the sky are not");
   });
 });
 
@@ -1311,6 +1313,27 @@ describe("the streaks the lamps lay", () => {
     const html = panelsFor(atNight());
     expect(html).toContain("The lamps lay no streaks on the water");
     expect(html).not.toContain("Each lamp lays a streak on the water");
+  });
+
+  /**
+   * **What does not fit is the page's business.** A shader's array length is a constant, so
+   * past it a lit lamp lays no streak - and a page listing every light over a picture missing
+   * some of their streaks is the two disagreeing about the same night.
+   */
+  it("counts the lamps against what the water can hold", () => {
+    const subject = atNight({ significantHeightMetres: 2, derivation: "measured" });
+    // Nine from the two ships; eight lit marks takes it past the sixteen the shader carries.
+    subject.marks = Array.from({ length: 8 }, (_, i) => ({
+      id: `no-${i}`,
+      kind: "buoy" as const,
+      at: { lat: 33.9, lon: 131.7 },
+      heightMetres: 3,
+      light: { character: "Fl G 4s" },
+    }));
+    const html = panelsFor(subject);
+
+    expect(html).toContain("More lamps can be lit at once here than the water can reflect");
+    expect(html).toContain("17 against 16");
   });
 
   /** A day has no navigation lights drawn, so it has nothing to say about their streaks. */

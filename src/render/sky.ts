@@ -2,11 +2,14 @@
  * The sky, as a function of the direction you look in - which is the only form the water can
  * use it in.
  *
- * There is no sky in this scene. The background is a flat colour and there is no dome, no
- * environment map and no extra pass; the only place a sky appears is in the water, where
- * `render/waves.ts` mixes towards it by Schlick's approximation. Until now it mixed towards
- * ONE colour, so the reflection carried no information: it made the waves visible and said
- * nothing about the sky or where the moon was.
+ * There is no environment map here and no extra pass: one gradient, evaluated twice from the
+ * same uniforms. The water mixes towards it through the reflected ray, by Schlick's
+ * approximation (`render/waves.ts`); the frame above the waterline takes it through the view
+ * ray, off the inside of a dome. Before #37 it was ONE colour in both places, so the
+ * reflection carried no information - it made the waves visible and said nothing about the
+ * sky or where the moon was - and before #53 the dome was not there at all, which left the
+ * upper half of every daylight frame painted in the palest end of a gradient it was not part
+ * of.
  *
  * ## Two things in it, and only one is evidence
  *
@@ -25,7 +28,7 @@
  * the shape `displacedFraction` and `meshCarries` already use in `waves.ts`.
  */
 
-import { Color, Vector2, Vector3 } from "three";
+import { BackSide, Color, Mesh, ShaderMaterial, SphereGeometry, Vector2, Vector3 } from "three";
 
 import type { Lit } from "../core/illumination.js";
 
@@ -109,22 +112,49 @@ export function skyColourAt(
   uniforms: SkyUniforms,
   carriedSlopeVariance = 0,
 ): Color {
+  const sky = skyGradientAt(towards, uniforms);
+  if (uniforms.uSeaSlope.value < 0) return sky;
+  const width = lobeWidth(
+    uniforms.uSeaSlope.value,
+    carriedSlopeVariance,
+    uniforms.uSkyBodyLobe.value.y,
+  );
+  return sky.add(bodyGlowAt(towards, uniforms, width));
+}
+
+/** The gradient alone: what the sky and its reflection have to agree about. */
+export function skyGradientAt(towards: Vector3, uniforms: SkyUniforms): Color {
   const up = Math.max(towards.y, 0);
-  const sky = uniforms.uSkyHorizon.value
+  return uniforms.uSkyHorizon.value
     .clone()
     .lerp(uniforms.uSkyZenith.value, Math.pow(up, 1 / HORIZON_POWER));
+}
 
+/**
+ * The body at a given width, which the sky and the water are entitled to differently.
+ *
+ * A Gaussian in the angle between the two, which is what a slope distribution convolved with
+ * a small disc comes to. `acos` of the dot product rather than the chord, since the lobe can
+ * be tens of degrees wide and the two part company well inside that.
+ */
+export function bodyGlowAt(towards: Vector3, uniforms: SkyUniforms, width: number): Color {
   const lobe = uniforms.uSkyBodyLobe.value;
-  const body = uniforms.uSkyBody.value;
-  if (lobe.y <= 0 || body.lengthSq() === 0 || uniforms.uSeaSlope.value < 0) return sky;
-
-  // A Gaussian in the angle between the two, which is what a slope distribution convolved
-  // with a small disc comes to. `acos` of the dot product rather than the chord, since the
-  // lobe is tens of degrees wide and the two part company well inside that.
-  const away = Math.acos(Math.min(Math.max(towards.dot(body), -1), 1));
-  const width = lobeWidth(uniforms.uSeaSlope.value, carriedSlopeVariance, lobe.y);
+  if (lobe.y <= 0 || uniforms.uSkyBody.value.lengthSq() === 0) return new Color(0, 0, 0);
+  const away = Math.acos(Math.min(Math.max(towards.dot(uniforms.uSkyBody.value), -1), 1));
   const glow = lobe.x * Math.exp(-0.5 * (away / width) ** 2);
-  return sky.add(new Color(glow, glow, glow));
+  return new Color(glow, glow, glow);
+}
+
+/**
+ * What the SKY shows in a direction: the gradient and the body at its own size.
+ *
+ * The mirror of `SKY_DOME_GLSL`, and the reason the guard above is not repeated here - the
+ * body is up whether or not anybody wrote down a sea.
+ */
+export function skyDomeColourAt(towards: Vector3, uniforms: SkyUniforms): Color {
+  return skyGradientAt(towards, uniforms).add(
+    bodyGlowAt(towards, uniforms, uniforms.uSkyBodyLobe.value.y),
+  );
 }
 
 /**
@@ -175,6 +205,14 @@ uniform float uSeaSlope;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSkyZenith;
 
+// The gradient alone, which is the same looking at the sky and looking at its reflection.
+// **The two have to agree at the waterline**: water at a grazing angle hands back the sky
+// just above the horizon, so a second definition would show as a seam along it.
+vec3 skyGradient( vec3 towards ) {
+  float up = max( towards.y, 0.0 );
+  return mix( uSkyHorizon, uSkyZenith, pow( up, ${(1 / HORIZON_POWER).toFixed(4)} ) );
+}
+
 // The spread of anything reflected in this water, given what these normals still carry.
 // Shared with the lamps below: the width belongs to the sea, not to what is in it.
 float lobeWidth( float carried, float radius ) {
@@ -183,16 +221,87 @@ float lobeWidth( float carried, float radius ) {
   return sqrt( 2.0 * missing + floored * floored );
 }
 
-vec3 skyTowards( vec3 towards, float carried ) {
-  float up = max( towards.y, 0.0 );
-  vec3 sky = mix( uSkyHorizon, uSkyZenith, pow( up, ${(1 / HORIZON_POWER).toFixed(4)} ) );
-  if ( uSkyBodyLobe.y <= 0.0 || dot( uSkyBody, uSkyBody ) == 0.0 || uSeaSlope < 0.0 ) return sky;
-  float width = lobeWidth( carried, uSkyBodyLobe.y );
+// The body, at whatever width the caller is entitled to. **Separate from the gradient**
+// because the sky and the water are entitled to different ones: the sea spreads a
+// reflection by its own slope, and the sky shows the disc at its own half degree.
+vec3 bodyGlow( vec3 towards, float width ) {
+  if ( uSkyBodyLobe.y <= 0.0 || dot( uSkyBody, uSkyBody ) == 0.0 ) return vec3( 0.0 );
   float away = acos( clamp( dot( towards, uSkyBody ), -1.0, 1.0 ) );
-  float glow = uSkyBodyLobe.x * exp( -0.5 * pow( away / width, 2.0 ) );
-  return sky + vec3( glow );
+  return vec3( uSkyBodyLobe.x * exp( -0.5 * pow( away / width, 2.0 ) ) );
+}
+
+// What the WATER hands back. The body is dropped where no sea is stated - a mirror-sharp
+// one on water this tool decided to draw flat would assert a calm nobody recorded - and
+// that guard is the water's, which is why the sky below does not share it.
+vec3 skyTowards( vec3 towards, float carried ) {
+  vec3 sky = skyGradient( towards );
+  if ( uSeaSlope < 0.0 ) return sky;
+  return sky + bodyGlow( towards, lobeWidth( carried, uSkyBodyLobe.y ) );
 }
 `;
+
+/**
+ * The sky itself, for the frame above the waterline.
+ *
+ * **The body is drawn whether or not a sea is stated.** The guard in `skyTowards` is about
+ * not asserting a calm nobody recorded, which is an argument about water; the moon is up
+ * regardless. And it is drawn at its own half degree rather than spread by the sea, because
+ * nothing is spreading it - that is what a disc in the sky looks like.
+ */
+export const SKY_DOME_GLSL = `
+varying vec3 vSkyDirection;
+void main() {
+  vec3 towards = normalize( vSkyDirection );
+  gl_FragColor = vec4( skyGradient( towards ) + bodyGlow( towards, uSkyBodyLobe.y ), 1.0 );
+}
+`;
+
+/**
+ * How far out the sky is put.
+ *
+ * **Inside the bridge camera's far plane**, which is 80 km, or the dome is clipped away and
+ * the background shows through it. Fifty is far enough that an eye moving a few kilometres
+ * across a scenario sees no parallax in it - the dome follows the eye anyway, which is what
+ * actually settles that, and this only has to be large against the water disc in front of it.
+ */
+const SKY_DOME_METRES = 50_000;
+
+/**
+ * The sky, as something to draw: a sphere seen from the inside, centred on the eye.
+ *
+ * **It shares the water's uniform objects rather than copies of them**, so the two cannot
+ * come to describe different skies - which would show first at the waterline, where water at
+ * a grazing angle hands back very nearly the sky just above it.
+ *
+ * Unfogged, and that is a simplification worth naming: `buildFog` puts its far plane at three
+ * times the view when nothing states a visibility, so a fogged dome would be one flat fog
+ * colour in every scenario and nothing here would be fixed. A fog you can see a clear sky
+ * above is not a fog, and `ui/panels.ts` says so.
+ */
+export function buildSkyDome(uniforms: SkyUniforms): Mesh {
+  const material = new ShaderMaterial({
+    uniforms: uniforms as unknown as Record<string, { value: unknown }>,
+    vertexShader: `
+varying vec3 vSkyDirection;
+void main() {
+  vSkyDirection = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+`,
+    fragmentShader: `${SKY_GLSL}${SKY_DOME_GLSL}`,
+    side: BackSide,
+    // Behind everything and writing no depth of its own: a sky that occluded the water would
+    // be a sky in front of the sea.
+    depthWrite: false,
+    fog: false,
+  });
+
+  const dome = new Mesh(new SphereGeometry(SKY_DOME_METRES, 32, 16), material);
+  dome.name = "sky";
+  dome.renderOrder = -1;
+  dome.frustumCulled = false;
+  return dome;
+}
 
 export function makeSkyUniforms(): SkyUniforms {
   return {
@@ -209,7 +318,9 @@ export function makeSkyUniforms(): SkyUniforms {
  *
  * The variance is null where the file states no sea: there is then no slope to widen the
  * body with, and a mirror-sharp moon on water this tool decided to draw flat would assert a
- * calm nobody recorded. The gradient stays; the path does not appear.
+ * calm nobody recorded. The gradient stays and the path does not appear - **but the body is
+ * still stored**, because the sky above the waterline shows it either way. The water's own
+ * guard is in `skyTowards`.
  *
  * Zero is a different answer - a sea stated calm, on somebody's authority - and it leaves the
  * body its own half degree, which is the mirror image calm water gives.
@@ -219,10 +330,12 @@ export function setSkyBody(
   lit: Lit | null,
   measuredSlopeVariance: number | null,
 ): void {
-  // **The sea's own figure is set whether or not a body is up.** A moonless night is when a
-  // lamp's streak is the whole picture, and the lamps reflect in the same water.
+  // **Each is set whether or not the other is there.** A moonless night is when a lamp's
+  // streak is the whole picture and the lamps reflect in the same water; and a body is up
+  // whether or not anybody wrote down a sea, which the sky above the waterline draws even
+  // where the water is told to reflect nothing.
   uniforms.uSeaSlope.value = measuredSlopeVariance ?? -1;
-  if (!lit || measuredSlopeVariance === null) {
+  if (!lit) {
     uniforms.uSkyBody.value.set(0, 0, 0);
     uniforms.uSkyBodyLobe.value.set(0, 0);
     return;
