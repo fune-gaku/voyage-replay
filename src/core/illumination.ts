@@ -186,6 +186,58 @@ export function glitterSpreadRadians(
 }
 
 /**
+ * A navigation light's intensity, in candela, from the range Rule 22 gives it.
+ *
+ * **It is computable, and this project spent a while saying it was not.** Rule 22 states a
+ * minimum RANGE and no candela, which is true - but Annex I, section 8 gives the relation
+ * between them, and it is the relation the rule's own ranges were set by:
+ *
+ * `I = 3.43e6 * T * D^2 * K^(-D)`
+ *
+ * with `T` the threshold illuminance of a lamp at the limit of visibility, 2e-7 lux, `K` the
+ * atmospheric transmissivity of 0.8 per mile, and `D` the range in nautical miles. A 6 mile
+ * masthead light is 94 cd; a 3 mile sidelight is 12; a 2 mile sidelight is 4.3.
+ *
+ * So the ratios between lamps, and between a lamp and the moon, are arithmetic rather than
+ * taste. What stays declared is one exposure per condition - how many lux draw as how bright -
+ * and `render/scene.ts` holds it.
+ *
+ * The transmissivity is a clear-weather figure and is the rule's own; a real night's air is
+ * not stated in any report this project has met.
+ */
+export function candelaFromNominalRange(nauticalMiles: number): number {
+  const threshold = 2e-7;
+  const transmissivity = 0.8;
+  return 3.43e6 * threshold * nauticalMiles ** 2 * transmissivity ** -nauticalMiles;
+}
+
+/**
+ * How brightly a lamp lights a patch of water, in lux.
+ *
+ * `E = I cos(incidence) / d^2`, and the cosine off a level surface is the lamp's height over
+ * the slant range - so `E = I h / d^3`. **The cube is the part that was missing**: written as
+ * an inverse square on the horizontal range, with no height in it, a ship's own masthead light
+ * lit the sea for hundreds of metres ahead of her. It does not:
+ *
+ * | lamp | 50 m | 100 m | 300 m |
+ * |---|---|---|---|
+ * | 6 mile masthead, 20 m up | 0.012 lx | 0.0018 lx | 0.00007 lx |
+ * | 3 mile sidelight, 8 m up | 0.0015 lx | 0.0002 lx | 0.00001 lx |
+ *
+ * Starlight is about 0.002 lx and a full moon 0.25. **A ship's own masthead light puts about
+ * as much on the water at a hundred metres as the stars do**, and a tenth of what the moon
+ * did on the night of the reference case. That is the scale it has to be drawn at.
+ */
+export function lampLuxOnWater(
+  candela: number,
+  lampHeightMetres: number,
+  slantRangeMetres: number,
+): number {
+  if (slantRangeMetres <= 0) return 0;
+  return (candela * Math.max(lampHeightMetres, 0)) / slantRangeMetres ** 3;
+}
+
+/**
  * How far a lamp's streak is allowed to reach, against the range the lamp itself must carry.
  *
  * **A reflection is dimmer than the lamp**, so a streak visible where the light is not would

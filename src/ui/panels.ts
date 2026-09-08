@@ -336,9 +336,12 @@ const WHAT_A_LAMP_DOES =
   "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
   "light, and both fade out inside the range Rule 22 gives that light, because a reflection " +
   "is dimmer than its source and one that outlived the lamp would be inventing a detection. " +
-  "**How bright either was is nobody's figure**: Rule 22 states a range and no candela, the " +
-  "water's own scattering is not in any report either, so both are drawn at brightnesses " +
-  "chosen for the night rather than measured. ";
+  "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
+  "gives each light a range, Annex I gives the candela that range was set from, and the rest " +
+  "is the inverse square with the incidence angle - so a six mile masthead light twenty " +
+  "metres up lays about 0.002 lux on the sea a hundred metres off, which is what the stars " +
+  "do and a tenth of what the moon did. What stays chosen is one figure per condition saying " +
+  "what a lux draws as, and it is set so that a lamp and the moon are on one scale. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

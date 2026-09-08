@@ -918,9 +918,45 @@ same reach. It comes back from the shader separately from the streak because **i
 reflection and must not take the Fresnel factor**: Schlick's term says how much of what is
 BEHIND the surface's mirror direction comes back, and light landing on the water is not that.
 
-How much of it returns is a declared figure. Clean sea water scatters a few per cent, what is
-actually in the water decides the rest, and no report states either — so it joins `ambient`,
-`bodyLobe` and `streak` in the palette, and the page says so.
+### How much light a lamp puts on the water IS computable
+
+This project said for a while that it was not: Rule 22 states a minimum range and no candela,
+which is true and is not the end of the matter. **Annex I, section 8 gives the relation the
+rule's own ranges were set by:**
+
+```
+I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in nautical miles
+```
+
+| light | range | candela |
+|---|---:|---:|
+| masthead, vessel ≥ 50 m | 6 NM | 94 |
+| masthead, vessel < 50 m | 5 NM | 52 |
+| sidelight, vessel ≥ 50 m | 3 NM | 12 |
+| sidelight, 12–50 m | 2 NM | 4.3 |
+
+And the illuminance on the water follows: `E = I cos(incidence) / d²`, which on a level sea is
+`I h / d³` — **the cube**, because the incidence angle worsens as the range grows.
+
+| | 50 m | 100 m | 300 m |
+|---|---:|---:|---:|
+| 6 NM masthead, 20 m up | 0.012 lx | 0.0018 lx | 0.00007 lx |
+| 3 NM sidelight, 8 m up | 0.0015 lx | 0.0002 lx | 0.00001 lx |
+
+Starlight is about 0.002 lx, a full moon 0.25, and the reference case's 41 per cent moon 0.018.
+**A ship's own masthead light puts about as much on the water at a hundred metres as the stars
+do**, and a tenth of what that moon did. Written as an inverse square on the horizontal range
+with no height in it — which is how this went in — the same lamp lit the sea for hundreds of
+metres ahead of her, and it was the first thing anyone said about the night view.
+
+So the ratios are arithmetic: one lamp against another, a lamp at one range against the same
+lamp at another, and a lamp against the moon. **What stays declared is one figure per
+condition — what a lux draws as** — and it is chosen so that a full moon's 0.25 lx lands on the
+body's own exposure, which puts the moon and the lamps on one scale.
+
+The two reflectances are the other declared part, and they are reflectances rather than
+brightnesses: clean sea water scatters a few per cent back diffusely, and what is actually in
+the water decides the rest.
 
 **And it is its own figure, not a factor of the streak's.** Folded together — which is how this
 went in — the pool came out at `streak × pool` rather than at `pool`, and turning the mirror

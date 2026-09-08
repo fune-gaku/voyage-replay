@@ -49,7 +49,7 @@
 
 import { Color, Vector4 } from "three";
 
-import { STREAK_FULL_METRES, STREAK_REACH_OF_NOMINAL } from "../core/illumination.js";
+import { STREAK_REACH_OF_NOMINAL } from "../core/illumination.js";
 
 /**
  * How many lamps the water can reflect at once.
@@ -67,20 +67,20 @@ export interface LitLamp {
   at: { x: number; y: number; z: number };
   colour: Color;
   /**
-   * How bright this lamp is against the brightest one in the picture. One for a lamp that is
-   * simply lit, which is all this format can say about any of them.
+   * How strong the lamp is, in candela, **computed from the range Rule 22 gives it** by
+   * Annex I's own relation - see `candelaFromNominalRange`. A 6 mile masthead is 94 cd, a
+   * 3 mile sidelight 12.
    *
-   * **Relative, because how bright a reflection may draw belongs to the drawn condition and
-   * not to the lamp** - the same split `core/illumination.ts` makes for the moon's phase. The
-   * scene's palette carries the exposure; see `setLamps`.
+   * The lamp's own figure, with no exposure in it: what a candela becomes on screen belongs
+   * to the drawn condition, and `render/scene.ts` holds that.
    */
-  relativeBrightness: number;
+  candela: number;
   /** Which way the ship carrying it heads, in degrees true. Irrelevant to an all-round light. */
   headingDegreesTrue: number;
   /** The arc it shows over, as relative bearings clockwise from that bow. */
   arcStartDegrees: number;
   arcEndDegrees: number;
-  /** Rule 22's range for this light, in metres. The streak dies well inside it. */
+  /** Rule 22's range for this light, in metres. Both the streak and the pool die inside it. */
   nominalRangeMetres: number;
 }
 
@@ -99,17 +99,22 @@ export interface LampUniforms {
   /** (heading, arc start, arc end) in radians, and the lamp's own range in metres. */
   uLampArc: { value: Vector4[] };
   /**
-   * How much of the light landing on the water comes back out of it, and how brightly that is
-   * drawn - the two are not separable here and neither is measured.
-   *
-   * Clean sea water scatters a few per cent back and what is actually in it decides the rest,
-   * which no report states; and the scale it is drawn at is the condition's, like every other
-   * exposure. So this is one declared figure standing for both, carried in the palette with
-   * `streak` and `bodyLobe`.
+   * How much of the light landing on the water comes back out of it - the sea's own diffuse
+   * reflectance, which is a few per cent for clean water and depends on what is in it. A
+   * declared figure, but a reflectance rather than a brightness: the lux are computed.
    */
   uLampPool: { value: number };
-  /** How brightly the brightest streak may draw here. The condition's, not the lamp's. */
+  /**
+   * The same for the specular side. Near one, because Schlick's term is applied outside this
+   * and the streak is the lamp seen in the water rather than light coming out of it.
+   */
   uLampStreak: { value: number };
+  /**
+   * **What a lux draws as.** The one figure per condition that maps the computed illuminance
+   * onto the screen - and it is shared with the body's own exposure, so that a lamp and the
+   * moon are drawn on one scale. See `Palette.luxToScreen`.
+   */
+  uLampLux: { value: number };
 }
 
 export function makeLampUniforms(): LampUniforms {
@@ -119,6 +124,7 @@ export function makeLampUniforms(): LampUniforms {
     uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
     uLampPool: { value: 0 },
     uLampStreak: { value: 0 },
+    uLampLux: { value: 0 },
   };
 }
 
@@ -136,10 +142,11 @@ export function makeLampUniforms(): LampUniforms {
 export function setLamps(
   uniforms: LampUniforms,
   lamps: LitLamp[],
-  exposure: { streak: number; pool: number },
+  exposure: { streak: number; pool: number; luxToScreen: number },
 ): void {
   uniforms.uLampPool.value = exposure.pool;
   uniforms.uLampStreak.value = exposure.streak;
+  uniforms.uLampLux.value = exposure.luxToScreen;
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -149,9 +156,10 @@ export function setLamps(
       slot.set(0, 0, 0, 0);
       continue;
     }
-    // The lamp's own figure. The exposures are uniforms of their own, so that turning one of
-    // them down cannot move the other - they are two different things a lamp does.
-    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.relativeBrightness);
+    // The lamp's own figure, in candela. The exposures are uniforms of their own, so that
+    // turning one of them down cannot move the other - they are two different things a lamp
+    // does - and so that neither is folded into a number that means something else.
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.candela);
     uniforms.uLampColour.value[i]?.copy(lamp.colour);
     arc.set(
       (lamp.headingDegreesTrue * Math.PI) / 180,
@@ -203,6 +211,7 @@ uniform vec3 uLampColour[${SHADER_LAMPS}];
 uniform vec4 uLampArc[${SHADER_LAMPS}];
 uniform float uLampPool;
 uniform float uLampStreak;
+uniform float uLampLux;
 
 // What the lamps do to this patch of water: its own image of each of them, and the light
 // each of them lands on it. The second comes back through the out parameter, because it is
@@ -236,18 +245,29 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
       : ( relative >= start || relative < end );
     if ( !inside ) continue;
 
-    float spread = min( 1.0, pow( ${STREAK_FULL_METRES.toFixed(1)} / max( path, 0.001 ), 2.0 ) );
-    float t = clamp( path / reach, 0.0, 1.0 );
-    float fall = spread * ( 1.0 - t * t * ( 3.0 - 2.0 * t ) );
+    // **The lamp's own light on this water, in lux.** Rule 22 gives the range, Annex I gives
+    // the candela, and the rest is the inverse square with the incidence cosine on the
+    // surface's OWN normal - so on a level sea it falls as the cube of the slant range. It
+    // was an inverse square on the horizontal range with no height in it, which lit the sea
+    // for hundreds of metres ahead of a ship's own masthead. It does not: 94 candela twenty
+    // metres up puts 0.0018 lux on the water at a hundred metres, about what the stars do.
     vec3 toLamp = normalize( towards );
-    float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * lamp.w * fall * exp( -0.5 * pow( away / width, 2.0 ) );
-
-    // **And the water it lands on.** Lambert's cosine on the surface's own normal, falling
-    // with the same range, so a lamp lights a pool of sea around itself that is there from
-    // every bearing - which is what a lamp looks like and what a reflection alone does not.
+    float slant = max( length( towards ), 1.0 );
     float landing = max( dot( toLamp, up ), 0.0 );
-    lit += uLampColour[ i ] * uLampPool * lamp.w * fall * landing;
+    float lux = lamp.w / ( slant * slant );
+
+    // Smoothed to nothing at the reach, or the light would end at a visible edge.
+    float t = clamp( path / reach, 0.0, 1.0 );
+    float fall = 1.0 - t * t * ( 3.0 - 2.0 * t );
+
+    float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
+    sum += uLampColour[ i ] * uLampStreak * uLampLux * lux * fall
+      * exp( -0.5 * pow( away / width, 2.0 ) );
+
+    // **And the water it lands on**, which takes the incidence cosine and the sea's own
+    // reflectance. There from every bearing, where the streak is only where the geometry
+    // lines up.
+    lit += uLampColour[ i ] * uLampPool * uLampLux * lux * landing * fall;
   }
   return sum;
 }
