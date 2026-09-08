@@ -260,14 +260,99 @@ const MOST_INSTANTS = 1e6;
  * reported an edge up to a step inside the real one, which is what this whole area was fixed
  * for, and dropped an overlap shorter than one step to nothing at all.
  */
-function instants(over: { from: number; to: number; stepSeconds: number }): number[] {
+function instants(
+  over: { from: number; to: number; stepSeconds: number },
+  a: HullTrack,
+  b: HullTrack,
+): number[] {
   // Built from the index rather than by adding the step to itself, which drifts over a long
   // window and, at a small enough step, does not move at all.
   const count = Math.floor((over.to - over.from) / over.stepSeconds);
-  const list: number[] = [];
-  for (let i = 0; i <= count; i += 1) list.push(over.from + i * over.stepSeconds);
-  if (list[list.length - 1] !== over.to) list.push(over.to);
-  return list;
+  const list: number[] = [over.from, over.to];
+  for (let i = 1; i <= count; i += 1) list.push(over.from + i * over.stepSeconds);
+  // **And every sample either track states, whatever the step.** Between two samples a ship
+  // travels in a straight line, which is what lets `reach` bound how much can have happened
+  // between two looks. Step over a sample and that stops being true: two looks a minute apart
+  // can find the ships back where they started with a whole encounter in between, and the
+  // bound says nothing happened. The turns are at the samples, so the samples are looked at.
+  for (const track of [a.track, b.track]) {
+    for (const point of track.points) {
+      if (point.epochSeconds > over.from && point.epochSeconds < over.to) {
+        list.push(point.epochSeconds);
+      }
+    }
+  }
+  return [...new Set(list)].sort((one, other) => one - other);
+}
+
+/** One look at the pair: the moment, the two outlines, and the gap between them. */
+interface Look {
+  at: number;
+  shapes: { a: LocalPosition[]; b: LocalPosition[] };
+  gap: number;
+}
+
+/** The gap and the outlines it was measured between, or null outside either track. */
+function lookAt(a: HullTrack, b: HullTrack, at: number): Look | null {
+  const first = outlineAt(a, at);
+  const second = outlineAt(b, at);
+  if (!first || !second) return null;
+  return { at, shapes: { a: first, b: second }, gap: separationMetres(first, second) };
+}
+
+/**
+ * How much the gap could possibly have changed between two looks.
+ *
+ * **A bound rather than a guess, and it is what makes a coarse step safe.** Neither hull's
+ * separation can shrink by more than the two hulls moved, and the furthest any point of a hull
+ * moved is a thing already in hand - both outlines are built at both moments. So if the
+ * smaller of the two gaps is larger than that, nothing happened in between and the step may
+ * stay coarse. Where it is not, the interval is swept finely and every state change in it is
+ * seen.
+ *
+ * This is what stops a turn from being reported as continuous contact. Two hulls that touch,
+ * come clear and touch again inside one coarse step were joined into a single spell across the
+ * clear water, because the search looked at the two ends and assumed one crossing between
+ * them. Assuming is exactly what was removed from the narrowing one commit ago and this is the
+ * same assumption in the other function.
+ */
+function reach(before: Look, after: Look): number {
+  return moved(before.shapes.a, after.shapes.a) + moved(before.shapes.b, after.shapes.b);
+}
+
+/** The furthest any one point of an outline travelled between two moments. */
+function moved(before: LocalPosition[], after: LocalPosition[]): number {
+  let furthest = 0;
+  for (let i = 0; i < before.length; i += 1) {
+    const was = before[i];
+    const now = after[i];
+    if (!was || !now) continue;
+    furthest = Math.max(furthest, Math.hypot(now.east - was.east, now.north - was.north));
+  }
+  return furthest;
+}
+
+/** Every look worth taking: the step, refined wherever the pair could have changed state. */
+function looks(
+  a: HullTrack,
+  b: HullTrack,
+  over: { from: number; to: number; stepSeconds: number },
+) {
+  const taken: Look[] = [];
+  let previous: Look | null = null;
+  for (const at of instants(over, a, b)) {
+    const look = lookAt(a, b, at);
+    if (!look) continue;
+    if (previous && Math.min(previous.gap, look.gap) <= reach(previous, look)) {
+      for (let i = 1; i < SLICES; i += 1) {
+        const between = lookAt(a, b, previous.at + ((look.at - previous.at) * i) / SLICES);
+        if (between) taken.push(between);
+      }
+    }
+    taken.push(look);
+    previous = look;
+  }
+  return taken;
 }
 
 /** Everything one pass over the window finds: the least gap, and where contact opened and shut. */
@@ -281,20 +366,18 @@ function walk(
   let began: number | null = null;
   let lastClear: number | null = null;
 
-  for (const t of instants(over)) {
-    const gap = gapAt(a, b, t);
-    if (gap === null) continue;
-    if (!closest || gap < closest.metres) closest = { metres: gap, epochSeconds: t };
+  for (const { at, gap } of looks(a, b, over)) {
+    if (!closest || gap < closest.metres) closest = { metres: gap, epochSeconds: at };
     if (gap > 0) {
       // **The spell ends here, and this is what was missing.** Left open, a second contact
       // after a turn joins the first into one window across the water between them.
       if (began !== null)
-        contacts.push({ fromEpochSeconds: began, toEpochSeconds: edge(a, b, t, began) });
+        contacts.push({ fromEpochSeconds: began, toEpochSeconds: edge(a, b, at, began) });
       began = null;
-      lastClear = t;
+      lastClear = at;
       continue;
     }
-    began ??= lastClear === null ? t : edge(a, b, lastClear, t);
+    began ??= lastClear === null ? at : edge(a, b, lastClear, at);
   }
   if (began !== null) contacts.push({ fromEpochSeconds: began, toEpochSeconds: over.to });
   return { closest, contacts };

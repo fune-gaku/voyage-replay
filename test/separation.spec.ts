@@ -443,6 +443,48 @@ describe("contact over a track", () => {
   });
 
   /**
+   * **Two spells inside one coarse step, which the search used to report as one.** The
+   * boundary hunt bisected between a clear look and a touching one, which assumes a single
+   * crossing between them - the same assumption removed from the narrowing, left in the other
+   * function. A pair that touched, came clear and touched again inside one step came back as
+   * one spell across the clear water in between: not a missed contact but an invented one.
+   *
+   * A coarse step of a minute against a step of a tenth of a second, over a track that does
+   * exactly that. The fine search is the answer; the coarse one has to agree with it.
+   */
+  it("finds both spells where they happen inside one coarse step", () => {
+    const a = prepareActor(actor("A", alongside([0, 0, 0, 0, 0]), BIG_SHIP), ORIGIN);
+    // In, out, in, out - four minutes of it, so a one-minute step sees only the ends.
+    const b = prepareActor(
+      actor("B", alongside([0.0005, 0.0001, 0.0005, 0.0001, 0.0005]), BIG_SHIP),
+      ORIGIN,
+    );
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const pair = [
+      { track: a, ...ship },
+      { track: b, ...ship },
+    ] as const;
+
+    const fine = hullApproach(pair[0], pair[1], 0.1);
+    // The whole window in one step, so nothing but the tracks' own samples and the refinement
+    // stands between the two ends - and at both ends the ships are clear and in the same place
+    // they started, which is what defeats a bound taken across a sample boundary.
+    const coarse = hullApproach(pair[0], pair[1], 240);
+
+    const fineSpells = fine?.contacts ?? [];
+    const coarseSpells = coarse?.contacts ?? [];
+    expect(fineSpells).toHaveLength(2);
+    expect(coarseSpells).toHaveLength(2);
+
+    // And the same spells, not merely the same count.
+    const ends = (spells: typeof fineSpells): number[] =>
+      spells.flatMap((spell) => [spell.fromEpochSeconds, spell.toEpochSeconds]);
+    for (const [index, moment] of ends(coarseSpells).entries()) {
+      expect(moment, `${index}`).toBeCloseTo(ends(fineSpells)[index] ?? 0, 0);
+    }
+  });
+
+  /**
    * **A turning ship is where a cleverer search goes wrong.** The first version of the
    * narrowing ran a ternary search, which assumes the window holds one minimum. What is being
    * measured is the shortest distance between two polygons that are TURNING, and which pair of

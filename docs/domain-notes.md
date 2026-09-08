@@ -139,9 +139,25 @@ seen at ten one-second samples is nine seconds long. This project printed ten.
 **Its ends come off the hulls, not off the search.** A replay can be paused anywhere, so
 reporting the first second that happened to show contact puts the page up to a step away from
 the picture. Positions between samples are straight lines, so the moment the drawn hulls meet is
-exactly defined and bisection finds it: 18:13:27.961 to 18:13:37.371 here. What that cannot find
-is a touch that opens and closes between two steps, so the step is carried on the result and
-printed.
+exactly defined: 18:13:27.961 to 18:13:37.371 here.
+
+Finding it needs care, because **two hulls that are turning do not approach monotonically**.
+Which pair of vertex and edge is nearest switches as they swing, so the gap over time is
+piecewise: it can hold two valleys inside a second, and a pair can touch, come clear and touch
+again inside one step. Every search that assumed otherwise reported something false —
+a ternary search on the least gap walked away from the deeper valley, and bisecting between one
+clear look and one touching look joined two spells into one across the clear water between them.
+Neither missed a contact; both invented one.
+
+So nothing here assumes. The scan looks at **every sample either track states**, because that is
+where a ship's straight line bends and a bound taken across one says nothing — two looks a
+minute apart can find both ships back where they started with a whole encounter in between. And
+between two adjacent looks it takes a bound on what can have happened: neither gap can shrink by
+more than the two hulls moved, and the furthest any point of an outline moved is already in
+hand. Where the smaller gap is inside that, the interval is swept finely and every state change
+in it is seen. What none of it can see is an encounter entirely inside an interval the bound
+called safe — which it cannot be, the bound being a bound — so what remains is the step's own
+limit, carried on the result and printed.
 
 ## How a ship actually moves
 
