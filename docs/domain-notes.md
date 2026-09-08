@@ -205,6 +205,40 @@ in one field at one sample and another at the next has `sampleAt` swap the sourc
 midpoint, so she turns with her course and then snaps to her heading. Nothing bounds a jump.
 Asking only whether SOME direction was available misses it, both halves having one.
 
+## A camera is not a kind of picture
+
+`render/player.ts` used to derive everything about the picture from which camera was selected —
+`const diagramMode = this.view.kind === "overhead"` — and **eight** things read that one boolean:
+whether the earth curves under the hulls, whether the plan view's furniture is up, the lighting
+and the map tint and the sky, whether marks flash their rhythm, who the navigation lights are
+drawn for, whether the lamps lay streaks, which of the two credits is printed, and whether there
+is an eye at all.
+
+All eight are right for the two views that existed. None of them is answerable for a third: an
+eye 200 m up looking down at an angle is neither a chart nor a bridge.
+
+**The part that made it a type problem.** `Eye` carried the `Cast` it was standing on, and
+`audienceFor` read `eye.member === member` to decide whether a ship was looking at her own
+lights. An eye aboard nobody could not be constructed at all, whatever the cameras did.
+`LampAudience` had been the three answers this needed since #6 — diagram, self, observer — and an
+eye aboard nobody is simply an observer to everyone. The type that was ready was the one nobody
+had to change.
+
+So: `Picture` is `"chart" | "world"`, asked once of the viewpoint and handed down; `ViewSelection`
+is a chart, a named ship's bridge, or a free eye; and `Eye` carries `aboard: Cast | null` and its
+own height.
+
+Two things worth keeping separate afterwards.
+
+**The free camera is not the bridge camera widened.** `placeBridgeCamera` turns the eye along the
+ship's heading and holds it level, and both are claims — a wheelhouse faces where her bow points
+rather than where she is making good, and a watchkeeper at a window is looking at the horizon.
+Adding a depression angle to it would leave the bridge view one argument away from a camera move.
+
+**Framing belongs to the chart alone.** `frameOverhead` also tells the basemap which ground to
+fetch, so calling it from a viewpoint in the world sends the map after a rectangle nothing is
+drawing.
+
 ## How a ship actually moves
 
 A ship is not a point that changes velocity. Three things a straight line between two samples gets

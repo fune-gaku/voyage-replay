@@ -281,7 +281,7 @@ describe("the view buttons", () => {
   it("offers the plan view and one bridge for every ship", () => {
     const { parts } = wire();
     const labels = parts.views.appended.map((b) => b.textContent);
-    expect(labels).toEqual(["Overhead", "A bridge", "B bridge"]);
+    expect(labels).toEqual(["Chart", "A bridge", "B bridge"]);
   });
 
   it("starts on the plan view, and says so to a screen reader", () => {

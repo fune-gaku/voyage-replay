@@ -31,8 +31,10 @@ import type { LitLamp } from "./lamps.js";
 import {
   frameOverheadCamera,
   makeBridgeCamera,
+  makeFreeCamera,
   makeOverheadCamera,
   placeBridgeCamera,
+  placeFreeCamera,
 } from "./cameras.js";
 import { headingToRotationY, toWorld } from "./coords.js";
 import { buildOverlay, type Caption, type Overlay } from "./overlay.js";
@@ -80,10 +82,41 @@ const DEFAULT_VESSEL: Vessel = { loaMetres: 30, beamMetres: 8 };
 const OPENING_EXTENT_METRES = 1_000_000;
 const OPENING_MS = 3_500;
 
-export interface ViewSelection {
-  kind: "overhead" | "bridge";
-  /** Which ship's bridge. Ignored for the overhead view. */
-  actorId?: string;
+/**
+ * **What kind of picture this is**, which is not the same question as which camera is up.
+ *
+ * A chart is a drawing: flat earth, lit for reading, the pale basemap under it, nothing
+ * flashing, and the lamps annotated by their sectors rather than seen from anywhere. The world
+ * is a place: the earth bends away, the sky is the sky, marks keep their rhythm, and a lamp
+ * lays a streak on the water.
+ *
+ * Eight things used to read `view.kind === "overhead"` for this - so a viewpoint that was
+ * neither of the two that existed had no answer to any of them. See issue #63.
+ */
+export type Picture = "chart" | "world";
+
+/**
+ * Where the picture is taken from, which decides the picture's kind but is not it.
+ *
+ * A chart has no eye at all - a drawing is not a place. A bridge puts one at a named ship's
+ * wheelhouse. A free viewpoint puts one wherever it is told, aboard nobody, and it is the
+ * reason the two above had to stop being a boolean.
+ */
+export type ViewSelection =
+  | { kind: "chart" }
+  | { kind: "bridge"; actorId?: string }
+  | {
+      kind: "free";
+      at: LocalPosition;
+      headingDegreesTrue: number;
+      heightMetres: number;
+      /** Degrees below the horizontal. Zero looks level, as a bridge does. */
+      depressionDegrees?: number;
+    };
+
+/** Which of the two pictures a viewpoint draws. */
+export function pictureOf(view: ViewSelection): Picture {
+  return view.kind === "chart" ? "chart" : "world";
 }
 
 interface Cast {
@@ -136,9 +169,19 @@ function placementOf(member: Cast, state: SampledState): { heading: number; offs
 
 /** The watchkeeper the picture is being drawn for: which ship, where her eyes are, and her bow. */
 interface Eye {
-  member: Cast;
   position: LocalPosition;
   heading: number;
+  /** How high above the water it is, which is the ship's on a bridge and its own otherwise. */
+  eyeHeightMetres: number;
+  /**
+   * The ship it is standing on, and null where it is standing on none.
+   *
+   * **The one field that stopped a free viewpoint being expressible.** An eye used to BE a
+   * ship's bridge - it carried the `Cast` - so an eye anywhere else could not be constructed,
+   * whatever the cameras did. Aboard nobody, every ship is another ship: `audienceFor` hands
+   * back an observer for all of them, which is what `LampAudience` already meant.
+   */
+  aboard: Cast | null;
 }
 
 /**
@@ -174,7 +217,7 @@ function audienceFor(
   eye: Eye | null,
 ): LampAudience {
   if (!eye) return { kind: "diagram" };
-  if (eye.member === member) return { kind: "self" };
+  if (eye.aboard === member) return { kind: "self" };
   return {
     kind: "observer",
     relativeBearingDegrees: relativeBearingDegrees(position, eye.position, heading),
@@ -237,9 +280,10 @@ export class Replay {
   private readonly renderer: WebGLRenderer;
   private readonly overhead: OrthographicCamera;
   private readonly bridge: PerspectiveCamera;
+  private readonly free: PerspectiveCamera;
 
   private aspect: number;
-  private view: ViewSelection = { kind: "overhead" };
+  private view: ViewSelection = { kind: "chart" };
   /**
    * The plan view's scale in metres, or null while it follows the ships.
    *
@@ -295,6 +339,7 @@ export class Replay {
     this.aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
     this.overhead = makeOverheadCamera();
     this.bridge = makeBridgeCamera(this.aspect);
+    this.free = makeFreeCamera(this.aspect);
 
     this.resize();
     this.update();
@@ -439,8 +484,10 @@ export class Replay {
     const height = Math.max(this.canvas.clientHeight, 1);
     this.renderer.setSize(width, height, false);
     this.aspect = width / height;
-    this.bridge.aspect = this.aspect;
-    this.bridge.updateProjectionMatrix();
+    for (const camera of [this.bridge, this.free]) {
+      camera.aspect = this.aspect;
+      camera.updateProjectionMatrix();
+    }
     // The shortest wave the sea can carry is a property of the frame: a fixed figure would
     // keep the chop until it crawled on a small window and drop it early on a large one, so
     // the drawn band would depend on how big somebody's browser is.
@@ -463,16 +510,20 @@ export class Replay {
 
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
-    const diagramMode = this.view.kind === "overhead";
-    const eye = diagramMode ? null : this.eye();
+    // **Asked once, of the viewpoint, and handed down.** Every consumer below used to derive
+    // it again from which camera was up, which is why a third viewpoint had no answer to any
+    // of them: they were not asking about the picture, they were asking about the camera.
+    const picture = pictureOf(this.view);
+    const chart = picture === "chart";
+    const eye = this.eye();
     for (const member of this.stage.cast) {
       // Where she has got to, on her own track, before anything is said about her hull.
       member.line.setNow(this.currentSeconds);
-      this.place(member, diagramMode, eye);
+      this.place(member, chart, eye);
     }
 
-    this.stage.diagram.visible = diagramMode;
-    this.stage.sceneParts.setDiagramView(diagramMode);
+    this.stage.diagram.visible = chart;
+    this.stage.sceneParts.setDiagramView(chart);
     this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
     // Every frame, because the sky is the one part of the environment that moves: the
     // reference case runs eighty-seven minutes and nautical twilight ends eleven of them
@@ -483,12 +534,12 @@ export class Replay {
     this.stage.sceneParts.setEye(eye?.position ?? null, eye?.heading ?? 0);
     for (const mark of this.stage.marks) {
       this.float(mark, eye);
-      this.shine(mark, diagramMode);
+      this.shine(mark, chart);
     }
     // After the lamps have been shown or hidden, since what is lit is what lays a streak.
-    this.stage.sceneParts.setLamps(this.lampsLit(diagramMode));
+    this.stage.sceneParts.setLamps(this.lampsLit(chart));
     this.renderer.render(this.stage.sceneParts.scene, this.activeCamera());
-    this.drawOverlay(diagramMode);
+    this.drawOverlay(picture);
   }
 
   /**
@@ -501,12 +552,12 @@ export class Replay {
    * false statement about the picture rather than an attribution of it. Two layers now, in
    * two views, so the caption names whichever one is actually on screen.
    */
-  private drawOverlay(diagramMode: boolean): void {
+  private drawOverlay(picture: Picture): void {
     this.clock.set(
       `${formatDate(this.currentSeconds, this.timeZone)} ` +
         `${formatClock(this.currentSeconds, this.timeZone)} local`,
     );
-    this.credit.set(this.creditFor(diagramMode));
+    this.credit.set(this.creditFor(picture));
     if (!this.overlay.showing) return;
 
     this.renderer.autoClear = false;
@@ -515,28 +566,49 @@ export class Replay {
   }
 
   /** Whichever layer of ground this view is actually showing, or nothing. */
-  private creditFor(diagramMode: boolean): string {
-    if (diagramMode) return this.mapCredited ? BASEMAP_CREDIT : "";
+  private creditFor(picture: Picture): string {
+    // **The layer this PICTURE shows, not the camera that showed it.** A free eye is in the
+    // world, so it stands over the elevation tiles; drawing the pale basemap under one would
+    // be a chart seen from an angle, which is a different claim about what is on screen.
+    if (picture === "chart") return this.mapCredited ? BASEMAP_CREDIT : "";
     return this.landCredited ? TERRAIN_CREDIT : "";
   }
 
   /** The ship the camera is standing on, if it is standing on one. */
   private viewer(): Cast | null {
     if (this.view.kind !== "bridge") return null;
+    const wanted = this.view.actorId;
     const cast = this.stage.cast;
-    return cast.find((c) => c.actor.id === this.view.actorId) ?? cast[0] ?? null;
+    return cast.find((c) => c.actor.id === wanted) ?? cast[0] ?? null;
   }
 
   /**
-   * Where the watchkeeper's eyes are, worked out once.
+   * Where the eye is, worked out once.
    *
-   * The camera goes here and the light arcs are answered from here, and they have to be the
-   * same point or the picture disagrees with itself: this is tens of metres from the
-   * reported position on a large ship - antenna to hull centre, then hull centre to the
-   * wheelhouse - which is nothing at four miles and decides which sidelight shows at a
-   * cable.
+   * The camera goes here, the light arcs are answered from here, the earth bends away from
+   * here and the water is drawn around here. They have to be the same point or the picture
+   * disagrees with itself: on a bridge this is tens of metres from the reported position -
+   * antenna to hull centre, then hull centre to the wheelhouse - which is nothing at four
+   * miles and decides which sidelight shows at a cable.
+   *
+   * **A chart has none.** Not "the eye is somewhere unhelpful": a drawing is not taken from
+   * anywhere, and the difference is what the flat earth and the unlit lamps rest on.
    */
   private eye(): Eye | null {
+    if (this.view.kind === "chart") return null;
+    if (this.view.kind === "free") {
+      return {
+        position: this.view.at,
+        heading: this.view.headingDegreesTrue,
+        eyeHeightMetres: this.view.heightMetres,
+        aboard: null,
+      };
+    }
+    return this.bridgeEye();
+  }
+
+  /** The watchkeeper's eyes, or nothing where her own track has not reached this instant. */
+  private bridgeEye(): Eye | null {
     const member = this.viewer();
     if (!member) return null;
 
@@ -545,8 +617,9 @@ export class Replay {
 
     const { heading, offset } = placementOf(member, state);
     return {
-      member,
       heading,
+      eyeHeightMetres: member.eyeHeightMetres,
+      aboard: member,
       position: offsetAlongHeading(
         state.position,
         heading,
@@ -733,7 +806,10 @@ export class Replay {
   }
 
   private activeCamera(): Camera {
-    if (this.view.kind === "overhead") {
+    // **Framing is the chart's, and only the chart's.** `frameOverhead` also tells the map
+    // which ground to fetch, so calling it from a viewpoint in the world would send the
+    // basemap after a rectangle nothing is drawing.
+    if (this.view.kind === "chart") {
       this.frameOverhead();
       return this.overhead;
     }
@@ -742,8 +818,21 @@ export class Replay {
     const eye = this.eye();
     if (!eye) return this.overhead;
 
-    placeBridgeCamera(this.bridge, eye.position, eye.heading, eye.member.eyeHeightMetres);
+    if (this.view.kind === "free") {
+      placeFreeCamera(this.free, eye.position, this.facing(), eye.eyeHeightMetres);
+      return this.free;
+    }
+    placeBridgeCamera(this.bridge, eye.position, eye.heading, eye.eyeHeightMetres);
     return this.bridge;
+  }
+
+  /** Which way the free camera looks, level unless it was told to look down. */
+  private facing(): { headingDegreesTrue: number; depressionDegrees: number } {
+    if (this.view.kind !== "free") return { headingDegreesTrue: 0, depressionDegrees: 0 };
+    return {
+      headingDegreesTrue: this.view.headingDegreesTrue,
+      depressionDegrees: this.view.depressionDegrees ?? 0,
+    };
   }
 
   /**
