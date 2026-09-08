@@ -218,11 +218,13 @@ export interface LampLight {
 /**
  * The TypeScript mirror of the loop in `LAMPS_GLSL`, for anything that has to ASK.
  *
- * **Nothing in Node can compile a shader**, and this file has now twice been reasoned into
- * the wrong radiometry and back - once by scaling a streak with the distance to the eye,
- * which merges every lamp on a ship into one lane, and once by leaving the beam profile out,
- * which lights the sea under a ship's own bow. Both were arguments; neither survived a
- * measurement. So the rule is written where a measurement can reach it.
+ * **Nothing in Node can compile a shader**, and this file has now been reasoned into the
+ * wrong radiometry and back three times - once by scaling a streak with the distance to the
+ * eye, which merges every lamp on a ship into one lane; once by leaving the beam profile out,
+ * which lights the sea under a ship's own bow; and once by fading the POOL over the way round
+ * through the eye, which makes the light landing on a patch of water a function of where the
+ * camera is. Each was an argument; none survived a measurement. So the rule is written where
+ * a measurement can reach it.
  */
 export function lampLight(
   lamp: LitLamp,
@@ -233,9 +235,9 @@ export function lampLight(
   const { at, up } = patch;
   const towards = { x: lamp.at.x - at.x, y: lamp.at.y - at.y, z: lamp.at.z - at.z };
   const slant = Math.max(Math.hypot(towards.x, towards.y, towards.z), 1);
-  const path = slant + Math.hypot(where.eye.x - at.x, where.eye.y - at.y, where.eye.z - at.z);
   const reach = lamp.nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
-  if (path >= reach || !litFromLamp({ x: at.x, z: at.z }, lamp, arcOf(lamp))) {
+  // The lamp's own leg, because that is the only one the light travels to get here.
+  if (slant >= reach || !litFromLamp({ x: at.x, z: at.z }, lamp, arcOf(lamp))) {
     return { streak: 0, pool: 0 };
   }
 
@@ -243,15 +245,31 @@ export function lampLight(
   const landing = Math.max(dot(toLamp, up), 0);
   // How far below the lamp's own horizon this patch lies - geometry, not the facet's tilt.
   const spread = verticalSpread((Math.asin(Math.min(Math.max(toLamp.y, 0), 1)) * 180) / Math.PI);
-  const t = Math.min(Math.max(path / reach, 0), 1);
-  const common =
-    exposure.luxToScreen * ((lamp.candela * spread) / (slant * slant)) * (1 - t * t * (3 - 2 * t));
+  const reaching = exposure.luxToScreen * ((lamp.candela * spread) / (slant * slant));
 
+  const path = slant + Math.hypot(where.eye.x - at.x, where.eye.y - at.y, where.eye.z - at.z);
   const away = Math.acos(Math.min(Math.max(dot(reflectedAt(patch, where.eye), toLamp), -1), 1));
   return {
-    streak: exposure.streak * common * Math.exp(-0.5 * (away / where.lobeWidthRadians) ** 2),
-    pool: exposure.pool * common * landing,
+    streak:
+      exposure.streak *
+      reaching *
+      lampFade(path, reach) *
+      Math.exp(-0.5 * (away / where.lobeWidthRadians) ** 2),
+    pool: exposure.pool * reaching * landing * lampFade(slant, reach),
   };
+}
+
+/**
+ * Smoothed to nothing at the reach, or the light would end at a visible edge.
+ *
+ * **Which distance is handed in is the whole question.** The streak's is the way round through
+ * the eye, so that a reflection goes out before the lamp it reflects. The pool's is the lamp's
+ * own leg, because the pool is light landing on water and nothing about where an observer
+ * stands can reach back and change that.
+ */
+function lampFade(travelledMetres: number, reachMetres: number): number {
+  const t = Math.min(Math.max(travelledMetres / reachMetres, 0), 1);
+  return 1 - t * t * (3 - 2 * t);
 }
 
 /** Where the eye's own ray goes after this patch turns it, which decides what it shows. */
@@ -301,6 +319,14 @@ uniform float uLampPool;
 uniform float uLampStreak;
 uniform float uLampLux;
 
+// Smoothed to nothing at the reach, or the light would end at a visible edge. Which distance
+// is handed in is the whole question the caller has to answer: the streak's is the way round
+// through the eye, the pool's is the lamp's own leg.
+float lampFade( float travelled, float reach ) {
+  float t = clamp( travelled / reach, 0.0, 1.0 );
+  return 1.0 - t * t * ( 3.0 - 2.0 * t );
+}
+
 // What the lamps do to this patch of water: its own image of each of them, and the light
 // each of them lands on it. The second comes back through the out parameter, because it is
 // not a reflection and so must not take the Fresnel factor.
@@ -313,15 +339,12 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     vec4 lamp = uLamp[ i ];
     if ( lamp.w <= 0.0 ) continue;
     vec3 towards = lamp.xyz - at;
-    // **The whole way round: lamp to water to eye.** A reflected ray takes two sides of a
-    // triangle where the direct one takes the third, so this is never shorter than the
-    // lamp's own range to the observer - and the cut-off below therefore puts the streak out
-    // before the lamp goes out, whatever the geometry. Measured on the first leg alone,
-    // water close under a lamp carries a streak to an eye standing beyond the light's own
-    // range, which is the picture inventing a detection.
-    float path = length( towards ) + distance( at, cameraPosition );
+    float slant = max( length( towards ), 1.0 );
     float reach = uLampArc[ i ].w * ${STREAK_REACH_OF_NOMINAL.toFixed(2)};
-    if ( path >= reach ) continue;
+    // **The lamp's own leg decides whether this water is lit at all**, because that is the
+    // only leg the light travels to get here. Where anyone happens to be standing cannot
+    // reach back and put a patch of sea out.
+    if ( slant >= reach ) continue;
 
     // The bearing of THIS WATER from the lamp, off the bow of the ship carrying it.
     float bearing = atan( at.x - lamp.x, -( at.z - lamp.z ) ) - uLampArc[ i ].x;
@@ -334,7 +357,6 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     if ( !inside ) continue;
 
     vec3 toLamp = normalize( towards );
-    float slant = max( length( towards ), 1.0 );
     float landing = max( dot( toLamp, up ), 0.0 );
 
     // **A navigation light is a horizontal-beam fitting.** Annex I section 10 fixes the
@@ -351,10 +373,6 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
       ? 1.0
       : exp( -${BEAM_FALL_PER_RADIAN.toFixed(4)} * ( depression - ${FULL_BEAM_RADIANS.toFixed(5)} ) );
 
-    // Smoothed to nothing at the reach, or the light would end at a visible edge.
-    float t = clamp( path / reach, 0.0, 1.0 );
-    float fall = 1.0 - t * t * ( 3.0 - 2.0 * t );
-
     // **Both scale with the light reaching THIS patch of water**, which is the lamp's
     // intensity in this direction over the distance to it. That is Cox and Munk's glitter
     // radiance for a point source - intensity times the slope density over the square of the
@@ -364,15 +382,27 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // every lamp lays one lane of one brightness and the three on a ship become one.
     float reaching = lamp.w * spread / ( slant * slant );
 
-    // The reflection takes no incidence cosine - a mirror does not care how obliquely the
-    // light arrives, only where it goes.
+    // **The whole way round for the streak: lamp to water to eye.** A reflected ray takes
+    // two sides of a triangle where the direct one takes the third, so this is never shorter
+    // than the lamp's own range to the observer - and the cut-off therefore puts the streak
+    // out before the lamp goes out, whatever the geometry. Measured on the first leg alone,
+    // water close under a lamp carries a streak to an eye standing beyond the light's own
+    // range, which is the picture inventing a detection.
+    float path = slant + distance( at, cameraPosition );
+    // And it takes no incidence cosine - a mirror does not care how obliquely the light
+    // arrives, only where it goes.
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * uLampLux * reaching * fall
+    sum += uLampColour[ i ] * uLampStreak * uLampLux * reaching * lampFade( path, reach )
       * exp( -0.5 * pow( away / width, 2.0 ) );
 
     // The pool does, because that is what Lambert's law is: light spread over the area it
-    // falls on. There from every bearing, where the streak is only where the geometry lines up.
-    lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;
+    // falls on. There from every bearing, where the streak is only where the geometry lines
+    // up - **and so it fades on the lamp's leg alone.** Carried the eye's leg too, as this
+    // did, and the light landing on a patch of sea becomes a function of where the camera
+    // is: the same water two hundred metres under a six-mile masthead lost a factor of
+    // eighty between an eye alongside and one three kilometres off, and went out altogether
+    // at 5.4 km while the lamp itself was nominally good for 11.1.
+    lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * lampFade( slant, reach );
   }
   return sum;
 }

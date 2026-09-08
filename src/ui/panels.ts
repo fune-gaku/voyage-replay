@@ -336,6 +336,10 @@ const WHAT_A_LAMP_DOES =
   "sea inside the lamp's own arc, so a sidelight's colour never reaches water it does not " +
   "light, and both fade out inside the range Rule 22 gives that light, because a reflection " +
   "is dimmer than its source and one that outlived the lamp would be inventing a detection. " +
+  "They fade over different distances though, and the difference is the point: the streak " +
+  "over the whole way round, lamp to water to eye, so that it goes out before the lamp it " +
+  "reflects; the light on the sea over the lamp's own leg alone, because where an observer " +
+  "stands decides how much of it comes back to them and never how much arrived. " +
   "**How much light a lamp puts on the water IS computable**, and it is computed: Rule 22 " +
   "gives each light a range, Annex I gives the candela that range was set from, and the rest " +
   "is the inverse square with the incidence angle - so a six mile masthead light twenty " +

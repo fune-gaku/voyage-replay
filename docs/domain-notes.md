@@ -1054,6 +1054,16 @@ ones somebody thought of. Measured on the lamp-to-water leg alone — which is t
 write it — water lying close under a lamp still carries a streak to an eye standing four miles
 off a three-mile light.
 
+**And the pool must be kept out of it.** All of the above is about the streak, which is the lamp
+seen in the water. The pool is the lamp's light landing on the water, and an observer is not in
+that: where somebody stands decides how much of it comes back to them, never how much arrived.
+Fading it over the whole path — which is what falls out of writing one `fall` and multiplying
+both by it — makes the illumination of the sea a function of the camera. Measured on the water
+200 m under a 6 NM masthead: the pool fell by a factor of 84 between an eye alongside and one
+3 km off, and went out altogether at 5.4 km while the lamp itself was nominally good to 11.1 km.
+So the pool is gated and faded on the lamp's own leg, and `test/lamps.spec.ts` pins it by moving
+only the eye and requiring the pool to be unchanged.
+
 The peak falls as the inverse square inside that, which is a point source's light on the water,
 and is held flat inside a hundred metres so that a lamp close aboard does not divide by nothing.
 

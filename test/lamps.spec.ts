@@ -282,11 +282,12 @@ describe("what reaches the shader", () => {
  * that shows each of them is different water: the specular point divides the distance between
  * the eye and the lamp in the ratio of their heights, and their heights differ.
  *
- * This block exists because the shader was reasoned about twice and wrong twice - once by
- * scaling a streak with the distance to the eye, which merges every lamp on a ship into one
- * lane, and once by leaving the beam profile out, which floods the sea under a ship's own
- * bow. Neither survived being measured, and neither could be measured until the rule was
- * written where a test could reach it.
+ * This block exists because the shader was reasoned about three times and wrong three times -
+ * once by scaling a streak with the distance to the eye, which merges every lamp on a ship
+ * into one lane; once by leaving the beam profile out, which floods the sea under a ship's
+ * own bow; and once by fading the pool over the way round through the eye, which makes the
+ * light landing on a patch of water a function of where the camera is. None survived being
+ * measured, and none could be measured until the rule was written where a test could reach it.
  */
 describe("what each lamp puts on the water", () => {
   const EYE = { x: 0, y: 11, z: 0 };
@@ -322,6 +323,43 @@ describe("what each lamp puts on the water", () => {
     }
     return best.at;
   }
+
+  /**
+   * **The pool is the light landing on the water, and the observer is not in it.** Lambert's
+   * law spreads the light over the area it falls on; where somebody is standing decides which
+   * of that comes back to them, not how much arrived. Faded over the way round through the
+   * eye - as this was - the same water two hundred metres under a six-mile masthead lost a
+   * factor of eighty between an eye alongside and one three kilometres off.
+   *
+   * The streak is the other way about and must stay so: it is the lamp seen in the water, and
+   * Rule 22's range has to bind it over the whole path or a reflection outlives the lamp.
+   */
+  it("holds the pool still when only the eye moves, and moves the streak", () => {
+    const masthead = aboard(42, -32);
+    const water = { at: { x: 0, y: 0, z: -280 }, up: UP };
+    const near = lampLight(masthead, water, WHERE, EXPOSURE);
+    const far = lampLight(masthead, water, { ...WHERE, eye: { x: 0, y: 11, z: 3000 } }, EXPOSURE);
+
+    expect(far.pool).toBe(near.pool);
+    expect(far.pool).toBeGreaterThan(0);
+    expect(far.streak).not.toBeCloseTo(near.streak, 12);
+  });
+
+  /**
+   * And the streak's cut-off may not take the pool with it. Half of a six-mile lamp's range
+   * is 5.6 km; an eye beyond that sees no reflection of it in this water, but the water is
+   * fifty metres from the lamp and is still lit.
+   */
+  it("puts the streak out beyond the reach without putting the water out", () => {
+    const masthead = aboard(42, -32);
+    const water = { at: { x: 0, y: 0, z: -300 }, up: UP };
+    const beyond = { ...WHERE, eye: { x: 0, y: 11, z: 5400 } };
+    const light = lampLight(masthead, water, beyond, EXPOSURE);
+
+    expect(light.streak).toBe(0);
+    expect(light.pool).toBeGreaterThan(0);
+    expect(light.pool).toBe(lampLight(masthead, water, WHERE, EXPOSURE).pool);
+  });
 
   it("puts two mastheads' lanes in two different places, because they are", () => {
     const forward = aboard(42, -32);
@@ -400,7 +438,7 @@ describe("the copy that runs on the card", () => {
     // taking the incidence cosine for it lets a tilted wave pull the beam down to itself.
     expect(LAMPS_GLSL).toContain("float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );");
     expect(LAMPS_GLSL).toContain(
-      "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * fall;",
+      "lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * lampFade( slant, reach );",
     );
   });
 
@@ -429,9 +467,19 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("if ( uSeaSlope < 0.0 ) return sum;");
   });
 
-  it("measures the reach over the whole path, lamp to water to eye", () => {
-    expect(LAMPS_GLSL).toContain("length( towards ) + distance( at, cameraPosition )");
-    expect(LAMPS_GLSL).toContain("if ( path >= reach ) continue;");
+  it("measures the streak's reach over the whole path, lamp to water to eye", () => {
+    expect(LAMPS_GLSL).toContain("float path = slant + distance( at, cameraPosition );");
+    expect(LAMPS_GLSL).toContain("lampFade( path, reach )");
+  });
+
+  /**
+   * **The pool is light landing on water, so nothing about the observer may enter it.** The
+   * loop is left on the lamp's own leg and the pool fades on it, or a patch of sea goes out
+   * because somebody moved.
+   */
+  it("gates the loop and the pool on the lamp's own leg", () => {
+    expect(LAMPS_GLSL).toContain("if ( slant >= reach ) continue;");
+    expect(LAMPS_GLSL).toContain("lampFade( slant, reach )");
   });
 
   it("carries the reach the range rule sets, and the light it works in", () => {
