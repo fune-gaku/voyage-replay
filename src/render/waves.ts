@@ -196,9 +196,25 @@ export function pixelAngle(verticalFieldOfViewDegrees: number, heightPixels: num
  */
 export const DRAWN_FLOOR_METRES = 0.001;
 
-/** The components a picture can show. Everything else is under a millimetre. */
+/**
+ * The components a picture can show, carrying the whole sea between them.
+ *
+ * **What is left is scaled back up to the variance the set arrived with**, for the reason
+ * `normalised` in `core/seaway.ts` gives about the truncated band: the components dropped
+ * carried some of the sea, and letting it go would draw water flatter than the height the
+ * page prints beside it. It changes nothing on an ordinary sea, where what falls out has no
+ * amplitude to speak of, and everything on a sea of a centimetre, where it is most of them.
+ */
 export function drawable(components: WaveComponent[]): WaveComponent[] {
-  return components.filter((wave) => wave.amplitudeMetres >= DRAWN_FLOOR_METRES);
+  const kept = components.filter((wave) => wave.amplitudeMetres >= DRAWN_FLOOR_METRES);
+  if (kept.length === 0) return [];
+  const scale = Math.sqrt(varianceOf(components) / varianceOf(kept));
+  return kept.map((wave) => ({ ...wave, amplitudeMetres: wave.amplitudeMetres * scale }));
+}
+
+/** The surface variance a set of components makes, which is what the height rests on. */
+function varianceOf(components: WaveComponent[]): number {
+  return components.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
 }
 
 export function makeWaveUniforms(): WaveUniforms {

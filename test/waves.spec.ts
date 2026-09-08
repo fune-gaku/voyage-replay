@@ -12,6 +12,7 @@ import {
   applyWaves,
   displacedFraction,
   makeWaveUniforms,
+  drawable,
   meshCarries,
   pixelAngle,
   setWaves,
@@ -347,6 +348,45 @@ describe("the angle the shortest drawable wave has to fill", () => {
   /** A frame with no height yet - a canvas before layout - must not divide by zero. */
   it("survives a frame that has no height yet", () => {
     expect(Number.isFinite(pixelAngle(55, 0))).toBe(true);
+  });
+});
+
+/**
+ * **The floor is a rule about the picture, so the picture is built from what it leaves.**
+ *
+ * A component under a millimetre costs a sine per vertex and draws nothing; the lowest bin
+ * produces one on every sea, since it starts at a sixth of the peak frequency where the
+ * spectrum holds nothing at all. What matters is that dropping them does not quietly flatten
+ * the water: the sea the page prints a height for has to be the sea on screen.
+ */
+describe("what is too small to draw", () => {
+  it("keeps the significant height after dropping what cannot be seen", () => {
+    for (const hs of [3, 0.6, 0.05, 0.02, 0.01]) {
+      const whole = waveComponents(seawayOf(hs));
+      const shown = drawable(whole);
+      if (shown.length === 0) continue;
+      const heightOf = (components: WaveComponent[]): number =>
+        4 * Math.sqrt(components.reduce((t, w) => t + w.amplitudeMetres ** 2 / 2, 0));
+      expect(heightOf(shown), `${hs} m`).toBeCloseTo(heightOf(whole), 9);
+    }
+  });
+
+  /**
+   * A centimetre of sea is where this bites: only one component of the forty clears the
+   * floor, so without the rescaling the water would be drawn at 45 per cent of the height
+   * printed beside it - and nothing on the page would say which figure was the picture's.
+   */
+  it("gives the survivors the share of the ones that went", () => {
+    const whole = waveComponents(seawayOf(0.01));
+    const shown = drawable(whole);
+    expect(shown.length).toBeLessThan(whole.length);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown[0]?.amplitudeMetres ?? 0).toBeGreaterThan(whole[0]?.amplitudeMetres ?? 0);
+  });
+
+  /** And a sea nothing in it can show is drawn as nothing rather than as one tall wave. */
+  it("draws nothing at all where no component clears the floor", () => {
+    expect(drawable(waveComponents(seawayOf(0.004)))).toHaveLength(0);
   });
 });
 

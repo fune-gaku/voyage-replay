@@ -472,10 +472,13 @@ function seaSection(scenario: Scenario): string {
   const wind = windRows(conditions) + disagreementNote(conditions);
   if (!sea) return wind + `<p>${escapeHtml(NO_SEA)}</p>`;
 
-  // The components the RENDERER draws, not a second reading of the band. The generator is
-  // seeded from the sea itself, so this is the same set - and the sea drawn is the rough end
-  // of the estimate, which is what `render/scene.ts` passes to the water.
-  const drawn = waveComponents(sea.rough);
+  // The components the RENDERER draws, through the renderer's own two rules: the generator
+  // is seeded from the sea itself, and `drawable` drops what is under a millimetre and gives
+  // the rest its share. Same sea, same direction, same filter - so every figure below is
+  // about the water on screen rather than about a second reading of the band.
+  const drawn = drawable(
+    waveComponents(sea.rough, sea.fromDegreesTrue ?? ASSUMED_DIRECTION_DEGREES_TRUE),
+  );
 
   const rows: [string, string][] = [
     ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
@@ -486,30 +489,33 @@ function seaSection(scenario: Scenario): string {
         ? "no waves to have one"
         : `${sea.rough.peakPeriodSeconds.toFixed(1)} s (${PERIOD_SOURCE[sea.periodFrom]})`,
     ],
-    [
-      "Coming from",
-      // Keyed on the DIRECTION's own provenance, not the period's. A file may state a
-      // bearing on a sea of no height - a decayed swell has one - and hiding it because the
-      // period is absent denies a figure the file contains.
-      sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0
-        ? "no waves to come from anywhere"
-        : sea.fromDegreesTrue === null
-          ? `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`
-          : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
-    ],
+    ["Coming from", directionRow(sea)],
     ["Derivation", sea.derivation],
-    ["Waves drawn", bandRow(drawn)],
+    ["Waves drawn", bandRow(drawn, sea.rough.significantHeightMetres > 0)],
   ];
   return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
 }
 
+/**
+ * Where the sea runs from, keyed on the DIRECTION's own provenance rather than the period's.
+ *
+ * A file may state a bearing on a sea of no height - a decayed swell has one - and hiding it
+ * because the period is absent denies a figure the file contains.
+ */
+function directionRow(sea: SeaEstimate): string {
+  if (sea.directionFrom !== "stated" && sea.rough.significantHeightMetres <= 0) {
+    return "no waves to come from anywhere";
+  }
+  if (sea.fromDegreesTrue === null) {
+    return `${ASSUMED_DIRECTION_DEGREES_TRUE.toFixed(0)} deg (assumed - nothing states it)`;
+  }
+  return `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`;
+}
+
 /** The shortest and longest wavelengths actually carrying the drawn sea, or null for a calm. */
 function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number } | null {
-  // `drawable` is the renderer's own rule, taken from it rather than restated: the water is
-  // built out of exactly these, so the row below cannot describe a band the picture has not
-  // got. A component under a millimetre is dropped there and so is not reported here.
-  const lengths = drawable(drawn).map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
-  if (lengths.length === 0) return null;
+  if (drawn.length === 0) return null;
+  const lengths = drawn.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
   return { shortest: Math.min(...lengths), longest: Math.max(...lengths) };
 }
 
@@ -523,15 +529,16 @@ function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number 
  * while the waves that come out of them for a 3 m sea run from 1.9 m to 174 m. Printing the
  * edge would be the page describing a sea the picture does not have.
  */
-function bandRow(drawn: WaveComponent[]): string {
+function bandRow(drawn: WaveComponent[], hasHeight: boolean): string {
   // Two different nothings. A sea of no height has no components at all; a sea of four
   // millimetres has forty and the renderer keeps none of them, since not one stands a
   // millimetre high. Saying "no height" over a height printed in the row above would be the
   // page contradicting itself one line up.
-  if (drawn.length === 0) return "none, on a sea of no height";
   const band = drawnBand(drawn);
-  if (!band) return "none - nothing in this sea stands a millimetre high";
-  return `${band.shortest.toFixed(1)} m to ${band.longest.toFixed(0)} m of wavelength`;
+  if (band) return `${band.shortest.toFixed(1)} m to ${band.longest.toFixed(0)} m of wavelength`;
+  return hasHeight
+    ? "none - nothing in this sea stands a millimetre high"
+    : "none, on a sea of no height";
 }
 
 /** The rms slope of a surface made of these components: `atan` of the summed variance. */

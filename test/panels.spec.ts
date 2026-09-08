@@ -1123,6 +1123,32 @@ describe("the band the sea is drawn from", () => {
   });
 
   /**
+   * **The figures in the note come off the drawn set, not off a second reading of it.** A
+   * centimetre of sea keeps one component of the forty, so a note computed from all of them
+   * would describe a surface forty times better resolved than the one on screen - and the
+   * height it is scaled to would be the one the row above prints, which is the picture's.
+   */
+  it("takes the note's own figures from the components the water is made of", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.01, derivation: "measured" },
+    };
+    const sea = seawayFrom(subject.environment);
+    if (!sea) throw new Error("a stated centimetre of sea has to give an estimate");
+    const shown = drawable(waveComponents(sea.rough, 0));
+    const slope = shown.reduce(
+      (total, wave) => total + (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+
+    expect(shown.length).toBeLessThan(40);
+    expect(panelsFor(subject)).toContain(
+      `against ${((Math.atan(Math.sqrt(slope)) * 180) / Math.PI).toFixed(1)} here`,
+    );
+  });
+
+  /**
    * The slope quoted is this sea's, summed off those same components - not a figure taken
    * once on a 3 m sea and printed over every other.
    */
