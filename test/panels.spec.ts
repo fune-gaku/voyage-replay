@@ -1303,7 +1303,12 @@ describe("the streaks the lamps lay", () => {
     // whole photometric chain a floor would be the same overclaim facing the other way.
     expect(html).toContain("the ratio of two legal minima rather than of two fittings");
     expect(html).toContain("those two angles fall on the sea at 229 and 152");
-    expect(html).toContain("beyond 229 m is drawn at the floor");
+    // **All three zones, because two of them was the last version of this mistake.** The far
+    // water is on the full floor, the middle band has a 60 per cent floor the curve exceeds,
+    // and only the near field - which is where the light is - has no floor at all.
+    expect(html).toContain("Beyond 229 m the drawn value IS the full floor");
+    expect(html).toContain("Between 152 and 229 m the rule asks for 60 per cent");
+    expect(html).toContain("Inside 152 m no floor applies at all");
     expect(html).toContain("The lit patch anyone would notice is this tool");
     // And not the two overclaims this sentence has already been, in both directions.
     expect(html).not.toContain("All of that is a FLOOR");

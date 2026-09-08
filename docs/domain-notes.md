@@ -958,7 +958,7 @@ water**. For a masthead 20 m up, 7.5° lands at 152 m and 5° at 229 m:
 
 **The bright part is the part with no rule under it.** The peak is at 78 m and the figure
 quoted throughout is at 100 m, both inside 152, and the peak is 3.4× the light at 229 m where
-the guarantee starts. So the lit patch anyone would notice is this project's curve rather than
+the full floor starts. So the lit patch anyone would notice is this project's curve rather than
 a bound on anybody's lamp, while the faint water further out is a floor. The panel says which
 is which, and `test/lamps.spec.ts` pins the two crossings.
 

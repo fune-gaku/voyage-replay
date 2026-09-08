@@ -257,7 +257,7 @@ export function minimumCandelaForRange(nauticalMiles: number): number {
  *
  * **The bright part is the part with no rule under it.** The peak is at 78 m and the figure
  * quoted throughout is at 100 m; both are inside 152 and rest entirely on the chosen tail, and
- * the peak is 3.4 times the light at 229 m where the guarantee starts. So the near field - the
+ * the peak is 3.4 times the light at 229 m where the FULL floor starts. So the near field - the
  * lit patch anyone would notice - is this project's curve rather than a bound on anybody's
  * lamp, while the faint water further out is a floor. What survives as a bound everywhere is
  * the intensity itself, out of section 8.

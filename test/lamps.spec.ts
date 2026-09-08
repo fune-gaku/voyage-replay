@@ -189,16 +189,19 @@ describe("how far a streak reaches", () => {
   });
 
   /**
-   * **Where this curve is a bound on a real lamp and where it is not.** Section 10 gives two
-   * BANDS with a floor each - the full intensity within five degrees, sixty per cent within
-   * seven and a half - and requires nothing below. Between five and seven and a half this
-   * curve runs ABOVE the floor, so a complying lamp may legally be dimmer than the picture;
-   * below seven and a half there is no floor to be above. And every patch of sea a lamp
-   * lights is down there: the brightest water under a masthead twenty metres up is 14.4
-   * degrees below its beam. So the light on the water is a choice, not an at-least, and
-   * saying otherwise was the same overclaim as quoting the maximum, facing the other way.
+   * **Where this curve is a bound on a real lamp and where it is not - in three parts, not
+   * two.** Section 10 gives two BANDS with a floor each: the full intensity within five
+   * degrees, sixty per cent within seven and a half, and nothing below. So the curve equals
+   * the floor inside five degrees, runs ABOVE the sixty per cent floor between five and seven
+   * and a half - a complying lamp may legally be dimmer than the picture there - and below
+   * seven and a half has no floor to be above at all.
+   *
+   * On the water those bands are RANGES, because a patch's depression falls as it gets
+   * further off. The bright near field is in the unregulated part and the faint far field is
+   * on the floor, and this suite has already had that sentence wrong in both directions: once
+   * calling the whole of it a floor, once calling the whole of it a choice.
    */
-  it("is a bound on a real lamp only within five degrees, which is not where the sea is", () => {
+  it("binds a real lamp in three bands, which fall on the water as three ranges", () => {
     // At and inside the first band the drawn curve IS the floor.
     expect(verticalSpread(5)).toBe(1);
     // In the second band it sits above the floor: a complying lamp may be dimmer here.
@@ -223,7 +226,8 @@ describe("how far a streak reaches", () => {
     expect(depressionAt(100)).toBeCloseTo(11.31, 2);
     expect(at(78)).toBeGreaterThan(at(30));
     expect(at(78)).toBeGreaterThan(at(300));
-    // And it is 3.4 times the light at the range where the guarantee starts.
+    // And it is 3.4 times the light at the range where the FULL floor starts (the 60 per
+    // cent one has already started at 152 m).
     expect(at(78) / at(228.6)).toBeCloseTo(3.4, 1);
     // Symmetric: five degrees up is as much within the band as five degrees down.
     expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);

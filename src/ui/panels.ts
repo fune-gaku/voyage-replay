@@ -385,11 +385,13 @@ const WHAT_A_LAMP_DOES =
   "binds depends on how far off that water is. Section 10 requires the full intensity only " +
   "within 5 degrees of the horizontal and 60 per cent of it within 7.5, and nothing below - " +
   "and for a masthead twenty metres up those two angles fall on the sea at 229 and 152 " +
-  "metres. So the faint water beyond 229 m is drawn at the floor and is a bound on a real " +
-  "lamp; the bright part is not. The brightest patch, at 78 m, sits 14 degrees under the " +
-  "beam where the rule asks for nothing, and it is 3.4 times the light where the guarantee " +
-  "starts. **The lit patch anyone would notice is this tool's curve**, and the real lamp may " +
-  "have been brighter or dimmer than what is drawn there. ";
+  "metres, which makes three zones rather than two. Beyond 229 m the drawn value IS the full " +
+  "floor, so that faint water is a bound on a real lamp. Between 152 and 229 m the rule asks " +
+  "for 60 per cent and this curve draws more, so a complying lamp may be dimmer there than " +
+  "the picture. Inside 152 m no floor applies at all - and that is where the light is: the " +
+  "brightest patch, at 78 m, sits 14 degrees under the beam and is 3.4 times the sea at 229 " +
+  "where the full floor starts. **The lit patch anyone would notice is this tool's curve**, " +
+  "and the real lamp may have been brighter or dimmer than what is drawn there. ";
 
 /**
  * **Read the bearing off a streak and not the length.**
