@@ -723,8 +723,10 @@ target on its bearing is seen against it or lost in it, which is the kind of thi
 argues about.
 
 - **Where it lies** is the body's own azimuth, computed from the clock and the position.
-- **How wide it is** is about twice the sea's rms slope — tilt a facet by an angle and the ray
-  it reflects turns by twice that — so a glitter path is a direct measurement of the surface.
+- **How wide it is** follows from the sea's slope — tilt a facet by an angle and the ray it
+  reflects turns by twice that — so a glitter path is a direct measurement of the surface.
+  See the note below on which width, because "about twice the rms slope" is not the number a
+  Gaussian lobe wants.
 - **How bright it was** is not computable from anything in a report. Cloud decides it and no
   source this project has met states it, and this renderer is not photometrically calibrated
   anyway. What carries is the RATIO: one phase of the moon against another, and either against
@@ -753,19 +755,28 @@ This is why #37 waited for #36, and why widening the band was not enough on its 
 Munk photographed sun glitter off Maui in 1951–52 and fitted `mss = 0.003 + 0.00512 U` (*JOSA*
 44, 1954, 838) — the whole surface's slope, capillary-gravity ripples included.
 
-| Hs | wind that raises it | mss | rms slope | path width |
-|---:|---:|---:|---:|---:|
-| 1 m | 6.8 m/s | 0.038 | 11.0° | 22.1° |
-| 2 m | 9.7 m/s | 0.053 | 12.9° | 25.8° |
-| 3 m | 11.8 m/s | 0.064 | **14.2°** | **28.3°** |
-| 5 m | 15.3 m/s | 0.081 | 15.9° | 31.8° |
+| Hs | wind that raises it | mss | rms slope | lobe σ | lane at half brightness |
+|---:|---:|---:|---:|---:|---:|
+| 1 m | 6.8 m/s | 0.038 | 11.0° | 15.8° | 37° |
+| 2 m | 9.7 m/s | 0.053 | 12.9° | 18.6° | 44° |
+| 3 m | 11.8 m/s | 0.064 | **14.2°** | **20.4°** | **48°** |
+| 5 m | 15.3 m/s | 0.081 | 15.9° | 23.1° | 54° |
 
-The drawn sea's slope is 5.4° at Hs 3 after #36, so reflecting a point body off the drawn
-normals alone lays a path 11° wide where the sea lays one of 28: **water sharper than any that
-exists, asserted by a picture**. So the missing roughness goes into the body's own lobe.
-Slopes add in quadrature, so what is missing is `measured − drawn` as variances and the extra
-spread of the reflected ray is twice its root — 26.3° for a 3 m sea, which convolved with what
-the normals already do comes out at the measured width.
+**Three widths, and they are not interchangeable.** The rms slope is `sqrt(mss)`, the way one
+is conventionally quoted. "About twice the rms slope" — 28.3° for a 3 m sea, and the figure
+the issue used — is a characteristic radius in two dimensions. What a Gaussian lobe takes is
+the standard deviation along ONE axis: `mss` is the total of two slope components, so one axis
+carries half of it, and the ray turns by twice the facet, giving `sigma = sqrt(2 mss)` = 20.4°.
+Handing the 28.3 to the lobe draws a lane half again too wide, and the page and the picture
+then describe different water. **The page prints the full width at half maximum**, because
+that is the one figure a reader could check against the screen.
+
+The drawn sea's slope is 5.4° at Hs 3 after #36 — a lobe of 7.7° against the sea's own 20.4 —
+so reflecting a point body off the drawn normals alone lays a lane a third of the width the
+sea lays: **water sharper than any that exists, asserted by a picture**. So the missing
+roughness goes into the body's own lobe. Slopes add in quadrature, so what is missing is
+`measured − drawn` as variances, and the body is given `sqrt(2 (measured − drawn))` = 18.9°,
+which with what the normals already do comes back to 20.4°.
 
 **Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not**, and the
 alternative is a number tuned until the picture looks right.

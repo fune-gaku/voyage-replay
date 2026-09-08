@@ -98,8 +98,8 @@ describe("the sky a flat water surface hands back", () => {
  * thing a report argues about.
  */
 describe("the path a body lays", () => {
-  /** Twenty-six degrees of spread: a 3 m sea, from `core/illumination.ts`. */
-  const spread = (26.3 * Math.PI) / 180;
+  /** The lobe of a 3 m sea, from `core/illumination.ts`: one axis of the ray's own spread. */
+  const spread = (18.9 * Math.PI) / 180;
 
   it("is brightest towards the body and falls away from it", () => {
     const uniforms = gradientSky();
@@ -114,9 +114,10 @@ describe("the path a body lays", () => {
 
   /**
    * **A Gaussian this wide has a tail, and the tail must not become the sky.** Two bodies
-   * at the same altitude on opposite bearings are only 98 degrees apart, where a lobe of 26
-   * still carries a thousandth of its peak - so a peak chosen for the core alone lifts the
-   * whole sky. It is what a first draft of this did, by about a third of the night palette.
+   * at the same altitude on opposite bearings are only 98 degrees apart, where a lobe of
+   * nineteen degrees still carries a ten-thousandth of its peak - so a peak chosen for the
+   * core alone lifts the whole sky. It is what a first draft of this did, by about a third
+   * of the night palette.
    */
   it("leaves the far side of the sky where it found it", () => {
     const uniforms = gradientSky();
@@ -173,7 +174,7 @@ describe("the path a body lays", () => {
     // And against a real sea's spread it disappears: a quarter degree against twenty-six.
     const rough = gradientSky();
     setSkyBody(rough, moon(191, 41), spread);
-    expect((rough.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(26.3, 2);
+    expect((rough.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(18.9, 2);
   });
 
   it("draws no path where no body is up", () => {

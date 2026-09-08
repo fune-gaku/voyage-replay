@@ -129,10 +129,24 @@ export function lightingAt(conditions: Conditions, drawnAsNight: boolean): Lit |
  * drawn normals alone therefore draws a path 11 degrees wide where the sea lays one of 28:
  * water sharper than any that exists, asserted by a picture.
  *
- * So the missing roughness is put into the BODY instead, and this returns how much. Slopes
- * add in quadrature, so what is missing is `measured - drawn` as variances; the extra spread
- * of the reflected ray is twice its root. Convolved with what the normals already do, the
- * path comes out at the measured width.
+ * So the missing roughness is put into the BODY instead, and this returns how much, **as the
+ * standard deviation of the reflected ray's direction along one axis** - which is what a
+ * Gaussian lobe wants and is not the same number as the width of the path.
+ *
+ * Two conversions, and getting either wrong is a lane half again too wide:
+ *
+ * - **`mss` is the TOTAL of two slope components**, which is how Cox and Munk report it and
+ *   how an rms slope is conventionally quoted. One axis carries half of it.
+ * - **A facet tilted by an angle turns its ray by twice that**, so the ray's spread is twice
+ *   the surface's.
+ *
+ * Together, `sigma = 2 * sqrt(mss / 2) = sqrt(2 * mss)`: 20.4 degrees for the whole of a 3 m
+ * sea, against the 28.3 that "twice the rms slope" gives - larger by exactly the root of two,
+ * because that phrase measures a radius in two dimensions and this measures one axis. Slopes
+ * add in quadrature, so what is left for the body is `measured - drawn` as variances.
+ *
+ * Small angles throughout: `tan` and its angle differ by under three per cent at the
+ * steepest sea this is used on.
  *
  * **Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not.**
  * The alternative is a number tuned until the picture looks right, which is the thing this
@@ -154,5 +168,5 @@ export function glitterSpreadRadians(
   // Never negative: a drawn surface steeper than the measured one needs nothing added, and
   // the square root of a negative would come back as a silent NaN in a uniform.
   const missing = Math.max(measured - drawnSlopeVariance, 0);
-  return 2 * Math.atan(Math.sqrt(missing));
+  return Math.sqrt(2 * missing);
 }

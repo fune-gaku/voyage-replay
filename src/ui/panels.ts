@@ -172,14 +172,33 @@ function pathNote(conditions: Conditions): string {
 function widthOf(drawn: WaveComponent[]): string {
   const heights = drawn.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
   const measured = coxMunkSlopeDegrees(4 * Math.sqrt(heights));
+  const across = laneWidthDegrees(4 * Math.sqrt(heights));
   return (
-    `It is drawn about ${(2 * measured).toFixed(0)} degrees wide - twice the sea's rms slope, ` +
-    "since a facet tilted by an angle turns the ray it reflects by twice that. The drawn " +
-    `surface is flatter than the measured one (${rmsSlopeDegrees(drawn).toFixed(1)} degrees ` +
-    `against ${measured.toFixed(1)}), so the difference is put into the body's own spread ` +
-    "rather than left out of the picture. "
+    `It is drawn about ${across.toFixed(0)} degrees across at half its brightness - a facet ` +
+    "tilted by an angle turns the ray it reflects by twice that, so the lane measures the " +
+    `sea's slope directly. The drawn surface is flatter than the measured one ` +
+    `(${rmsSlopeDegrees(drawn).toFixed(1)} degrees rms against ${measured.toFixed(1)}), so ` +
+    "the difference is put into the body's own spread rather than left out of the picture. "
   );
 }
+
+/**
+ * How wide the lane is, **at half its brightness**, which is a definition rather than a
+ * flourish.
+ *
+ * "About twice the rms slope" is the usual shorthand and it is not a width a reader can
+ * check: it is a characteristic radius in two dimensions, and it is larger than the lobe's
+ * own standard deviation by the root of two. The full width at half maximum is the one
+ * figure that means the same thing on the page and in the shader - and the two ends of that
+ * are 28 degrees against 48 for a 3 m sea, which is more than a quibble.
+ */
+function laneWidthDegrees(significantHeightMetres: number): number {
+  const variance = coxMunkSlopeVariance(windRaisingMetresPerSecond(significantHeightMetres));
+  return (GAUSSIAN_FULL_WIDTH * Math.sqrt(2 * variance) * 180) / Math.PI;
+}
+
+/** The width of a Gaussian at half its height, in standard deviations: `2 sqrt(2 ln 2)`. */
+const GAUSSIAN_FULL_WIDTH = 2 * Math.sqrt(2 * Math.LN2);
 
 /**
  * Why a body that is up still lays no lane - and **there are two of these as well.**

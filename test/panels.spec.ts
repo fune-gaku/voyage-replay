@@ -1188,8 +1188,10 @@ describe("the path on the water", () => {
   it("names the bearing it lies on and the width it is drawn at", () => {
     const html = panelsFor(moonlit({ significantHeightMetres: 3, derivation: "measured" }));
     expect(html).toContain("The moon stands 77 degrees up on 166 degrees");
-    // Twice the measured rms slope of the sea a 3 m wind raises: Cox and Munk's 14.2.
-    expect(html).toContain("drawn about 28 degrees wide");
+    // **A width with a definition on it**: the full width at half maximum of the lobe, which
+    // for a 3 m sea is 48 degrees. "About twice the rms slope" is the usual shorthand and is
+    // a different quantity - a radius in two dimensions - larger by the root of two.
+    expect(html).toContain("drawn about 48 degrees across at half its brightness");
     expect(html).toContain("put into the body");
   });
 

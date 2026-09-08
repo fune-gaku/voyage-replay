@@ -111,28 +111,43 @@ describe("which body lights an instant", () => {
  * does not describe.
  */
 describe("how much wider the reflected body has to be drawn", () => {
-  /** Slopes add in quadrature, so drawn plus spread comes to the measured width. */
-  it("makes up exactly what the drawn surface is missing", () => {
-    const hs = 3;
-    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
-    const spread = glitterSpreadRadians(hs, drawn) ?? 0;
+  /** The reflected ray's own spread, along one axis, from a surface of this slope variance. */
+  const rayFrom = (slopeVariance: number): number => Math.sqrt(2 * slopeVariance);
 
-    const measured = coxMunkSlopeVariance(windRaisingMetresPerSecond(hs));
-    const total = Math.atan(Math.sqrt(drawn + Math.tan(spread / 2) ** 2));
-    expect((total * 180) / Math.PI).toBeCloseTo(
-      (Math.atan(Math.sqrt(measured)) * 180) / Math.PI,
-      6,
-    );
+  /**
+   * **Slopes add in quadrature, so what the normals give plus what the body is given comes
+   * to the measured sea.** That is the whole construction, and it is checked against Cox and
+   * Munk rather than against the arithmetic that produced it.
+   */
+  it("makes up exactly what the drawn surface is missing", () => {
+    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
+    const spread = glitterSpreadRadians(3, drawn) ?? 0;
+    const measured = coxMunkSlopeVariance(windRaisingMetresPerSecond(3));
+    expect(Math.hypot(rayFrom(drawn), spread)).toBeCloseTo(rayFrom(measured), 12);
   });
 
   /**
-   * The figure the issue quoted: a 3 m sea lays a path about 28 degrees across, and the
-   * drawn normals alone would give eleven.
+   * **Two conversions, and either one dropped is a lane half again too wide.** `mss` is the
+   * TOTAL of two slope components, so one axis carries half of it; and a facet turns its ray
+   * by twice its own tilt. Together the lobe's standard deviation is `sqrt(2 mss)` - 20.4
+   * degrees for the whole of a 3 m sea, against the 28.3 that "twice the rms slope" gives,
+   * which is a characteristic radius in two dimensions rather than a width along one.
    */
-  it("comes out at the width Cox and Munk measured for a 3 m sea", () => {
+  it("takes one axis of the ray's spread, not the two-dimensional radius", () => {
+    const measured = coxMunkSlopeVariance(windRaisingMetresPerSecond(3));
+    const whole = glitterSpreadRadians(3, 0) ?? 0;
+
+    expect((whole * 180) / Math.PI).toBeCloseTo(20.4, 1);
+    const shorthand = 2 * Math.atan(Math.sqrt(measured));
+    expect((shorthand * 180) / Math.PI).toBeCloseTo(28.3, 1);
+    // The root of two, less the two per cent that `atan` takes out of a 14 degree slope.
+    expect(shorthand / whole).toBeCloseTo(Math.SQRT2, 1);
+  });
+
+  /** And what is left for the body once the drawn normals have had their share. */
+  it("leaves the body the part the drawn sea cannot supply", () => {
     const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
-    const spread = glitterSpreadRadians(3, drawn) ?? 0;
-    expect((spread * 180) / Math.PI).toBeCloseTo(26.3, 0);
+    expect(((glitterSpreadRadians(3, drawn) ?? 0) * 180) / Math.PI).toBeCloseTo(18.9, 1);
   });
 
   it("widens the path as the sea grows, because the wind that raised it did", () => {
