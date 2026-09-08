@@ -212,19 +212,43 @@ export interface HullApproach {
  * rather than as a depth for the reason `separationMetres` gives.
  */
 export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullApproach | null {
-  // **A step of zero walks for ever and a negative one walks away.** Substituting a sensible
-  // one would hide a caller's mistake behind an answer that looks like an answer; this is a
-  // programming error rather than anything a file can say, so it says so.
+  const from = Math.max(a.track.startSeconds, b.track.startSeconds);
+  const to = Math.min(a.track.endSeconds, b.track.endSeconds);
+  checkStep(stepSeconds, from, to);
+  if (to < from) return null;
+  const over = { from, to, stepSeconds };
+  const scan = walk(a, b, over);
+  if (!scan.closest) return null;
+  return { ...closest(a, b, scan.closest, over), contacts: scan.contacts, stepSeconds };
+}
+
+/**
+ * Whether a step will actually walk this window, which "positive and finite" does not settle.
+ *
+ * **An epoch second is about 1.7e9, where the gap between one double and the next is 2.4e-7.**
+ * So `t + 1e-10 === t`: a step that is positive, finite and far too small leaves the loop
+ * variable exactly where it was, for ever. Rejecting non-positive steps was half the guard.
+ *
+ * The other half is the count. A step of a microsecond passes both tests and asks for ten
+ * billion polygon comparisons, which is not an answer arriving slowly; it is the same hang
+ * with extra steps. Both are the caller's mistake rather than anything a file can say, so
+ * both say so rather than being quietly replaced by a step that works.
+ */
+function checkStep(stepSeconds: number, from: number, to: number): void {
   if (!Number.isFinite(stepSeconds) || stepSeconds <= 0) {
     throw new Error(`hullApproach needs a positive step in seconds, not ${stepSeconds}`);
   }
-  const from = Math.max(a.track.startSeconds, b.track.startSeconds);
-  const to = Math.min(a.track.endSeconds, b.track.endSeconds);
-  if (to < from) return null;
-  const scan = walk(a, b, { from, to, stepSeconds });
-  if (!scan.closest) return null;
-  return { ...scan.closest, contacts: scan.contacts, stepSeconds };
+  if (from + stepSeconds <= from) {
+    throw new Error(`hullApproach step ${stepSeconds} s is too small to advance a clock`);
+  }
+  const count = (to - from) / stepSeconds;
+  if (count > MOST_INSTANTS) {
+    throw new Error(`hullApproach step ${stepSeconds} s asks for ${count.toFixed(0)} looks`);
+  }
 }
+
+/** More looks than any reconstruction needs, and far more than one page should wait for. */
+const MOST_INSTANTS = 1e6;
 
 /**
  * The moments to look at: the step, and both ends of the overlap whatever the step lands on.
@@ -237,9 +261,12 @@ export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullA
  * for, and dropped an overlap shorter than one step to nothing at all.
  */
 function instants(over: { from: number; to: number; stepSeconds: number }): number[] {
+  // Built from the index rather than by adding the step to itself, which drifts over a long
+  // window and, at a small enough step, does not move at all.
+  const count = Math.floor((over.to - over.from) / over.stepSeconds);
   const list: number[] = [];
-  for (let t = over.from; t < over.to; t += over.stepSeconds) list.push(t);
-  list.push(over.to);
+  for (let i = 0; i <= count; i += 1) list.push(over.from + i * over.stepSeconds);
+  if (list[list.length - 1] !== over.to) list.push(over.to);
   return list;
 }
 
@@ -272,6 +299,45 @@ function walk(
   if (began !== null) contacts.push({ fromEpochSeconds: began, toEpochSeconds: over.to });
   return { closest, contacts };
 }
+
+/**
+ * The least gap near the step that showed it, rather than the value that step happened to hold.
+ *
+ * **The contact edges were bisected and this was not, which left the page asserting a grid
+ * reading as a distance.** Two ships passing without touching are nearest somewhere between
+ * two looks, so the panel printed a gap up to a step stale and a moment to match - under prose
+ * that says nothing about either being approximate.
+ *
+ * A ternary search over the step either side of the best look. The gap between two hulls
+ * moving in straight lines is smooth and, over a window this short, has one minimum in it; the
+ * search cannot find a deeper one in a window the scan skipped, which is the same limit that
+ * lets a short contact fall between two looks and is declared with it. It never returns worse
+ * than the reading it started from.
+ */
+function closest(
+  a: HullTrack,
+  b: HullTrack,
+  found: { metres: number; epochSeconds: number },
+  over: { from: number; to: number; stepSeconds: number },
+): { metres: number; epochSeconds: number } {
+  if (found.metres <= 0) return found;
+  let low = Math.max(over.from, found.epochSeconds - over.stepSeconds);
+  let high = Math.min(over.to, found.epochSeconds + over.stepSeconds);
+  for (let step = 0; step < NARROWINGS; step += 1) {
+    const third = (high - low) / 3;
+    const nearer = gapAt(a, b, low + third);
+    const further = gapAt(a, b, high - third);
+    if (nearer === null || further === null) break;
+    if (nearer < further) high -= third;
+    else low += third;
+  }
+  const at = (low + high) / 2;
+  const gap = gapAt(a, b, at);
+  return gap !== null && gap < found.metres ? { metres: gap, epochSeconds: at } : found;
+}
+
+/** Enough to put the moment inside a millisecond of a one-second step. */
+const NARROWINGS = 30;
 
 /**
  * When the hulls actually met, between a sample that was clear and one that was not.

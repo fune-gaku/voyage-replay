@@ -425,6 +425,45 @@ describe("contact over a track", () => {
     }
   });
 
+  /**
+   * **Positive and finite is not the same as able to move a clock.** An epoch second is about
+   * 1.7e9, where the gap between one double and the next is 2.4e-7 - so `t + 1e-10 === t` and
+   * the loop stands still for ever. And a step that DOES advance can still ask for ten billion
+   * polygon comparisons, which is the same hang taking a different route.
+   */
+  it("refuses a step too small to advance a clock, or one asking for too many looks", () => {
+    const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const one = { track: a, ...ship };
+
+    expect(() => hullApproach(one, one, Number.MIN_VALUE)).toThrow(/too small to advance/);
+    expect(() => hullApproach(one, one, 1e-10)).toThrow(/too small to advance/);
+    // Advances the clock, and asks for six hundred million looks over these two minutes.
+    expect(() => hullApproach(one, one, 1e-6)).toThrow(/looks/);
+  });
+
+  /**
+   * **The least gap comes off the hulls too, not off the step that happened to show it.**
+   * Two ships passing without touching are nearest somewhere between two looks, so a grid
+   * reading is up to a step stale - and the panel prints it as a distance with no hedge. The
+   * contact edges were already bisected; this is the same fix on the other branch.
+   */
+  it("narrows the least gap below the step it searched at", () => {
+    // B slides past A: nearest between the samples rather than on one of them.
+    const a = prepareActor(actor("A", alongside([0, 0, 0]), BIG_SHIP), ORIGIN);
+    const b = prepareActor(actor("B", alongside([0.0008, 0.0006, 0.0008]), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+
+    const fine = hullApproach({ track: a, ...ship }, { track: b, ...ship }, 0.1);
+    const coarse = hullApproach({ track: a, ...ship }, { track: b, ...ship }, 10);
+
+    expect(coarse?.contacts).toEqual([]);
+    expect(coarse?.metres).toBeGreaterThan(0);
+    // Refined, the coarse search lands within a centimetre of the fine one rather than
+    // wherever its ten-second grid fell.
+    expect(coarse?.metres).toBeCloseTo(fine?.metres ?? 0, 2);
+  });
+
   it("is null where the two tracks never overlap in time", () => {
     const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
     const late = actor("B", alongside([0, 0]), BIG_SHIP);

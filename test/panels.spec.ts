@@ -341,7 +341,7 @@ describe("renderPanels", () => {
 
     expect(overlapping).toContain("in contact");
     // And says what the search could have missed, which is anything shorter than its step.
-    expect(overlapping).toContain("a touch shorter than that could fall between");
+    expect(overlapping).toContain("falling wholly between two looks is not there to be narrowed");
     expect(overlapping).toMatch(/\d\d:\d\d:\d\d to \d\d:\d\d:\d\d local, [\d.]+ s/);
     // And not a range in metres, which is what it would have printed before.
     expect(overlapping).not.toContain("Between hulls</th><td>0.0 m");

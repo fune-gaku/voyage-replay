@@ -740,11 +740,11 @@ function hullNote(
     "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
     `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
     `And ${against(hulls, antennaeAt)} the reported positions are nearest, so the two rows are not two ` +
-    "readings of one instant. Where they touch, the ends of each spell are found on those " +
-    "hulls rather than on the search, but the positions between samples are joined by " +
+    "readings of one instant. Whether they touch or pass, the moment is narrowed off those " +
+    "hulls rather than left on the search - but the positions between samples are joined by " +
     `straight lines, so the times are this tool's interpolation and not the source's. It ` +
-    `looked every ${hulls.stepSeconds} s, so a touch shorter than that could fall between ` +
-    "two looks and go unreported."
+    `looked every ${hulls.stepSeconds} s and narrowed from the nearest look, so a pass or a ` +
+    "touch falling wholly between two looks is not there to be narrowed towards."
   );
 }
 
