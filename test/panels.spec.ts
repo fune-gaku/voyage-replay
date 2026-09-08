@@ -1297,11 +1297,14 @@ describe("the streaks the lamps lay", () => {
     expect(html).toContain("a quarter of what the stars do");
     // And says which part of the beam profile is the rule's and which is this tool's.
     expect(html).toContain("the fall-off drawn here is THIS TOOL");
-    // **And that the whole photometric chain is a floor, not a measurement.** Annex I gives
-    // minima; a complying lamp is somewhere between them and section 9's ceiling, and no
-    // report says where. Quoting the minima as the lamp is the overclaim to guard against.
-    expect(html).toContain("All of that is a FLOOR");
+    // **The intensity is a floor; the spread that puts it on the water is not.** Section 8
+    // gives a minimum and section 9 a ceiling, so the candela is a bound. Section 10 requires
+    // nothing below 7.5 degrees, and every lit patch of sea is below it - so calling the
+    // whole photometric chain a floor would be the same overclaim facing the other way.
     expect(html).toContain("the ratio of two legal minima rather than of two fittings");
+    expect(html).toContain("the sea a lamp lights is all below");
+    expect(html).toContain("not a floor under anyone");
+    expect(html).not.toContain("All of that is a FLOOR");
   });
 
   /**

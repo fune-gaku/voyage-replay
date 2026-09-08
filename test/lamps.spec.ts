@@ -186,6 +186,35 @@ describe("how far a streak reaches", () => {
     // the prose in `core/illumination.ts` quotes. Thirty METRES is not thirty degrees, and
     // writing the one figure under the other is how that sentence went wrong.
     expect(verticalSpread(33.6901)).toBeCloseTo(0.002845, 6);
+  });
+
+  /**
+   * **Where this curve is a bound on a real lamp and where it is not.** Section 10 gives two
+   * BANDS with a floor each - the full intensity within five degrees, sixty per cent within
+   * seven and a half - and requires nothing below. Between five and seven and a half this
+   * curve runs ABOVE the floor, so a complying lamp may legally be dimmer than the picture;
+   * below seven and a half there is no floor to be above. And every patch of sea a lamp
+   * lights is down there: the brightest water under a masthead twenty metres up is 14.4
+   * degrees below its beam. So the light on the water is a choice, not an at-least, and
+   * saying otherwise was the same overclaim as quoting the maximum, facing the other way.
+   */
+  it("is a bound on a real lamp only within five degrees, which is not where the sea is", () => {
+    // At and inside the first band the drawn curve IS the floor.
+    expect(verticalSpread(5)).toBe(1);
+    // In the second band it sits above the floor: a complying lamp may be dimmer here.
+    expect(verticalSpread(6)).toBeCloseTo(0.8152, 4);
+    expect(verticalSpread(6)).toBeGreaterThan(0.6);
+    expect(verticalSpread(7.5)).toBeCloseTo(0.6, 6);
+    // Below the second band the rule says nothing, and this is where the water is lit.
+    const masthead = minimumCandelaForRange(6);
+    const depressionAt = (r: number) => (Math.asin(20 / Math.hypot(r, 20)) * 180) / Math.PI;
+    expect(depressionAt(78)).toBeCloseTo(14.38, 2);
+    expect(depressionAt(100)).toBeCloseTo(11.31, 2);
+    expect(depressionAt(78)).toBeGreaterThan(7.5);
+    // And that is the brightest sea the lamp makes, so the peak rests entirely on the tail.
+    const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
+    expect(at(78)).toBeGreaterThan(at(30));
+    expect(at(78)).toBeGreaterThan(at(300));
     // Symmetric: five degrees up is as much within the band as five degrees down.
     expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);
   });

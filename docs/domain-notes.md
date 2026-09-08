@@ -931,14 +931,27 @@ I = 3.43e6 × T × D² × K^(−D)      T = 2e-7 lx, K = 0.8 per mile, D in naut
 **Read the word MINIMUM in that section's title.** What the formula gives is the intensity a
 light must have *under service conditions* to comply — a floor. Section 9 puts a ceiling on the
 same lights so they do not dazzle, and a real fitting is somewhere in between; which point in
-that band a particular lamp occupied is in no casualty report this project has met. Section 10
-is the same shape of statement: **at least** the required intensity within 5°, **at least** 60
-per cent of it at 7.5°. So the vertical profile is a lower envelope too.
+that band a particular lamp occupied is in no casualty report this project has met. So the
+94-to-12 between a masthead and a sidelight is the ratio of two minima, not of two fittings,
+and none of these figures may be quoted as what a lamp measured.
 
-Everything below is therefore the bottom of the legal band drawn as though it were the lamp.
-The night was at least this bright and may have been brighter; the 94-to-12 between a masthead
-and a sidelight is the ratio of two minima, not of two fittings; and none of these figures may
-be quoted as what a lamp measured. The panel says so in as many words.
+**The vertical spread is weaker than that, and it is the half that lights the water.** Section
+10 gives two BANDS with a floor each — at least the full intensity within 5°, at least 60 per
+cent of it within 7.5° — and requires nothing below. The drawn curve equals the first floor,
+runs *above* the second, and below 7.5° has no floor to be above:
+
+| depression | drawn | guaranteed | |
+|---:|---:|---:|---|
+| 0–5° | 1.000 | 1.00 | the floor exactly |
+| 6° | 0.815 | 0.60 | **above it** — a complying lamp may be dimmer |
+| 7.5° | 0.600 | 0.60 | the floor again |
+| below 7.5° | 0.54 ↓ | — | **nothing is required** |
+
+And that last row is the whole of the picture. A masthead 20 m up lights the sea hardest at
+78 m, which is 14.4° down; the hundred-metre figure quoted throughout is 11.3° down. **Every
+lit patch of sea in this renderer comes out of the region Annex I leaves open.** So the light
+on the water is this project's curve, not a bound on anybody's lamp — it may be brighter or
+dimmer than the fitting that was really there, and the panel says so.
 
 | light | range | minimum candela |
 |---|---:|---:|

@@ -206,12 +206,11 @@ export function glitterSpreadRadians(
  * formula gives is `I ... under service conditions` for a light that only just complies. A
  * real fitting is somewhere between that and the CEILING section 9 puts on it to stop lights
  * dazzling, and where in that band a particular lamp sat is not in any report this project has
- * met. So this is a lower envelope drawn as though it were the lamp: the picture is a floor,
- * the 94-to-12 between a masthead and a sidelight is the ratio of two floors rather than of
- * two lamps, and a night drawn from it is at least this bright and may have been brighter.
- * `ui/panels.ts` says so, and nothing here should be quoted as what a lamp measured.
+ * met. So this is a lower envelope drawn as though it were the lamp: the 94-to-12 between a
+ * masthead and a sidelight is the ratio of two floors rather than of two lamps, and nothing
+ * here should be quoted as what a lamp measured.
  *
- * The same word governs `verticalSpread` below, for the same reason and out of the same annex.
+ * **This much is a floor. What `verticalSpread` does with it below is not** - see there.
  *
  * The transmissivity is a clear-weather figure and is the rule's own; a real night's air is
  * not stated in any report this project has met.
@@ -236,11 +235,25 @@ export function minimumCandelaForRange(nauticalMiles: number): number {
  * declaration rather than a fit to anything: 1 within five degrees, 0.6 at seven and a half,
  * and away to almost nothing by thirty.
  *
- * **And the rule's two points are floors as well.** Section 10 says AT LEAST the required
- * intensity within five degrees and AT LEAST sixty per cent of it at seven and a half; a real
- * fitting's beam is somewhere above that envelope and its shape is not stated anywhere. So
- * this curve is the lower bound of a compliant lamp taken as the lamp, and the whole of it -
- * the two points and the tail between and below them - is a floor rather than a measurement.
+ * **The rule's two points are floors, and this curve is only one of them.** Section 10 says AT
+ * LEAST the required intensity within five degrees, and AT LEAST sixty per cent of it within
+ * seven and a half - two BANDS with a floor each, not two points on a curve. So:
+ *
+ * | depression | drawn | the floor section 10 guarantees | |
+ * |---:|---:|---:|---|
+ * | 0-5 deg | 1.000 | 1.00 | the floor exactly |
+ * | 6 deg | 0.815 | 0.60 | **above it** - a complying lamp may be dimmer here |
+ * | 7.5 deg | 0.600 | 0.60 | the floor again |
+ * | below 7.5 | 0.54 down | none | **the rule requires nothing at all** |
+ *
+ * Which means the picture is a floor only for water within five degrees of a lamp's
+ * horizontal, and that is not where the water is. A masthead twenty metres up lights the sea
+ * hardest at 78 m, which is 14.4 degrees down, and the hundred-metre figure quoted everywhere
+ * is 11.3 degrees down. **Every lit patch of sea in this renderer comes out of the region
+ * Annex I leaves open**, so the light on the water is this project's curve rather than a bound
+ * on anybody's lamp, and it may be brighter or dimmer than the fitting that was really there.
+ * What survives as a floor is the intensity itself, out of section 8, and the shape within
+ * five degrees - neither of which is what lights the sea.
  *
  * | depression | of the nominal |
  * |---:|---:|

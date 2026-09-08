@@ -377,12 +377,17 @@ const WHAT_A_LAMP_DOES =
   "is the beam pointed where it is not pointed. What stays chosen besides the tail is one " +
   "figure per condition saying what a lux draws as, set so that a lamp and the moon are on " +
   "one scale. " +
-  "**All of that is a FLOOR.** Section 8 computes the minimum intensity a light must have to " +
-  "comply, section 10 sets the vertical spread as an at-least, and section 9 caps how bright " +
-  "a light may be without dazzling - so a real lamp sits somewhere in that band, and nothing " +
-  "in a casualty report says where. The picture is drawn along the bottom of it. The night " +
-  "was at least this bright and may have been brighter, and the 94-to-12 between a masthead " +
-  "and a sidelight is the ratio of two legal minima rather than of two fittings. ";
+  "**Two different things there, and only one of them is a bound.** Section 8 computes the " +
+  "MINIMUM intensity a light must have to comply, and section 9 caps how bright it may be " +
+  "without dazzling, so a real lamp is somewhere in that band and no casualty report says " +
+  "where: the 94-to-12 between a masthead and a sidelight is the ratio of two legal minima " +
+  "rather than of two fittings. The vertical spread is weaker than that. Section 10 requires " +
+  "the full intensity only within 5 degrees of the horizontal and 60 per cent of it within " +
+  "7.5, and nothing whatever below - and the sea a lamp lights is all below. This masthead's " +
+  "brightest water is 14 degrees under its beam and the hundred metre figure is 11, both out " +
+  "in the open where the rule asks for nothing. So the light on the water is this tool's " +
+  "curve, not a floor under anyone's lamp, and the real one may have been brighter or dimmer " +
+  "than what is drawn. ";
 
 /**
  * **Read the bearing off a streak and not the length.**
