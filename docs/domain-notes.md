@@ -149,15 +149,30 @@ a ternary search on the least gap walked away from the deeper valley, and bisect
 clear look and one touching look joined two spells into one across the clear water between them.
 Neither missed a contact; both invented one.
 
-So nothing here assumes. The scan looks at **every sample either track states**, because that is
-where a ship's straight line bends and a bound taken across one says nothing — two looks a
-minute apart can find both ships back where they started with a whole encounter in between. And
-between two adjacent looks it takes a bound on what can have happened: neither gap can shrink by
-more than the two hulls moved, and the furthest any point of an outline moved is already in
-hand. Where the smaller gap is inside that, the interval is swept finely and every state change
-in it is seen. What none of it can see is an encounter entirely inside an interval the bound
-called safe — which it cannot be, the bound being a bound — so what remains is the step's own
-limit, carried on the result and printed.
+So nothing here assumes; it certifies. The scan looks at **every sample either track states**,
+because that is where a ship's straight line bends: two looks a minute apart can find both ships
+back where they started with a whole encounter in between.
+
+Between two adjacent looks it asks whether anything COULD have happened, and halves the interval
+until the answer is no. Two parts to that.
+
+**How far they can have gone.** Between samples the reported position runs in a straight line
+and the hull turns through the difference of two headings, so no point of her travels further
+than that line plus the arc her own radius sweeps. The chord between where a point started and
+where it finished will not do — that was the first version — because a ship translating and
+turning at once carries every point along a curve, and a swing that comes back hides its whole
+journey from the two ends.
+
+**How far they are from changing.** Water between them is how much they must close to touch; a
+pair already through each other must back the deepest part of one out of the other to come
+apart. If the two together cannot travel that far in the time, the interval is done with. That
+depth is a certificate and never a figure on the page — the argument against reporting one is
+about what a page may claim, not about what an interval may be discharged with.
+
+Most of a reconstruction discharges on the first test, the ships being miles apart, and the
+halving goes deep only where they are about to touch. What is left is a floor: an interval that
+will not discharge after twenty halvings is left as it stands, so an encounter shorter than a
+step over two to the twentieth is not seen. The step is carried on the result and printed.
 
 ## How a ship actually moves
 

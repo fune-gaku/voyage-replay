@@ -21,7 +21,13 @@ import { sampleAt, type PreparedTrack } from "../../core/track.js";
 import type { Track, Vessel } from "../../core/types.js";
 
 import { hullDimensions, isBoxBowed, planOutline, type PlanPoint } from "./hull-shape.js";
-import { hullCentreOffset, offsetMetres, placementFor, type Placement } from "./reference-point.js";
+import {
+  hullCentreOffset,
+  offsetMetres,
+  placementFor,
+  type OffsetMetres,
+  type Placement,
+} from "./reference-point.js";
 
 /**
  * The hull's outline in the local frame, from its shape, its placement and its position.
@@ -285,75 +291,243 @@ function instants(
   return [...new Set(list)].sort((one, other) => one - other);
 }
 
-/** One look at the pair: the moment, the two outlines, and the gap between them. */
+/** Where one hull is at a moment, and everything a bound on her motion needs. */
+interface Where {
+  outline: LocalPosition[];
+  reported: LocalPosition;
+  headingDegreesTrue: number;
+  headingStated: boolean;
+  /** The furthest any outline point lies from the reported position: her turning radius. */
+  swingMetres: number;
+}
+
+/** One look at the pair: the moment, where each of them is, and the gap between them. */
 interface Look {
   at: number;
-  shapes: { a: LocalPosition[]; b: LocalPosition[] };
+  a: Where;
+  b: Where;
   gap: number;
 }
 
-/** The gap and the outlines it was measured between, or null outside either track. */
-function lookAt(a: HullTrack, b: HullTrack, at: number): Look | null {
-  const first = outlineAt(a, at);
-  const second = outlineAt(b, at);
-  if (!first || !second) return null;
-  return { at, shapes: { a: first, b: second }, gap: separationMetres(first, second) };
+/** Where a hull is at an instant, placed exactly as the picture places her. */
+function whereAt(ship: HullTrack, at: number): Where | null {
+  const state = sampleAt(ship.track, at);
+  if (!state) return null;
+  const offset = offsetMetres(hullCentreOffset(ship.positionAt, ship.vessel.referencePointOffsets));
+  const placement = placementFor(state.headingDegreesTrue ?? state.cogDegreesTrue, offset);
+  const shape = planOutline(hullDimensions(ship.vessel), isBoxBowed(ship.vessel));
+  return {
+    outline: placedOutline(shape, placement, state.position),
+    reported: state.position,
+    headingDegreesTrue: placement.headingDegreesTrue,
+    headingStated: placement.headingStated,
+    swingMetres: swingOf(shape, placement.offset),
+  };
 }
 
-/**
- * How much the gap could possibly have changed between two looks.
- *
- * **A bound rather than a guess, and it is what makes a coarse step safe.** Neither hull's
- * separation can shrink by more than the two hulls moved, and the furthest any point of a hull
- * moved is a thing already in hand - both outlines are built at both moments. So if the
- * smaller of the two gaps is larger than that, nothing happened in between and the step may
- * stay coarse. Where it is not, the interval is swept finely and every state change in it is
- * seen.
- *
- * This is what stops a turn from being reported as continuous contact. Two hulls that touch,
- * come clear and touch again inside one coarse step were joined into a single spell across the
- * clear water, because the search looked at the two ends and assumed one crossing between
- * them. Assuming is exactly what was removed from the narrowing one commit ago and this is the
- * same assumption in the other function.
- */
-function reach(before: Look, after: Look): number {
-  return moved(before.shapes.a, after.shapes.a) + moved(before.shapes.b, after.shapes.b);
-}
-
-/** The furthest any one point of an outline travelled between two moments. */
-function moved(before: LocalPosition[], after: LocalPosition[]): number {
+/** How far the furthest part of her lies from the position her track reports. */
+function swingOf(shape: PlanPoint[], offset: OffsetMetres): number {
   let furthest = 0;
-  for (let i = 0; i < before.length; i += 1) {
-    const was = before[i];
-    const now = after[i];
-    if (!was || !now) continue;
-    furthest = Math.max(furthest, Math.hypot(now.east - was.east, now.north - was.north));
+  for (const point of shape) {
+    const forward = point.forwardMetres + offset.forwardMetres;
+    const starboard = point.starboardMetres + offset.starboardMetres;
+    furthest = Math.max(furthest, Math.hypot(forward, starboard));
   }
   return furthest;
 }
 
-/** Every look worth taking: the step, refined wherever the pair could have changed state. */
+/** The gap and where each hull was when it was measured, or null outside either track. */
+function lookAt(a: HullTrack, b: HullTrack, at: number): Look | null {
+  const first = whereAt(a, at);
+  const second = whereAt(b, at);
+  if (!first || !second) return null;
+  return { at, a: first, b: second, gap: separationMetres(first.outline, second.outline) };
+}
+
+/**
+ * The furthest one hull can have moved with respect to the other between two moments.
+ *
+ * **The straight line between where a point started and where it finished is not this.** That
+ * was the first version, and it is wrong for exactly the case the whole search is about: a ship
+ * translating and turning at once carries every point of herself along a curve, and a turn that
+ * brings a point back towards where it began hides most of its journey from the two endpoints.
+ * Two ends alike, a swing in between, and a bound taken off the ends says nothing moved.
+ *
+ * What is true whatever the path: between two samples each reported position runs in a straight
+ * line and each hull turns through the difference of two headings the short way round. So no
+ * part of one goes further, WITH RESPECT TO the other, than the two straight lines' difference
+ * plus the arcs their own radii sweep. A bound rather than a measurement, which is the point.
+ *
+ * Relative, because absolute is useless: two ships steaming north in company cover miles and
+ * never change how far apart they are, and a bound off their ground speeds calls every parallel
+ * course an encounter about to happen.
+ *
+ * Infinity where the heading is stated at one end and not at the other, because there the drawn
+ * ship jumps rather than turns - `placementFor` and issue #12 - and nothing bounds a jump.
+ */
+function travelled(before: Look, after: Look): number {
+  if (before.a.headingStated !== after.a.headingStated) return Number.POSITIVE_INFINITY;
+  if (before.b.headingStated !== after.b.headingStated) return Number.POSITIVE_INFINITY;
+  // **Relative, not absolute.** What can change the gap is how the two move with respect to
+  // each other: two ships steaming north together cover miles and stay exactly as far apart.
+  // Bounding each one's ground speed instead made every parallel course look like an
+  // encounter about to happen, and the search halved its way into the ground.
+  const east =
+    after.a.reported.east -
+    before.a.reported.east -
+    (after.b.reported.east - before.b.reported.east);
+  const north =
+    after.a.reported.north -
+    before.a.reported.north -
+    (after.b.reported.north - before.b.reported.north);
+  // Each hull's own turn is relative motion too: her ends swing about her own position.
+  return Math.hypot(east, north) + swung(before.a, after.a) + swung(before.b, after.b);
+}
+
+/** The arc the furthest part of one hull sweeps as she turns between two moments. */
+function swung(before: Where, after: Where): number {
+  const turned = Math.abs(shortWayRound(after.headingDegreesTrue - before.headingDegreesTrue));
+  return (turned * Math.PI * Math.max(before.swingMetres, after.swingMetres)) / 180;
+}
+
+/** Degrees, brought into the half-turn either side of zero. */
+function shortWayRound(degrees: number): number {
+  return ((((degrees + 180) % 360) + 360) % 360) - 180;
+}
+
+/**
+ * Whether the two hulls can possibly have changed state between two looks.
+ *
+ * **Clear or touching, the certificate is the same shape: how far they are from changing.**
+ * A pair with water between them cannot touch without closing that water; a pair already
+ * through each other cannot come apart without backing the deepest part of one out of the
+ * other. Either way, if the two of them together cannot travel that far in the time, nothing
+ * happened in between and the interval is done with.
+ *
+ * The depth is used here and nowhere else. `separationMetres` still answers zero for a pair in
+ * contact, for the reason it gives - a depth through two invented bows is a figure about this
+ * tool's plan shape - and that argument is about what a page may claim, not about what an
+ * interval may be discharged with.
+ */
+function couldTurnOver(before: Look, after: Look): boolean {
+  const room = Math.min(clearance(before), clearance(after));
+  return room <= travelled(before, after);
+}
+
+/** How far this pair is from changing state: the gap when clear, the depth when not. */
+function clearance(look: Look): number {
+  return look.gap > 0 ? look.gap : overlapDepth(look.a.outline, look.b.outline);
+}
+
+/**
+ * How far the deepest part of one hull lies inside the other.
+ *
+ * Not the true penetration depth, which for shapes like these is a harder question than it is
+ * worth - it is a LOWER bound on the travel needed to part them, which is all a certificate
+ * needs. Whatever else has to happen, that vertex has to reach a side.
+ */
+function overlapDepth(a: LocalPosition[], b: LocalPosition[]): number {
+  const sides = { a: edges(a), b: edges(b) };
+  // **The middle of each of them as well as their corners, or two hulls exactly on top of
+  // each other measure zero.** Every corner of one then lies ON the other's side rather than
+  // inside it, the depth comes back nought, and an interval that plainly cannot change state
+  // never discharges - the search halves its way to the floor over and over. A hull's middle
+  // is the part furthest from any side she has.
+  const points = [
+    ...a.map((point): [LocalPosition, Edge[]] => [point, sides.b]),
+    ...b.map((point): [LocalPosition, Edge[]] => [point, sides.a]),
+    [middleOf(a), sides.b] satisfies [LocalPosition, Edge[]],
+    [middleOf(b), sides.a] satisfies [LocalPosition, Edge[]],
+  ];
+  let deepest = 0;
+  for (const [point, into] of points) {
+    if (!inside(point, into)) continue;
+    let out = Number.POSITIVE_INFINITY;
+    for (const side of into) out = Math.min(out, toSegment(point, side.a, side.b));
+    deepest = Math.max(deepest, Number.isFinite(out) ? out : 0);
+  }
+  return deepest;
+}
+
+/** The average of an outline's corners: inside it, and well away from its sides. */
+function middleOf(outline: LocalPosition[]): LocalPosition {
+  let east = 0;
+  let north = 0;
+  for (const point of outline) {
+    east += point.east;
+    north += point.north;
+  }
+  const count = Math.max(outline.length, 1);
+  return { east: east / count, north: north / count };
+}
+
+/**
+ * Every look worth taking: the step, and then as finely as the bound demands.
+ *
+ * **Halving until the bound discharges, rather than slicing a fixed number of times.** A fixed
+ * sweep is a resolution wearing the clothes of a proof: whatever it is set to, two hulls can
+ * touch and part inside one of its slices, and the boundary hunt below then joins two spells
+ * across the water between them. Recursion stops where nothing CAN have happened - most of a
+ * reconstruction discharges on the first test, the ships being miles apart - and goes deep only
+ * where the two are close enough to be about to touch.
+ *
+ * `DEEPEST` is what is left over. An interval that will not discharge by then is handed back as
+ * it stands, so an encounter shorter than a step over two to the twentieth is not seen.
+ * `HullApproach` carries the step and `ui/panels.ts` prints it.
+ */
 function looks(
   a: HullTrack,
   b: HullTrack,
   over: { from: number; to: number; stepSeconds: number },
-) {
+): Look[] {
   const taken: Look[] = [];
   let previous: Look | null = null;
   for (const at of instants(over, a, b)) {
     const look = lookAt(a, b, at);
     if (!look) continue;
-    if (previous && Math.min(previous.gap, look.gap) <= reach(previous, look)) {
-      for (let i = 1; i < SLICES; i += 1) {
-        const between = lookAt(a, b, previous.at + ((look.at - previous.at) * i) / SLICES);
-        if (between) taken.push(between);
-      }
-    }
+    if (previous) split(a, b, { before: previous, after: look }, taken);
     taken.push(look);
     previous = look;
   }
   return taken;
 }
+
+/** Everything strictly between two looks that the bound cannot rule out, in order. */
+function split(
+  a: HullTrack,
+  b: HullTrack,
+  span: { before: Look; after: Look; depth?: number },
+  into: Look[],
+): void {
+  const depth = span.depth ?? 0;
+  if (span.after.at - span.before.at <= FINEST_SECONDS) return;
+  if (!couldTurnOver(span.before, span.after) || depth >= DEEPEST) return;
+  const middle = lookAt(a, b, (span.before.at + span.after.at) / 2);
+  if (!middle) return;
+  split(a, b, { before: span.before, after: middle, depth: depth + 1 }, into);
+  into.push(middle);
+  split(a, b, { before: middle, after: span.after, depth: depth + 1 }, into);
+}
+
+/**
+ * How far the halving goes before an interval is left as it stands.
+ *
+ * Twenty of them take a one-second step to a microsecond, which is far finer than positions
+ * interpolated in straight lines between samples a minute apart can mean.
+ */
+const DEEPEST = 20;
+
+/**
+ * And a floor in time as well as in halvings, for the one interval that cannot discharge.
+ *
+ * Where a track states a direction on one side of a sample and not on the other, the drawn
+ * ship JUMPS at the midpoint rather than turning - `placementFor`, and issue #12, which is
+ * about that jump. Nothing bounds a jump, so the interval holding it never discharges however
+ * small it gets. A millisecond is far below what positions interpolated between samples a
+ * minute apart can mean, and it keeps the halving from running to the depth cap on every one
+ * of those.
+ */
+const FINEST_SECONDS = 1e-3;
 
 /** Everything one pass over the window finds: the least gap, and where contact opened and shut. */
 function walk(
