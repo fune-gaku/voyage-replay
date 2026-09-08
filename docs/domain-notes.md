@@ -922,6 +922,12 @@ How much of it returns is a declared figure. Clean sea water scatters a few per 
 actually in the water decides the rest, and no report states either — so it joins `ambient`,
 `bodyLobe` and `streak` in the palette, and the page says so.
 
+**And it is its own figure, not a factor of the streak's.** Folded together — which is how this
+went in — the pool came out at `streak × pool` rather than at `pool`, and turning the mirror
+down took the light the lamp casts with it. Two different things a lamp does to water need two
+exposures; the lamp's uniform carries only the lamp's own brightness, and both exposures are
+scalars beside it.
+
 ### The arc is answered at the water, not at the eye
 
 A lamp lights only its own sector, so what decides whether a patch of sea carries its colour is

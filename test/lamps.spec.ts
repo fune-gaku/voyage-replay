@@ -171,8 +171,10 @@ describe("what reaches the shader", () => {
     setLamps(uniforms, [lamp({ at: { x: 40, y: 12, z: -70 }, arcEndDegrees: 112.5 })], EXPOSURE);
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
-    expect(uniforms.uLamp.value[0]?.w).toBe(EXPOSURE.streak);
+    // The lamp's own figure, with no exposure folded into it.
+    expect(uniforms.uLamp.value[0]?.w).toBe(1);
     expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
+    expect(uniforms.uLampStreak.value).toBe(EXPOSURE.streak);
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -186,7 +188,7 @@ describe("what reaches the shader", () => {
   it("puts out the slots nothing is using", () => {
     const uniforms = makeLampUniforms();
     setLamps(uniforms, [lamp(), lamp()], EXPOSURE);
-    expect(uniforms.uLamp.value[1]?.w).toBe(EXPOSURE.streak);
+    expect(uniforms.uLamp.value[1]?.w).toBe(1);
 
     setLamps(uniforms, [lamp()], EXPOSURE);
     expect(uniforms.uLamp.value[1]?.w).toBe(0);
@@ -224,6 +226,25 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("out vec3 lit");
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
     expect(LAMPS_GLSL).toContain("lit += uLampColour[ i ] * uLampPool * lamp.w * fall * landing;");
+  });
+
+  /**
+   * **The two exposures cannot be folded into one another.** They are two different things a
+   * lamp does to water - one is its image and one is the light it casts - so turning the
+   * mirror down must not take the light with it. Folded together, as this was at first, the
+   * pool came out at `streak * pool` and vanished entirely with the streak.
+   */
+  it("keeps the streak's exposure out of the pool's", () => {
+    const uniforms = makeLampUniforms();
+    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.05 });
+
+    // The lamp is still there and still lighting the water, with nothing mirrored in it.
+    expect(uniforms.uLamp.value[0]?.w).toBe(1);
+    expect(uniforms.uLampPool.value).toBe(0.05);
+    expect(uniforms.uLampStreak.value).toBe(0);
+    // Each is its own factor in the shader, so neither multiplies the other.
+    expect(LAMPS_GLSL).toContain("uLampStreak * lamp.w");
+    expect(LAMPS_GLSL).toContain("uLampPool * lamp.w");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {
