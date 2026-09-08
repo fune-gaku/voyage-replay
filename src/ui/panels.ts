@@ -9,7 +9,9 @@
 
 import { assumedHeights } from "../actors/vessel/heights.js";
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
+import { hullDimensions } from "../actors/vessel/hull-shape.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
+import { hullApproach, type HullApproach } from "../actors/vessel/separation.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
@@ -611,14 +613,54 @@ function approach(prepared: Prepared[], scenario: Scenario): string {
 
   const cpa = closestPointOfApproach(first.track, second.track);
   if (!cpa) return "<p>The two tracks do not overlap in time.</p>";
+  const hulls = hullApproach2(both);
+  const zone = scenario.meta.timeZone;
 
   return (
     keyValueTable([
       ["Between", `${first.actor.id} and ${second.actor.id}`],
-      ["At", `${formatClock(cpa.epochSeconds, scenario.meta.timeZone)} local`],
-      ["Range", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
-    ]) + note(approachCaveat(both, cpa.epochSeconds))
+      ["Reported positions", `${cpa.metres.toFixed(0)} m (${(cpa.metres / 1852).toFixed(2)} NM)`],
+      ["...at", `${formatClock(cpa.epochSeconds, zone)} local`],
+      ...hullRows(hulls, zone),
+    ]) +
+    note(approachCaveat(both, cpa.epochSeconds)) +
+    note(hullNote(both, hulls, cpa.epochSeconds))
   );
+}
+
+/**
+ * The same question asked of the hulls, where both ships carry the particulars to draw one.
+ *
+ * `core/track.ts` cannot answer it - a range between hulls needs their shapes, and `core/` is
+ * not allowed to know what a ship is - so it comes from `actors/vessel/separation.ts`, off the
+ * outline the renderer draws.
+ */
+function hullApproach2(both: [Prepared, Prepared]): HullApproach | null {
+  const ships = both.map(({ actor, track }) =>
+    actor.vessel ? { track, vessel: actor.vessel, positionAt: actor.track.positionAt } : null,
+  );
+  const [first, second] = ships;
+  return first && second ? hullApproach(first, second) : null;
+}
+
+/** What the hulls did, as rows: a gap and its moment, or a window of contact. */
+function hullRows(hulls: HullApproach | null, timeZone: string): [string, string][] {
+  if (!hulls) return [["Between hulls", "-, needs both ships' particulars"]];
+  if (!hulls.contact) {
+    return [
+      ["Between hulls", `${hulls.metres.toFixed(1)} m`],
+      ["...at", `${formatClock(hulls.epochSeconds, timeZone)} local`],
+    ];
+  }
+  const { fromEpochSeconds, toEpochSeconds } = hulls.contact;
+  const seconds = toEpochSeconds - fromEpochSeconds + 1;
+  return [
+    ["Between hulls", "in contact"],
+    [
+      "...from",
+      `${formatClock(fromEpochSeconds, timeZone)} to ${formatClock(toEpochSeconds, timeZone)} local, ${seconds} s`,
+    ],
+  ];
 }
 
 /**
@@ -646,6 +688,72 @@ function approachCaveat(both: [Prepared, Prepared], epochSeconds: number): strin
 
   const caveat = viewCaveat(both, epochSeconds);
   return `Measured ${between}, which is what the sources state.${howFar} ${caveat}`;
+}
+
+/**
+ * What the hull figure is worth, which is less than it looks and more than the other one.
+ *
+ * Four things have to be said with it and each is a different kind of caveat.
+ *
+ * The SHAPE is generated. A length and a beam is all a scenario carries, so the outline is
+ * this tool's plan of a plausible ship of that size, not either ship's lines - and every
+ * metre of the answer is a metre of that. It is the shape the picture draws, which is the
+ * only property that makes the number and the view agree.
+ *
+ * The DIMENSIONS come from the AIS offsets where the file has them, because the four
+ * distances measure the ship and the particulars' length is often a registered length. AIS
+ * rounds them to the metre.
+ *
+ * The INSTANT is not the other row's instant. Hulls close before antennae do, or after,
+ * depending on where the antennae sit; on the reference case the hulls touch about eight
+ * seconds before the reported positions are nearest.
+ *
+ * And the WINDOW is interpolated. Positions between samples are joined by straight lines, so
+ * a contact lasting seconds is measured inside a segment the source says nothing about.
+ */
+function hullNote(
+  both: [Prepared, Prepared],
+  hulls: HullApproach | null,
+  antennaeAt: number,
+): string {
+  if (!hulls) {
+    return (
+      "The range between hulls is not given because at least one of these actors carries no " +
+      "particulars, and a hull cannot be drawn - or measured against - without a length and " +
+      "a beam."
+    );
+  }
+  const gap = hulls.epochSeconds - antennaeAt;
+  const when =
+    gap === 0
+      ? "at the same moment as"
+      : `${Math.abs(gap)} s ${gap < 0 ? "before" : "after"} the moment`;
+  return (
+    "That second figure is between the hulls as DRAWN, which is the question a collision " +
+    "asks and the first figure cannot answer. Three things bound it. The outline is " +
+    "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
+    `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
+    `And it happens ${when} the reported positions are nearest, so the two rows are not two ` +
+    "readings of one instant. Where they touch, the window is measured across positions " +
+    "joined by straight lines between samples, which is this tool's interpolation and not " +
+    "something the source states."
+  );
+}
+
+/**
+ * Which of the file's two answers about a hull's size this range was measured at.
+ *
+ * Both are in the file and they differ - on the reference case's tanker by 0.4 m of beam,
+ * which moves first contact by a second - so saying which one was used is the difference
+ * between a figure a reader can check and a figure they have to accept.
+ */
+function dimensionSource(both: [Prepared, Prepared]): string {
+  const sources = both
+    .map(({ actor }) => (actor.vessel ? hullDimensions(actor.vessel).from : null))
+    .filter((from) => from !== null);
+  return sources.every((from) => from === "offsets")
+    ? "the four AIS offsets, which measure the ship where the particulars describe her"
+    : "the particulars, the AIS offsets not being stated for both";
 }
 
 /** How the picture stands to that figure, at the moment the figure is about. */

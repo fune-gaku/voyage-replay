@@ -204,6 +204,80 @@ describe("renderPanels", () => {
     expect(html).toContain("A&#39;s GPS antenna to B&#39;s reference point");
   });
 
+  /**
+   * **Two rows, because they answer two questions and the page cannot answer both with one.**
+   * The reported positions are what the report's appendix supports and what a reader can
+   * check by hand; the hulls are what "did they hit" is asking. Printing only the first is
+   * the state this issue found; printing only the second throws away the checkable number.
+   */
+  it("reports the reported positions and the hulls as separate rows", () => {
+    expect(html).toContain("Reported positions");
+    expect(html).toContain("Between hulls");
+    expect(html).toContain("between the hulls as DRAWN");
+  });
+
+  /**
+   * **And says the shape is invented, because every metre of that row rests on it.** A length
+   * and a beam is all a scenario carries, so the outline is this tool's plan of a plausible
+   * ship of the right size and not either ship's lines.
+   */
+  it("says the hull it measured against is generated", () => {
+    expect(html).toContain("The outline is generated");
+    expect(html).toContain("a metre of this tool");
+  });
+
+  /** Which of the file's two answers about her size, since they differ and both are in it. */
+  it("names which source the hull's length and beam came from", () => {
+    expect(html).toContain("the particulars, the AIS offsets not being stated for both");
+
+    const bothStated = panelsFor(
+      scenario([actor("A", northboundPoints(), BIG_SHIP), actor("B", westboundPoints(), BIG_SHIP)]),
+    );
+    expect(bothStated).toContain("the four AIS offsets, which measure the ship");
+  });
+
+  /**
+   * **The two rows are not two readings of one instant.** Hulls close before antennae do, or
+   * after, depending where the antennae sit - seven seconds earlier on the reference case -
+   * so a page that printed both under one "At" would be inventing a coincidence.
+   */
+  it("says whether the hulls' moment is the reported positions' moment", () => {
+    expect(html).toMatch(/at the same moment as|\d+ s (before|after) the moment/);
+  });
+
+  /**
+   * **The row the whole issue is about: two hulls that touch.**
+   *
+   * A gap in metres is the wrong shape of answer once there is no gap, so the page reports
+   * the window instead - which is also the only thing a generated outline can support. It
+   * cannot say how deep one hull went into the other, because that would be three metres of
+   * this tool's plan shape rather than of either ship.
+   */
+  it("reports a window rather than a distance once the hulls are touching", () => {
+    // Two big ships on the same track, a hundred metres apart along a 180 m hull.
+    const overlapping = panelsFor(
+      scenario([
+        actor("A", northboundPoints(), BIG_SHIP),
+        actor("B", northboundPoints(), BIG_SHIP),
+      ]),
+    );
+
+    expect(overlapping).toContain("in contact");
+    expect(overlapping).toMatch(/\d\d:\d\d:\d\d to \d\d:\d\d:\d\d local, \d+ s/);
+    // And not a range in metres, which is what it would have printed before.
+    expect(overlapping).not.toContain("Between hulls</th><td>0.0 m");
+  });
+
+  /** Where a ship carries no particulars there is no hull to measure, and the page says so. */
+  it("declines the hull row where a ship has no particulars", () => {
+    const noVessel = actor("B", westboundPoints(), BIG_SHIP);
+    delete noVessel.vessel;
+    const html = panelsFor(scenario([actor("A", northboundPoints(), COASTER), noVessel]));
+
+    expect(html).toContain("needs both ships&#39; particulars");
+    expect(html).toContain("a hull cannot be drawn - or measured against - without a length");
+  });
+
   it("still says what the range runs between when only the second ship states offsets", () => {
     // A carries no offsets at all; the caveat used to vanish with them.
     expect(html).toContain("A&#39;s GPS antenna to B&#39;s GPS antenna");

@@ -67,6 +67,62 @@ same, looking like nothing at all.
 The reference case in `examples/` is a clean instance: five consecutive minutes at 267.0°–267.1°
 while the range falls from 3,400 m to 470 m.
 
+## Two ships, two answers, two moments
+
+`closestPointOfApproach` measures between the two REPORTED positions, and an AIS position is
+the GPS antenna. On the Suo-nada case that is **39.6 m at 18:13:35** — and the drawn hulls are
+through each other for **ten seconds from 18:13:28**, so the checkable figure is read from the
+middle of the collision. Both are true about different things. The page prints both, labelled,
+for the reason it prints a wind speed beside a contradicting force: hiding one input is not
+answering with the other.
+
+**The hulls' moment is not the antennae's.** They first touch seven seconds earlier here,
+because both antennae sit well aft and the sterns close last. Anything that says "at the moment
+of closest approach" has to say which moment.
+
+### Not a rectangle
+
+Issue #10 proposed treating both hulls as rectangles. The renderer does not draw rectangles —
+the outline has a drawn-in transom and a raked bow — and a bounding box reaches out past a raked
+stem by up to half a beam. Measured twelve seconds before contact:
+
+| model | gap |
+|---|---:|
+| rectangle, particulars | 5.8 m |
+| rectangle, AIS offsets | 5.9 m |
+| **the outline that is drawn** | **8.2 m** |
+
+A rectangle says the two ships are forty per cent closer than the picture shows them. A
+rectangle is still the right tool for *containment* — `test/examples.spec.ts` asks whether one
+stem falls inside another hull, and for that the box the offsets describe is exactly the
+question — but never for a range.
+
+### One shape, one pair of dimensions
+
+There were two hull models and they disagreed on both counts: the renderer's curved outline at
+the particulars, and the test's rectangle at the AIS offsets. `actors/vessel/hull-shape.ts`
+holds one of each now. The renderer builds its `Shape` from the same point list the range is
+measured against, vertex for vertex.
+
+Dimensions come from the four offsets where the file has them, because those measure the ship
+where the particulars describe her: a particulars length is often the *registered* length, and
+on the reference case's tanker the two sources give beams of 9.4 and 9.0 m — a difference that
+moves first contact by a second. The two are never mixed. Anything sitting on the hull moves
+with it: a sidelight placed at the particulars' half-beam would hang 0.2 m over the water beside
+a hull drawn at the offsets'.
+
+### Zero, not a depth
+
+Once they overlap the answer is zero and a window, not a penetration. The outline is generated
+from a length and a beam — a plausible plan of a ship of the right size, not either ship's lines
+— so a hull "three metres into" another is three metres of this tool's invention. Same judgement
+as declining to bend a hull for the earth's curvature. What the shape supports is whether and
+when, so that is what comes back.
+
+And the window is interpolated: on the reference case the whole contact falls inside sample gaps
+of 13 s and 20 s, joined by straight lines. "Ten seconds in contact" is a property of this tool
+as much as of the ships, and the panel says so.
+
 ## How a ship actually moves
 
 A ship is not a point that changes velocity. Three things a straight line between two samples gets

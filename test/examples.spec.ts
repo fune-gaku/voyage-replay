@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { describeAspect, visibleLights } from "../src/actors/vessel/lights.js";
+import { hullDimensions } from "../src/actors/vessel/hull-shape.js";
 import { hullCentreOffset, offsetMetres } from "../src/actors/vessel/reference-point.js";
+import { hullApproach } from "../src/actors/vessel/separation.js";
 import {
   bearingDegrees,
   distanceMetres,
@@ -38,6 +40,11 @@ function load(name: string) {
  * of a ship's side a point falls on, and for that it is the shape the offsets actually
  * describe. Length and beam come from the four offsets rather than from the particulars,
  * which is where they are most reliable - see docs/format.md.
+ *
+ * **A rectangle answers containment and must not answer range.** A bounding box reaches out
+ * past a raked bow by up to half a beam, so a DISTANCE measured against one reports contact
+ * where the picture shows clear water. Ranges come from `actors/vessel/separation.ts`, off
+ * the outline the renderer actually draws; the test below uses it.
  */
 
 function halfLength(offsets: ReferencePointOffsets): number {
@@ -232,6 +239,49 @@ describe("Suo-nada, 27 November 2025", () => {
     // The same stem against the unit as she was drawn before this was fixed: past her side.
     const asDrawn = inHullFrame(unit.position, unitHeading, stemAt(a, tanker, contact, false));
     expect(Math.abs(asDrawn.starboardMetres)).toBeGreaterThan(halfBeam(offsets));
+  });
+
+  /**
+   * **The two ranges answer different questions, at different moments.**
+   *
+   * `closestPointOfApproach` measures between the reported positions, and an AIS position is
+   * the GPS antenna: 39.6 m, which is the figure the report's own appendix supports and the
+   * only one a reader can check by hand against it. The hulls are through each other for ten
+   * seconds spanning that instant - and they first touch seven seconds BEFORE it, because
+   * both antennae sit well aft and the sterns close last.
+   *
+   * The window is measured across straight-line interpolation: the tanker's samples either
+   * side of first contact are 13 s apart and the unit's 20 s, so "ten seconds" is a property
+   * of this tool as much as of the ships. It is pinned anyway, because a change in it means
+   * either the transcription or the geometry moved.
+   */
+  it("has the hulls in contact around the moment the antennae are nearest", () => {
+    const antennae = closestPointOfApproach(a, b)!;
+    const hulls = hullApproach(
+      { track: a, vessel: tanker.vessel!, positionAt: tanker.track.positionAt },
+      { track: b, vessel: pushingUnit.vessel!, positionAt: pushingUnit.track.positionAt },
+    )!;
+
+    expect(hulls.metres).toBe(0);
+    expect(hulls.contact).not.toBeNull();
+    const { fromEpochSeconds, toEpochSeconds } = hulls.contact!;
+    expect(new Date(fromEpochSeconds * 1000).toISOString()).toBe("2025-11-27T09:13:28.000Z");
+    expect(toEpochSeconds - fromEpochSeconds + 1).toBe(10);
+
+    // Seven seconds before the antennae are nearest, and inside the ten of contact.
+    expect(antennae.epochSeconds - fromEpochSeconds).toBe(7);
+    expect(antennae.epochSeconds).toBeLessThanOrEqual(toEpochSeconds);
+  });
+
+  /** And the hulls are drawn at the size the four offsets give, not the particulars'. */
+  it("measures that against the hull the offsets describe", () => {
+    expect(hullDimensions(tanker.vessel!)).toEqual({
+      lengthMetres: 49,
+      beamMetres: 9,
+      from: "offsets",
+    });
+    // The particulars say 9.4, which is the disagreement this settles.
+    expect(tanker.vessel!.beamMetres).toBe(9.4);
   });
 
   /**
