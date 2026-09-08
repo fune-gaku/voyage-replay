@@ -732,17 +732,12 @@ function hullNote(
       "a beam."
     );
   }
-  const gap = hulls.epochSeconds - antennaeAt;
-  const when =
-    gap === 0
-      ? "at the same moment as"
-      : `${Math.abs(gap)} s ${gap < 0 ? "before" : "after"} the moment`;
   return (
     "That second figure is between the hulls as DRAWN, which is the question a collision " +
     "asks and the first figure cannot answer. Three things bound it. The outline is " +
     "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
     `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
-    `And it happens ${when} the reported positions are nearest, so the two rows are not two ` +
+    `And ${against(hulls, antennaeAt)} the reported positions are nearest, so the two rows are not two ` +
     "readings of one instant. Where they touch, the ends of each spell are found on those " +
     "hulls rather than on the search, but the positions between samples are joined by " +
     `straight lines, so the times are this tool's interpolation and not the source's. It ` +
@@ -759,22 +754,55 @@ function hullNote(
  * between a figure a reader can check and a figure they have to accept.
  */
 function dimensionSource(both: [Prepared, Prepared]): string {
-  const named = both.map(({ actor }) => ({
-    id: actor.id,
-    from: actor.vessel ? hullDimensions(actor.vessel).from : null,
-  }));
-  const offsets = "the four AIS offsets, which measure the ship where the particulars describe her";
-  if (named.every((ship) => ship.from === "offsets")) return offsets;
-  if (named.every((ship) => ship.from === "particulars")) {
-    return "the particulars, neither ship stating the four AIS offsets";
+  const named = both.map(({ actor }) => ({ id: actor.id, where: sizedFrom(actor) }));
+  const [first, second] = named;
+  if (first?.where === second?.where && second) {
+    return second.where === "no particulars"
+      ? "nowhere: neither is drawn"
+      : `${second.where}, for both`;
   }
   // **Per ship, because the answer is per ship.** Saying "the particulars" over a pair where
   // one of them was measured off her offsets reports the wrong derivation for that hull, and
   // the derivation is the whole of what makes this figure checkable.
-  const each = named.map((ship) =>
-    ship.from === null ? `${ship.id} carries none` : `${ship.id} from the ${ship.from}`,
-  );
-  return `${each.join(" and ")} - ${offsets.replace("the four AIS offsets, which measure", "the offsets measure")}`;
+  return named.map((ship) => `${ship.id} from ${ship.where}`).join(", and ");
+}
+
+/**
+ * How the hulls' moment stands to the antennae's, measured from the moment the ROW shows.
+ *
+ * **Where they touch, the row prints an end bisected off the hulls and this used the grid
+ * instant the search happened to land on** - so the page said "in contact from 18:13:27.961"
+ * and, two lines down, "7 s before", computed from 18:13:28. Changing the step moved the prose
+ * and not the row, under a paragraph claiming the ends come off the hulls.
+ */
+function against(hulls: HullApproach, antennaeAt: number): string {
+  const [spell] = hulls.contacts;
+  const gap = (spell ? spell.fromEpochSeconds : hulls.epochSeconds) - antennaeAt;
+  const what = spell ? "they first touch" : "it happens";
+  if (gap === 0) return `${what} at the same moment as`;
+  const size = Math.abs(gap);
+  const rounded = size < 10 ? size.toFixed(1) : size.toFixed(0);
+  return `${what} ${rounded} s ${gap < 0 ? "before" : "after"} the moment`;
+}
+
+/**
+ * Which of the file's answers about one ship's size was used, in as many words.
+ *
+ * **Three outcomes, not two.** A ship may state no offsets; she may state four that measure
+ * her; or she may state four that measure nothing - all zeroes is a valid file, and the
+ * dimensions then fall back. Reporting that last case as "no offsets stated" says something
+ * false about the file, which is a different fault from getting the number wrong and a worse
+ * one, because it cannot be checked against the source.
+ */
+function sizedFrom({ vessel }: Actor): string {
+  if (!vessel) return "no particulars";
+  const dimensions = hullDimensions(vessel);
+  if (dimensions.from === "offsets") {
+    return "the four AIS offsets, which measure the ship where the particulars describe her";
+  }
+  return dimensions.offsetsStated
+    ? "the particulars, her four AIS offsets being stated but measuring no hull"
+    : "the particulars, no AIS offsets being stated for her";
 }
 
 /** How the picture stands to that figure, at the moment the figure is about. */

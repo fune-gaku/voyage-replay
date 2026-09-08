@@ -30,6 +30,14 @@ export interface HullDimensions {
   lengthMetres: number;
   beamMetres: number;
   from: "offsets" | "particulars";
+  /**
+   * Whether the four offsets were in the file at all.
+   *
+   * **Not stated and stated-but-unusable are different facts and a page must not merge them.**
+   * A ship whose offsets are all zero HAS them; they measure no hull, so the dimensions fall
+   * back - but reporting that as "no offsets stated" says something false about the file.
+   */
+  offsetsStated: boolean;
 }
 
 /**
@@ -53,17 +61,18 @@ export interface HullDimensions {
  * pair back to the particulars, and the panel then says the particulars, which is true.
  */
 export function hullDimensions(vessel: Vessel): HullDimensions {
+  const offsets = vessel.referencePointOffsets;
   const particulars = {
     lengthMetres: vessel.loaMetres,
     beamMetres: vessel.beamMetres,
     from: "particulars",
+    offsetsStated: offsets !== undefined,
   } as const;
-  const offsets = vessel.referencePointOffsets;
   if (!offsets) return particulars;
 
   const measured = fromOffsets(offsets);
   if (measured.lengthMetres <= 0 || measured.beamMetres <= 0) return particulars;
-  return { ...measured, from: "offsets" };
+  return { ...measured, from: "offsets", offsetsStated: true };
 }
 
 function fromOffsets(offsets: ReferencePointOffsets): { lengthMetres: number; beamMetres: number } {

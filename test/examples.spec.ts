@@ -285,6 +285,7 @@ describe("Suo-nada, 27 November 2025", () => {
       lengthMetres: 49,
       beamMetres: 9,
       from: "offsets",
+      offsetsStated: true,
     });
     // The particulars say 9.4, which is the disagreement this settles.
     expect(tanker.vessel!.beamMetres).toBe(9.4);

@@ -235,17 +235,44 @@ describe("renderPanels", () => {
    */
   it("names which source each hull's length and beam came from", () => {
     // A carries no offsets and B does, which is this fixture's whole point.
-    expect(html).toContain("A from the particulars and B from the offsets");
+    expect(html).toContain("A from the particulars, no AIS offsets being stated for her");
+    expect(html).toContain("B from the four AIS offsets, which measure the ship");
 
     const bothStated = panelsFor(
       scenario([actor("A", northboundPoints(), BIG_SHIP), actor("B", westboundPoints(), BIG_SHIP)]),
     );
-    expect(bothStated).toContain("the four AIS offsets, which measure the ship");
+    expect(bothStated).toContain(
+      "which measure the ship where the particulars describe her, for both",
+    );
 
     const neither = panelsFor(
       scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), COASTER)]),
     );
-    expect(neither).toContain("the particulars, neither ship stating the four AIS offsets");
+    expect(neither).toContain("no AIS offsets being stated for her, for both");
+  });
+
+  /**
+   * **Stated and unusable is a third answer, and merging it with "not stated" is a claim
+   * about the file rather than about the arithmetic.** All four offsets at zero is valid -
+   * the schema's floor on each is zero - and the size then falls back to the particulars;
+   * saying she stated none would be false where a reader can check.
+   */
+  it("separates offsets that were not stated from offsets that measure nothing", () => {
+    const zeroed = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 0,
+        fromSternMetres: 0,
+        fromPortMetres: 0,
+        fromStarboardMetres: 0,
+      },
+    };
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), zeroed), actor("B", westboundPoints(), zeroed)]),
+    );
+
+    expect(html).toContain("her four AIS offsets being stated but measuring no hull");
+    expect(html).not.toContain("no AIS offsets being stated for her");
   });
 
   /**
@@ -254,7 +281,26 @@ describe("renderPanels", () => {
    * so a page that printed both under one "At" would be inventing a coincidence.
    */
   it("says whether the hulls' moment is the reported positions' moment", () => {
-    expect(html).toMatch(/at the same moment as|\d+ s (before|after) the moment/);
+    expect(html).toMatch(/at the same moment as|[\d.]+ s (before|after) the moment/);
+  });
+
+  /**
+   * **And measures that difference from the moment the row shows.** Where they touch, the row
+   * prints an end bisected off the hulls while this sentence used to print the grid instant
+   * the search happened to land on - so the page said "in contact from 18:13:27.961" and, two
+   * lines down, "7 s before", computed from 18:13:28. Changing the step moved the prose and
+   * not the row, under a paragraph claiming the ends come off the hulls.
+   */
+  it("measures that difference from the moment it printed, once they touch", () => {
+    const touching = panelsFor(
+      scenario([
+        actor("A", northboundPoints(), BIG_SHIP),
+        actor("B", northboundPoints(), BIG_SHIP),
+      ]),
+    );
+
+    expect(touching).toContain("they first touch");
+    expect(touching).not.toContain("it happens");
   });
 
   /**

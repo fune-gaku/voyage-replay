@@ -28,6 +28,7 @@ describe("how big a hull is", () => {
       lengthMetres: 180,
       beamMetres: 28,
       from: "offsets",
+      offsetsStated: true,
     });
   });
 
@@ -36,6 +37,7 @@ describe("how big a hull is", () => {
       lengthMetres: 49,
       beamMetres: 9.4,
       from: "particulars",
+      offsetsStated: false,
     });
   });
 
@@ -56,7 +58,12 @@ describe("how big a hull is", () => {
       },
     };
     const dimensions = hullDimensions(mixed);
-    expect(dimensions).toEqual({ lengthMetres: 49, beamMetres: 9, from: "offsets" });
+    expect(dimensions).toEqual({
+      lengthMetres: 49,
+      beamMetres: 9,
+      from: "offsets",
+      offsetsStated: true,
+    });
     expect(dimensions.beamMetres).not.toBe(mixed.beamMetres);
   });
 
@@ -78,6 +85,9 @@ describe("how big a hull is", () => {
       lengthMetres: 49,
       beamMetres: 9.4,
       from: "particulars",
+      // **Stated, and unusable.** A page that reports this as "no offsets stated" says
+      // something false about the file, so the two facts are kept apart.
+      offsetsStated: true,
     });
   });
 
@@ -113,6 +123,7 @@ describe("the shape of a hull from overhead", () => {
     lengthMetres: 100,
     beamMetres: 20,
     from: "particulars",
+    offsetsStated: false,
   };
 
   it("spans exactly the length and beam it was given", () => {
@@ -243,7 +254,12 @@ describe("the gap between two hulls", () => {
    * them.
    */
   it("clears a raked bow where a bounding box would not", () => {
-    const dimensions: HullDimensions = { lengthMetres: 100, beamMetres: 20, from: "particulars" };
+    const dimensions: HullDimensions = {
+      lengthMetres: 100,
+      beamMetres: 20,
+      from: "particulars",
+      offsetsStated: false,
+    };
     const rectangle = [
       { forwardMetres: 50, starboardMetres: 10 },
       { forwardMetres: 50, starboardMetres: -10 },
