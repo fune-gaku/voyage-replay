@@ -301,6 +301,54 @@ describe("contact over a track", () => {
     expect(approachOf([0.002, 0.002, 0.002, 0.002, 0.002])?.stepSeconds).toBe(1);
   });
 
+  /**
+   * **A spell open at the edge of the record ends at the edge, not at the last whole second.**
+   * A track may start or end on a fractional second - the schema allows it and `prepareTrack`
+   * keeps the milliseconds - and walking from the next whole second to the previous one put
+   * the reported edge up to a step inside the real one. That is the fault this area was fixed
+   * for, surviving at the boundaries.
+   */
+  it("opens a spell at the start of the record where they are already touching", () => {
+    const a = prepareActor(actor("A", alongside([0, 0, 0]), BIG_SHIP), ORIGIN);
+    const late = actor("B", alongside([0.0001, 0.0001, 0.0001]), BIG_SHIP);
+    // Half a second in, and still touching: the spell opens then, not at the next second.
+    late.track.points = late.track.points.map((point) => ({
+      ...point,
+      t: new Date(Date.parse(point.t) + 500).toISOString(),
+    }));
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const approach = hullApproach(
+      { track: a, ...ship },
+      { track: prepareActor(late, ORIGIN), ...ship },
+    );
+    const [spell] = approach?.contacts ?? [];
+
+    expect(spell?.fromEpochSeconds).toBe(Date.parse("2025-01-01T00:00:00.500Z") / 1000);
+    expect(spell?.toEpochSeconds).toBe(Date.parse("2025-01-01T00:02:00.000Z") / 1000);
+  });
+
+  /** And an overlap shorter than one step is looked at rather than dropped to nothing. */
+  it("still answers where the two tracks overlap by less than a step", () => {
+    const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
+    const brief = actor("B", alongside([0.0001, 0.0001]), BIG_SHIP);
+    // B's record starts 0.4 s before A's ends, so the two share four tenths of a second.
+    const shift = Date.parse("2025-01-01T00:01:00Z") - Date.parse("2025-01-01T00:00:00Z") - 400;
+    brief.track.points = brief.track.points.map((point) => ({
+      ...point,
+      t: new Date(Date.parse(point.t) + shift).toISOString(),
+    }));
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const approach = hullApproach(
+      { track: a, ...ship },
+      { track: prepareActor(brief, ORIGIN), ...ship },
+    );
+
+    expect(approach).not.toBeNull();
+    expect(approach?.contacts).toHaveLength(1);
+    const [spell] = approach?.contacts ?? [];
+    expect((spell?.toEpochSeconds ?? 0) - (spell?.fromEpochSeconds ?? 0)).toBeCloseTo(0.4, 3);
+  });
+
   it("is null where the two tracks never overlap in time", () => {
     const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
     const late = actor("B", alongside([0, 0]), BIG_SHIP);

@@ -759,12 +759,22 @@ function hullNote(
  * between a figure a reader can check and a figure they have to accept.
  */
 function dimensionSource(both: [Prepared, Prepared]): string {
-  const sources = both
-    .map(({ actor }) => (actor.vessel ? hullDimensions(actor.vessel).from : null))
-    .filter((from) => from !== null);
-  return sources.every((from) => from === "offsets")
-    ? "the four AIS offsets, which measure the ship where the particulars describe her"
-    : "the particulars, the AIS offsets not being stated for both";
+  const named = both.map(({ actor }) => ({
+    id: actor.id,
+    from: actor.vessel ? hullDimensions(actor.vessel).from : null,
+  }));
+  const offsets = "the four AIS offsets, which measure the ship where the particulars describe her";
+  if (named.every((ship) => ship.from === "offsets")) return offsets;
+  if (named.every((ship) => ship.from === "particulars")) {
+    return "the particulars, neither ship stating the four AIS offsets";
+  }
+  // **Per ship, because the answer is per ship.** Saying "the particulars" over a pair where
+  // one of them was measured off her offsets reports the wrong derivation for that hull, and
+  // the derivation is the whole of what makes this figure checkable.
+  const each = named.map((ship) =>
+    ship.from === null ? `${ship.id} carries none` : `${ship.id} from the ${ship.from}`,
+  );
+  return `${each.join(" and ")} - ${offsets.replace("the four AIS offsets, which measure", "the offsets measure")}`;
 }
 
 /** How the picture stands to that figure, at the moment the figure is about. */

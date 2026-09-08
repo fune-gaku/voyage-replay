@@ -212,11 +212,29 @@ export interface HullApproach {
  * rather than as a depth for the reason `separationMetres` gives.
  */
 export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullApproach | null {
-  const from = Math.ceil(Math.max(a.track.startSeconds, b.track.startSeconds));
-  const to = Math.floor(Math.min(a.track.endSeconds, b.track.endSeconds));
+  const from = Math.max(a.track.startSeconds, b.track.startSeconds);
+  const to = Math.min(a.track.endSeconds, b.track.endSeconds);
+  if (to < from) return null;
   const scan = walk(a, b, { from, to, stepSeconds });
   if (!scan.closest) return null;
   return { ...scan.closest, contacts: scan.contacts, stepSeconds };
+}
+
+/**
+ * The moments to look at: the step, and both ends of the overlap whatever the step lands on.
+ *
+ * **The ends are not optional and rounding them off was the same fault one layer out.** A
+ * track may start or end on a fractional second - the schema's date-time allows it and
+ * `prepareTrack` keeps the milliseconds - and a pair already touching when the record begins
+ * has its spell open at that instant, not at the next whole second. Walking `ceil` to `floor`
+ * reported an edge up to a step inside the real one, which is what this whole area was fixed
+ * for, and dropped an overlap shorter than one step to nothing at all.
+ */
+function instants(over: { from: number; to: number; stepSeconds: number }): number[] {
+  const list: number[] = [];
+  for (let t = over.from; t < over.to; t += over.stepSeconds) list.push(t);
+  list.push(over.to);
+  return list;
 }
 
 /** Everything one pass over the window finds: the least gap, and where contact opened and shut. */
@@ -230,7 +248,7 @@ function walk(
   let began: number | null = null;
   let lastClear: number | null = null;
 
-  for (let t = over.from; t <= over.to; t += over.stepSeconds) {
+  for (const t of instants(over)) {
     const gap = gapAt(a, b, t);
     if (gap === null) continue;
     if (!closest || gap < closest.metres) closest = { metres: gap, epochSeconds: t };

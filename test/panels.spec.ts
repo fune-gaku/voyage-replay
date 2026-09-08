@@ -226,14 +226,26 @@ describe("renderPanels", () => {
     expect(html).toContain("a metre of this tool");
   });
 
-  /** Which of the file's two answers about her size, since they differ and both are in it. */
-  it("names which source the hull's length and beam came from", () => {
-    expect(html).toContain("the particulars, the AIS offsets not being stated for both");
+  /**
+   * **Which of the file's two answers about her size, per ship, since it is per ship.** They
+   * differ - 9.4 m against 9.0 on the reference case's tanker - and a pair where one ship was
+   * measured off her offsets and the other off her particulars is the ordinary state of a
+   * two-ship reconstruction. Reporting one source for both names the wrong derivation for one
+   * of the hulls, and the derivation is what makes the figure checkable.
+   */
+  it("names which source each hull's length and beam came from", () => {
+    // A carries no offsets and B does, which is this fixture's whole point.
+    expect(html).toContain("A from the particulars and B from the offsets");
 
     const bothStated = panelsFor(
       scenario([actor("A", northboundPoints(), BIG_SHIP), actor("B", westboundPoints(), BIG_SHIP)]),
     );
     expect(bothStated).toContain("the four AIS offsets, which measure the ship");
+
+    const neither = panelsFor(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", westboundPoints(), COASTER)]),
+    );
+    expect(neither).toContain("the particulars, neither ship stating the four AIS offsets");
   });
 
   /**
