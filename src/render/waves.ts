@@ -280,6 +280,7 @@ const FRAGMENT_DECLARATIONS = `${DECLARATIONS}
 uniform vec3 uEye;
 ${SKY_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
+float gCarriedSlope = 0.0;
 `;
 
 /**
@@ -383,6 +384,11 @@ const NORMALS = `
     float wavelength = 6.2831853 / length( w.xy );
     float carries = smoothstep( 0.0, 1.0, wavelength / ( away * uPixelAngle + 1e-6 ) );
     slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    // **What this fragment's normals actually carry**, which is less than the sea has wherever
+    // the band or the range has taken components out. The reflection gives the difference back
+    // to the body, so the lane keeps its measured width instead of narrowing with distance.
+    float steep = carries * w.z * length( w.xy );
+    gCarriedSlope += 0.5 * steep * steep;
   }
   // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
   // the sky is a function of a world direction - so the reflection stage below would have to
@@ -392,6 +398,8 @@ const NORMALS = `
   gWorldNormal = normalize( mix( vec3( 0.0, 1.0, 0.0 ), world, fade ) );
   vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
+  // The whole surface fades to flat past a few kilometres as well, and slope goes with it.
+  gCarriedSlope *= fade * fade;
 }
 `;
 
@@ -413,7 +421,7 @@ const REFLECTION = `
   float towards = clamp( dot( normalize( vViewPosition ), normal ), 0.0, 1.0 );
   float sky = mix( ${WATER_REFLECTANCE_HEAD_ON}, 1.0, pow( 1.0 - towards, 5.0 ) );
   vec3 look = normalize( vWaveWorld - cameraPosition );
-  outgoingLight = mix( outgoingLight, skyTowards( reflect( look, gWorldNormal ) ), sky );
+  outgoingLight = mix( outgoingLight, skyTowards( reflect( look, gWorldNormal ), gCarriedSlope ), sky );
 }
 #include <opaque_fragment>
 `;

@@ -123,9 +123,14 @@ describe("patching the water's shader", () => {
 
     expect(shader.vertexShader).toContain("uniform vec4 uWave");
     expect(shader.vertexShader).toContain("transformed.y +=");
-    expect(shader.fragmentShader).toContain("vec3 skyTowards( vec3 towards )");
+    expect(shader.fragmentShader).toContain("vec3 skyTowards( vec3 towards, float carried )");
     expect(shader.fragmentShader).toContain("normal = normalize( mix( normal, waved, fade ) )");
     expect(shader.fragmentShader).toContain("outgoingLight = mix( outgoingLight, skyTowards(");
+    // The lane's width is settled per fragment, from what these normals are still carrying.
+    expect(shader.fragmentShader).toContain("gCarriedSlope +=");
+    expect(shader.fragmentShader).toContain(
+      "skyTowards( reflect( look, gWorldNormal ), gCarriedSlope )",
+    );
 
     // **The reflection starts from the water as DRAWN**, so the world position is taken
     // again after everything that moves it - the waves here and the curvature's drop, which

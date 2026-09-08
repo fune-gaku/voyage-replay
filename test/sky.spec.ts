@@ -98,12 +98,16 @@ describe("the sky a flat water surface hands back", () => {
  * thing a report argues about.
  */
 describe("the path a body lays", () => {
-  /** The lobe of a 3 m sea, from `core/illumination.ts`: one axis of the ray's own spread. */
-  const spread = (18.9 * Math.PI) / 180;
+  /**
+   * The slope variance a 3 m sea has to add up to - Cox and Munk's, from
+   * `core/illumination.ts`. The lobe's own width follows from it and from whatever the
+   * normals under a fragment are carrying, which the second argument to `skyColourAt` says.
+   */
+  const measured = 0.0636;
 
   it("is brightest towards the body and falls away from it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), spread);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     const at = (azimuth: number): number =>
       skyColourAt(towardsBody(moon(azimuth, 41)), uniforms).getHSL({ h: 0, s: 0, l: 0 }).l;
@@ -121,7 +125,7 @@ describe("the path a body lays", () => {
    */
   it("leaves the far side of the sky where it found it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), spread);
+    setSkyBody(uniforms, moon(191, 41), measured);
 
     const away = towardsBody(moon(11, 41));
     const withPath = skyColourAt(away, uniforms).r;
@@ -137,8 +141,8 @@ describe("the path a body lays", () => {
   it("widens with the spread it is given", () => {
     const narrow = gradientSky();
     const wide = gradientSky();
-    setSkyBody(narrow, moon(191, 41), (10 * Math.PI) / 180);
-    setSkyBody(wide, moon(191, 41), (30 * Math.PI) / 180);
+    setSkyBody(narrow, moon(191, 41), 0.01);
+    setSkyBody(wide, moon(191, 41), 0.09);
 
     const off = towardsBody(moon(191 + 20, 41));
     const lightness = (u: ReturnType<typeof makeSkyUniforms>): number =>
@@ -168,18 +172,37 @@ describe("the path a body lays", () => {
   it("leaves a stated calm the body's own disc rather than nothing", () => {
     const uniforms = gradientSky();
     setSkyBody(uniforms, moon(191, 41), 0);
-    const width = uniforms.uSkyBodyLobe.value.y;
-    expect((width * 180) / Math.PI).toBeCloseTo(0.265, 3);
+    expect((uniforms.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(0.265, 3);
+    expect(uniforms.uSkyBodyLobe.value.z).toBe(0);
+  });
 
-    // And against a real sea's spread it disappears: a quarter degree against twenty-six.
-    const rough = gradientSky();
-    setSkyBody(rough, moon(191, 41), spread);
-    expect((rough.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(18.9, 2);
+  /**
+   * **The lane keeps its width as the sea's own shading gives it up.** The shading drops each
+   * component where the range runs out of pixels for it and fades the lot to flat past a few
+   * kilometres, so a lobe sized once against the whole drawn spectrum would narrow with
+   * distance and end as a mirror spot. What the normals no longer carry is given back here.
+   */
+  it("widens the lobe by exactly what the normals have stopped carrying", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, moon(191, 41), measured);
+    const towards = towardsBody(moon(191, 41));
+
+    // Near the eye the normals carry the drawn sea's own slope; far out they carry none.
+    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
+    // Dead centre both peak alike - a Gaussian's height does not depend on its width.
+    expect(skyColourAt(towards, uniforms, 0).r).toBeCloseTo(
+      skyColourAt(towards, uniforms, drawn).r,
+      12,
+    );
+
+    // Twenty-five degrees off the middle, the far lobe is the wider - which is the point.
+    const off = towardsBody(moon(191, 41 + 25));
+    expect(skyColourAt(off, uniforms, 0).r).toBeGreaterThan(skyColourAt(off, uniforms, drawn).r);
   });
 
   it("draws no path where no body is up", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, null, spread);
+    setSkyBody(uniforms, null, measured);
     expect(uniforms.uSkyBodyLobe.value.y).toBe(0);
   });
 
@@ -190,17 +213,17 @@ describe("the path a body lays", () => {
   it("dims the path with the body rather than only moving it", () => {
     const full = gradientSky();
     const crescent = gradientSky();
-    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, spread);
-    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, spread);
+    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, measured);
+    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, measured);
     expect(crescent.uSkyBodyLobe.value.x).toBeCloseTo(full.uSkyBodyLobe.value.x * 0.06, 9);
   });
 
   /** The sun is not brighter than the ceiling; it is the ceiling. */
   it("holds the sun at the same ceiling as a full moon rather than blowing past it", () => {
     const sun = gradientSky();
-    setSkyBody(sun, { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 }, spread);
+    setSkyBody(sun, { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 }, measured);
     const full = gradientSky();
-    setSkyBody(full, moon(191, 41), spread);
+    setSkyBody(full, moon(191, 41), measured);
     expect(sun.uSkyBodyLobe.value.x).toBe(full.uSkyBodyLobe.value.x);
   });
 });
@@ -215,9 +238,11 @@ describe("the copy that runs on the card", () => {
     for (const name of Object.keys(makeSkyUniforms())) {
       expect(SKY_GLSL, name).toContain(`uniform vec3 ${name};`);
     }
-    expect(SKY_GLSL).toContain("vec3 skyTowards( vec3 towards )");
+    expect(SKY_GLSL).toContain("vec3 skyTowards( vec3 towards, float carried )");
     // The gradient, and the Gaussian lobe on top of it.
     expect(SKY_GLSL).toContain("mix( uSkyHorizon, uSkyZenith");
-    expect(SKY_GLSL).toContain("exp( -0.5 * pow( away / uSkyBodyLobe.y, 2.0 ) )");
+    expect(SKY_GLSL).toContain("exp( -0.5 * pow( away / width, 2.0 ) )");
+    // The same difference the TypeScript mirror takes, written the same way round.
+    expect(SKY_GLSL).toContain("max( uSkyBodyLobe.z - carried, 0.0 )");
   });
 });

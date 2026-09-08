@@ -26,7 +26,7 @@ import {
 
 import type { Conditions } from "../core/conditions.js";
 import type { LocalPosition } from "../core/geodesy.js";
-import { glitterSpreadRadians, lightingAt, type Lit } from "../core/illumination.js";
+import { lightingAt, measuredSlopeVariance, type Lit } from "../core/illumination.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
@@ -430,14 +430,14 @@ function seaControls(
       lights.pointAt(lit);
       // **The width of the path is the sea's, and the sea is the one that is DRAWN.** Its
       // slope is a third of a real one, so the missing roughness goes into the body's own
-      // lobe - measured off the components the water is made of, not off the spectrum they
-      // were cut from. See `core/illumination.ts`.
+      // lobe - and how much is missing is settled per fragment in the shader, because the
+      // shading itself drops components with range. See `core/illumination.ts`.
       // **No path on a chart**, which is the judgement the lighting, the map tint and the
       // grid have all already made: a plan view is a diagram, and a glitter path drawn on
       // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
       // same flag the waves answer to, asked rather than worked out a second time.
       const drawnAsSea = parts.waves.uWaveScale.value > 0;
-      setSkyBody(parts.waves.sky, lit, drawnAsSea ? spreadOver(parts) : null);
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null);
     },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
@@ -477,24 +477,20 @@ function setDiagram(
  * the shader's is - so a chart, which has no waves, floats nothing.
  */
 /**
- * How much wider than the drawn surface the reflected body has to be, for this sea.
+ * The slope the sea's reflection has to add up to, which the shader shares out per fragment.
  *
- * Null where nothing is drawn: no components, no slope, no width - and a mirror-sharp moon
- * on flat water would assert a calm nobody recorded, which is the strongest claim this
- * renderer can make about a sea it was told nothing about.
+ * **Null and zero are different answers.** No sea stated means no slope to take, and a
+ * mirror-sharp body on water this tool decided to draw flat would assert a calm nobody
+ * recorded. A sea stated flat is a calm on somebody's authority, and calm water mirrors.
+ * Asking the components alone would collapse the two, since both come out empty.
+ *
+ * The height is the DRAWN one, so the target answers to the sea in the picture rather than
+ * to a figure the page prints.
  */
-function spreadOver(parts: Switchable): number | null {
-  // **Null and zero are different answers here.** No sea stated means no slope to take; a sea
-  // stated flat is a calm on somebody's authority, and calm water mirrors. Asking the
-  // components alone would collapse the two, since both come out empty.
+function measuredOver(parts: Switchable): number | null {
   if (!parts.estimate) return null;
-  let height = 0;
-  let slope = 0;
-  for (const wave of parts.sea) {
-    height += wave.amplitudeMetres ** 2 / 2;
-    slope += (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2;
-  }
-  return glitterSpreadRadians(4 * Math.sqrt(height), slope);
+  const height = parts.sea.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
+  return measuredSlopeVariance(4 * Math.sqrt(height));
 }
 
 /**

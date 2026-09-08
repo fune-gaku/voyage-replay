@@ -778,6 +778,15 @@ roughness goes into the body's own lobe. Slopes add in quadrature, so what is mi
 `measured − drawn` as variances, and the body is given `sqrt(2 (measured − drawn))` = 18.9°,
 which with what the normals already do comes back to 20.4°.
 
+**How much is missing is a per-fragment question, not a per-scene one.** The shading drops
+each component where the range or the frame runs out of pixels for it, and past 2.5 km fades
+the whole normal to flat — so a lobe sized once against the whole drawn spectrum narrows with
+distance and ends as a mirror spot on water drawn flat, and the lane's width would depend on
+how far away it is and how big somebody's window is. The shader therefore carries the sea's
+TOTAL slope as the target and subtracts what the normals under each fragment are actually
+carrying. `core/illumination.ts` holds the rule and the GLSL mirrors it, for the reason
+`meshCarries` gives: nothing in Node can compile a shader to ask it.
+
 **Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not**, and the
 alternative is a number tuned until the picture looks right.
 

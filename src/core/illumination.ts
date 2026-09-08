@@ -158,6 +158,20 @@ export function lightingAt(conditions: Conditions, drawnAsNight: boolean): Lit |
  * nobody recorded. A stated calm is that calm, on somebody's authority, and a mirror is what
  * calm water does - so the body is drawn at its own angular size and no wider.
  */
+/**
+ * The slope variance the sea's reflection has to add up to, or null where none is stated.
+ *
+ * Separate from `glitterSpreadRadians` because the two are asked in different places: this is
+ * the target, and the shader subtracts from it whatever the normals under a given fragment
+ * happen to be carrying. A stated calm is zero rather than Cox and Munk's intercept - their
+ * fit had no data at no wind, and a source saying flat means flat.
+ */
+export function measuredSlopeVariance(significantHeightMetres: number | null): number | null {
+  if (significantHeightMetres === null) return null;
+  if (significantHeightMetres <= 0) return 0;
+  return coxMunkSlopeVariance(windRaisingMetresPerSecond(significantHeightMetres));
+}
+
 export function glitterSpreadRadians(
   significantHeightMetres: number | null,
   drawnSlopeVariance: number,
