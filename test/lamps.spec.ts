@@ -2,6 +2,8 @@ import { Color } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
+  candelaFromNominalRange,
+  lampLuxOnWater,
   STREAK_FULL_METRES,
   STREAK_REACH_OF_NOMINAL,
   streakBrightness,
@@ -17,14 +19,14 @@ import {
 } from "../src/render/lamps.js";
 
 /** How brightly a streak and a pool may draw here, which the scene's palette decides. */
-const EXPOSURE = { streak: 0.35, pool: 0.05 };
+const EXPOSURE = { streak: 1, pool: 0.03, luxToScreen: 4 };
 
 /** A lamp somewhere, with an arc and a range, for the claims below to be about. */
 function lamp(over: Partial<LitLamp> = {}): LitLamp {
   return {
     at: { x: 0, y: 12, z: 0 },
     colour: new Color(0xff4d4d),
-    relativeBrightness: 1,
+    candela: candelaFromNominalRange(3),
     headingDegreesTrue: 0,
     arcStartDegrees: 0,
     arcEndDegrees: 360,
@@ -149,6 +151,38 @@ describe("how far a streak reaches", () => {
     }
   });
 
+  /**
+   * **The light a lamp puts on the water is computable, and it was not being computed.**
+   * Rule 22 gives the range, Annex I section 8 gives the candela it was set from, and the
+   * rest is the inverse square with an incidence cosine - which on a level sea makes it the
+   * cube of the slant range, not the square of the horizontal one.
+   */
+  it("puts about as much light on the water at a hundred metres as the stars do", () => {
+    // A 6 mile masthead light is 94 candela; twenty metres up, at a hundred metres off.
+    const masthead = candelaFromNominalRange(6);
+    expect(masthead).toBeCloseTo(94.2, 0);
+
+    const slant = Math.hypot(100, 20);
+    expect(lampLuxOnWater(masthead, 20, slant)).toBeCloseTo(0.0018, 4);
+    // Starlight is about 0.002 lx and the reference case's moon 0.018: a tenth of the moon.
+    expect(lampLuxOnWater(masthead, 20, slant)).toBeLessThan(0.018 / 5);
+  });
+
+  /** And it falls as the cube, so it is gone a few hundred metres out rather than lingering. */
+  it("falls as the cube of the range, not the square", () => {
+    const masthead = candelaFromNominalRange(6);
+    const near = lampLuxOnWater(masthead, 20, Math.hypot(100, 20));
+    const far = lampLuxOnWater(masthead, 20, Math.hypot(300, 20));
+    // Three times the range is twenty-seven times less light, near enough at this height.
+    expect(near / far).toBeGreaterThan(20);
+  });
+
+  /** A dimmer light by Rule 22 is a dimmer light in candela, in the ratio the rule implies. */
+  it("makes a sidelight an eighth of a masthead, which is what the ranges say", () => {
+    expect(candelaFromNominalRange(3)).toBeCloseTo(12.1, 1);
+    expect(candelaFromNominalRange(6) / candelaFromNominalRange(3)).toBeCloseTo(7.8, 1);
+  });
+
   /** Close aboard it is at its brightest rather than dividing by a range near nothing. */
   it("holds at full brightness inside the reference range", () => {
     expect(streakBrightness(1, nominal)).toBeCloseTo(
@@ -172,9 +206,11 @@ describe("what reaches the shader", () => {
 
     expect(uniforms.uLamp.value[0]?.x).toBe(40);
     // The lamp's own figure, with no exposure folded into it.
-    expect(uniforms.uLamp.value[0]?.w).toBe(1);
+    // The lamp's own candela, out of Rule 22 by Annex I: a 3 mile sidelight is about 12.
+    expect(uniforms.uLamp.value[0]?.w).toBeCloseTo(12.1, 1);
     expect(uniforms.uLampPool.value).toBe(EXPOSURE.pool);
     expect(uniforms.uLampStreak.value).toBe(EXPOSURE.streak);
+    expect(uniforms.uLampLux.value).toBe(EXPOSURE.luxToScreen);
     expect(uniforms.uLampColour.value[0]?.getHex()).toBe(0xff4d4d);
     expect(uniforms.uLampArc.value[0]?.z).toBeCloseTo((112.5 * Math.PI) / 180, 9);
     expect(uniforms.uLampArc.value[0]?.w).toBeCloseTo(3 * METRES_PER_NAUTICAL_MILE, 6);
@@ -188,7 +224,7 @@ describe("what reaches the shader", () => {
   it("puts out the slots nothing is using", () => {
     const uniforms = makeLampUniforms();
     setLamps(uniforms, [lamp(), lamp()], EXPOSURE);
-    expect(uniforms.uLamp.value[1]?.w).toBe(1);
+    expect(uniforms.uLamp.value[1]?.w).toBeGreaterThan(0);
 
     setLamps(uniforms, [lamp()], EXPOSURE);
     expect(uniforms.uLamp.value[1]?.w).toBe(0);
@@ -225,7 +261,9 @@ describe("the copy that runs on the card", () => {
   it("hands the water it lights back separately from the water it is mirrored in", () => {
     expect(LAMPS_GLSL).toContain("out vec3 lit");
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
-    expect(LAMPS_GLSL).toContain("lit += uLampColour[ i ] * uLampPool * lamp.w * fall * landing;");
+    expect(LAMPS_GLSL).toContain(
+      "lit += uLampColour[ i ] * uLampPool * uLampLux * lux * landing * fall;",
+    );
   });
 
   /**
@@ -236,15 +274,15 @@ describe("the copy that runs on the card", () => {
    */
   it("keeps the streak's exposure out of the pool's", () => {
     const uniforms = makeLampUniforms();
-    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.05 });
+    setLamps(uniforms, [lamp()], { streak: 0, pool: 0.03, luxToScreen: 4 });
 
     // The lamp is still there and still lighting the water, with nothing mirrored in it.
-    expect(uniforms.uLamp.value[0]?.w).toBe(1);
-    expect(uniforms.uLampPool.value).toBe(0.05);
+    expect(uniforms.uLamp.value[0]?.w).toBeGreaterThan(0);
+    expect(uniforms.uLampPool.value).toBe(0.03);
     expect(uniforms.uLampStreak.value).toBe(0);
     // Each is its own factor in the shader, so neither multiplies the other.
-    expect(LAMPS_GLSL).toContain("uLampStreak * lamp.w");
-    expect(LAMPS_GLSL).toContain("uLampPool * lamp.w");
+    expect(LAMPS_GLSL).toContain("uLampStreak * uLampLux * lux");
+    expect(LAMPS_GLSL).toContain("uLampPool * uLampLux * lux");
   });
 
   it("shares the sea's own spread rather than working out a second one", () => {
@@ -258,9 +296,12 @@ describe("the copy that runs on the card", () => {
     expect(LAMPS_GLSL).toContain("if ( path >= reach ) continue;");
   });
 
-  it("carries the same two figures the range rule uses", () => {
+  it("carries the reach the range rule sets, and the lux it works in", () => {
     expect(LAMPS_GLSL).toContain(STREAK_REACH_OF_NOMINAL.toFixed(2));
-    expect(LAMPS_GLSL).toContain(STREAK_FULL_METRES.toFixed(1));
+    // The illuminance itself: candela over the slant range squared, with the incidence
+    // cosine on the surface's own normal - which on a level sea makes it the cube.
+    expect(LAMPS_GLSL).toContain("float lux = lamp.w / ( slant * slant );");
+    expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
   });
 
   /** The bearing of the water from the lamp, off that bow - the direction that is 180 out. */

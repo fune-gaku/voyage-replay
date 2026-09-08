@@ -1290,7 +1290,8 @@ describe("the streaks the lamps lay", () => {
     expect(html).toContain("Each lamp does two things to the water");
     expect(html).toContain("inside the lamp");
     expect(html).toContain("inventing a detection");
-    expect(html).toContain("Rule 22 states a range and no candela");
+    expect(html).toContain("Annex I gives the candela");
+    expect(html).toContain("what the stars do");
   });
 
   /**
