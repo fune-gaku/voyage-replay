@@ -7,9 +7,11 @@ import {
   type HullDimensions,
 } from "../src/actors/vessel/hull-shape.js";
 import { placementFor, NO_OFFSET } from "../src/actors/vessel/reference-point.js";
-import { placedOutline, separationMetres } from "../src/actors/vessel/separation.js";
+import { hullApproach, placedOutline, separationMetres } from "../src/actors/vessel/separation.js";
+import { prepareActor } from "../src/core/track.js";
+import type { TrackPoint } from "../src/core/types.js";
 
-import { BIG_SHIP, COASTER } from "./fixtures.js";
+import { actor, BIG_SHIP, COASTER, ORIGIN } from "./fixtures.js";
 
 /**
  * **The dimensions and the shape had two homes and disagreed in both.** The renderer drew a
@@ -223,5 +225,93 @@ describe("the gap between two hulls", () => {
 
     expect(boxes).toBeLessThan(hulls);
     expect(hulls).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * **Contact over a track, which is where the two faults a review found both lived.**
+ *
+ * One was that a spell never closed: a second contact after a swing was folded into the first,
+ * so the page asserted contact through the clear water between them. The other was that the
+ * length of a spell was the NUMBER OF SAMPLES that showed contact rather than the time between
+ * its ends - one step out every time.
+ */
+describe("contact over a track", () => {
+  /** Both hulls are 180 m by 28 m, so they touch when their centres are within 28 m abeam. */
+  function alongside(lonDegrees: number[]): TrackPoint[] {
+    return lonDegrees.map((lon, index) => ({
+      t: new Date(Date.UTC(2025, 0, 1, 0, index) * 1).toISOString(),
+      lat: 0,
+      lon,
+      cogDegreesTrue: 0,
+      headingDegreesTrue: 0,
+    }));
+  }
+
+  function approachOf(lonDegrees: number[]) {
+    const a = prepareActor(actor("A", alongside([0, 0, 0, 0, 0]), BIG_SHIP), ORIGIN);
+    const b = prepareActor(actor("B", alongside(lonDegrees), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    return hullApproach({ track: a, ...ship }, { track: b, ...ship });
+  }
+
+  /** Clear, in, clear again: one spell, with both ends off the drawn hulls. */
+  it("closes a spell when the hulls come clear", () => {
+    const approach = approachOf([0.0005, 0.0001, 0.0005, 0.0005, 0.0005]);
+    expect(approach?.contacts).toHaveLength(1);
+  });
+
+  /**
+   * **In, clear, in again: two spells and not one.** Left open, the window would run from the
+   * first meeting to the last and assert contact across a minute of clear water - a picture of
+   * a collision the data says did not happen.
+   */
+  it("reports two spells where they come clear and meet again", () => {
+    const approach = approachOf([0.0005, 0.0001, 0.0005, 0.0001, 0.0005]);
+    expect(approach?.contacts).toHaveLength(2);
+
+    const [first, second] = approach?.contacts ?? [];
+    expect(first?.toEpochSeconds).toBeLessThan(second?.fromEpochSeconds ?? 0);
+  });
+
+  /**
+   * **The length is the time between the ends, not the count of samples inside them.** A spell
+   * observed at ten one-second samples is nine seconds long, and this project printed ten.
+   */
+  it("measures a spell by its ends rather than by its samples", () => {
+    const approach = approachOf([0.0005, 0.0001, 0.0005, 0.0005, 0.0005]);
+    const [spell] = approach?.contacts ?? [];
+    const seconds = (spell?.toEpochSeconds ?? 0) - (spell?.fromEpochSeconds ?? 0);
+
+    // The ends are bisected, so they are not on the one-second grid the search walked.
+    expect(Number.isInteger(spell?.fromEpochSeconds)).toBe(false);
+    expect(seconds).toBeGreaterThan(0);
+    expect(seconds).toBeLessThan(120);
+  });
+
+  /** Where they never meet, there are no spells and the least gap is a real distance. */
+  it("reports no spell and a gap where they never touch", () => {
+    const approach = approachOf([0.002, 0.002, 0.002, 0.002, 0.002]);
+    expect(approach?.contacts).toEqual([]);
+    expect(approach?.metres).toBeGreaterThan(0);
+  });
+
+  /** And the step it walked at is carried, because a contact shorter than it can be missed. */
+  it("carries the step it searched at", () => {
+    expect(approachOf([0.002, 0.002, 0.002, 0.002, 0.002])?.stepSeconds).toBe(1);
+  });
+
+  it("is null where the two tracks never overlap in time", () => {
+    const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
+    const late = actor("B", alongside([0, 0]), BIG_SHIP);
+    late.track.points = late.track.points.map((point) => ({
+      ...point,
+      t: new Date(Date.parse(point.t) + 86400000).toISOString(),
+    }));
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+
+    expect(
+      hullApproach({ track: a, ...ship }, { track: prepareActor(late, ORIGIN), ...ship }),
+    ).toBeNull();
   });
 });

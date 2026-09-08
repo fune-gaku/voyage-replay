@@ -11,7 +11,7 @@ import { assumedHeights } from "../actors/vessel/heights.js";
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
 import { hullDimensions } from "../actors/vessel/hull-shape.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
-import { hullApproach, type HullApproach } from "../actors/vessel/separation.js";
+import { hullApproach, type Contact, type HullApproach } from "../actors/vessel/separation.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
 import { conditionsAt, type Conditions } from "../core/conditions.js";
 import { crestOcclusionMetres, type Sightline } from "../core/horizon.js";
@@ -643,23 +643,32 @@ function hullApproach2(both: [Prepared, Prepared]): HullApproach | null {
   return first && second ? hullApproach(first, second) : null;
 }
 
-/** What the hulls did, as rows: a gap and its moment, or a window of contact. */
+/** What the hulls did, as rows: a gap and its moment, or every spell of contact. */
 function hullRows(hulls: HullApproach | null, timeZone: string): [string, string][] {
   if (!hulls) return [["Between hulls", "-, needs both ships' particulars"]];
-  if (!hulls.contact) {
+  const [first, ...rest] = hulls.contacts;
+  if (!first) {
     return [
       ["Between hulls", `${hulls.metres.toFixed(1)} m`],
       ["...at", `${formatClock(hulls.epochSeconds, timeZone)} local`],
     ];
   }
-  const { fromEpochSeconds, toEpochSeconds } = hulls.contact;
-  const seconds = toEpochSeconds - fromEpochSeconds + 1;
+  const label = rest.length === 0 ? "in contact" : `in contact, ${hulls.contacts.length} times`;
+  return [["Between hulls", label], ...hulls.contacts.map((spell) => spellRow(spell, timeZone))];
+}
+
+/**
+ * One spell, as a clock time and a length.
+ *
+ * **The length is the difference between the two, not the number of samples that showed
+ * contact.** Those differ by one step every time, and this page printed the count: 18:13:28 to
+ * 18:13:37 is nine seconds, and it said ten.
+ */
+function spellRow(spell: Contact, timeZone: string): [string, string] {
+  const seconds = spell.toEpochSeconds - spell.fromEpochSeconds;
   return [
-    ["Between hulls", "in contact"],
-    [
-      "...from",
-      `${formatClock(fromEpochSeconds, timeZone)} to ${formatClock(toEpochSeconds, timeZone)} local, ${seconds} s`,
-    ],
+    "...from",
+    `${formatClock(spell.fromEpochSeconds, timeZone)} to ${formatClock(spell.toEpochSeconds, timeZone)} local, ${seconds.toFixed(1)} s`,
   ];
 }
 
@@ -734,9 +743,11 @@ function hullNote(
     "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
     `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
     `And it happens ${when} the reported positions are nearest, so the two rows are not two ` +
-    "readings of one instant. Where they touch, the window is measured across positions " +
-    "joined by straight lines between samples, which is this tool's interpolation and not " +
-    "something the source states."
+    "readings of one instant. Where they touch, the ends of each spell are found on those " +
+    "hulls rather than on the search, but the positions between samples are joined by " +
+    `straight lines, so the times are this tool's interpolation and not the source's. It ` +
+    `looked every ${hulls.stepSeconds} s, so a touch shorter than that could fall between ` +
+    "two looks and go unreported."
   );
 }
 

@@ -71,8 +71,8 @@ while the range falls from 3,400 m to 470 m.
 
 `closestPointOfApproach` measures between the two REPORTED positions, and an AIS position is
 the GPS antenna. On the Suo-nada case that is **39.6 m at 18:13:35** — and the drawn hulls are
-through each other for **ten seconds from 18:13:28**, so the checkable figure is read from the
-middle of the collision. Both are true about different things. The page prints both, labelled,
+through each other for **9.41 seconds from 18:13:27.96**, so the checkable figure is read from
+the middle of the collision. Both are true about different things. The page prints both, labelled,
 for the reason it prints a wind speed beside a contradicting force: hiding one input is not
 answering with the other.
 
@@ -120,8 +120,25 @@ as declining to bend a hull for the earth's curvature. What the shape supports i
 when, so that is what comes back.
 
 And the window is interpolated: on the reference case the whole contact falls inside sample gaps
-of 13 s and 20 s, joined by straight lines. "Ten seconds in contact" is a property of this tool
-as much as of the ships, and the panel says so.
+of 13 s and 20 s, joined by straight lines. Its length is a property of this tool as much as of
+the ships, and the panel says so.
+
+Three things about that window were wrong in the first version of this and are worth keeping
+written down.
+
+**Every spell, not one window.** Two ships that touch, come clear and touch again on the swing
+are ordinary in a casualty. A window that opened at the first meeting and closed at the last
+asserted contact across the clear water between them — a collision the data says did not happen.
+
+**Its length is the difference between its ends, not the count of samples inside them.** A spell
+seen at ten one-second samples is nine seconds long. This project printed ten.
+
+**Its ends come off the hulls, not off the search.** A replay can be paused anywhere, so
+reporting the first second that happened to show contact puts the page up to a step away from
+the picture. Positions between samples are straight lines, so the moment the drawn hulls meet is
+exactly defined and bisection finds it: 18:13:27.961 to 18:13:37.371 here. What that cannot find
+is a touch that opens and closes between two steps, so the step is carried on the result and
+printed.
 
 ## How a ship actually moves
 

@@ -171,46 +171,112 @@ export interface HullTrack {
   positionAt: Track["positionAt"];
 }
 
-/** The closest the two hulls came, and the window over which they were touching. */
+/**
+ * One spell of contact, with its ends taken off the drawn hulls rather than off the search.
+ *
+ * **`toEpochSeconds - fromEpochSeconds` is the length of it.** Counting the samples that
+ * showed contact and calling that seconds is one out every time: 18:13:28 to 18:13:37 is nine
+ * seconds and ten samples, and this repo has printed the ten.
+ */
+export interface Contact {
+  fromEpochSeconds: number;
+  toEpochSeconds: number;
+}
+
+/** The closest the two hulls came, and every spell over which they were touching. */
 export interface HullApproach {
   metres: number;
   epochSeconds: number;
-  /** Null where they never met. Both ends inclusive, at the sampling step. */
-  contact: { fromEpochSeconds: number; toEpochSeconds: number } | null;
+  /**
+   * **Every spell, not one window spanning them all.** Two ships that touch, come clear and
+   * touch again on the swing are an ordinary thing in a casualty, and reporting the first
+   * moment with the last would assert contact through the clear water in between - a picture
+   * of a collision that did not happen, from data that says it did not.
+   */
+  contacts: Contact[];
+  /** The step the search ran at. A contact shorter than this can fall between two of them. */
+  stepSeconds: number;
 }
 
 /**
  * The closest two hulls came over the window in which both tracks exist.
  *
  * **The answer is at a different INSTANT from the antennae's, not only a different number.**
- * On the reference case the hulls first touch about eight seconds before the closest approach
- * of the two antennae, so anything that says "at the moment of closest approach" has to say
- * which moment it means. `ui/panels.ts` prints both.
+ * On the reference case the hulls first touch seven seconds before the closest approach of the
+ * two antennae, so anything that says "at the moment of closest approach" has to say which
+ * moment it means. `ui/panels.ts` prints both.
  *
- * The contact window is a property of this tool as much as of the ships: positions between
+ * The contact times are a property of this tool as much as of the ships: positions between
  * samples are interpolated in a straight line, and on the reference case the whole of the
- * contact falls inside gaps of thirteen and twenty seconds. It is reported as a window rather
- * than as a depth for the reason `separationMetres` gives.
+ * contact falls inside gaps of thirteen and twenty seconds. Contact is reported as a window
+ * rather than as a depth for the reason `separationMetres` gives.
  */
 export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullApproach | null {
   const from = Math.ceil(Math.max(a.track.startSeconds, b.track.startSeconds));
   const to = Math.floor(Math.min(a.track.endSeconds, b.track.endSeconds));
-  let closest: { metres: number; epochSeconds: number } | null = null;
-  let began: number | null = null;
-  let ended = 0;
+  const scan = walk(a, b, { from, to, stepSeconds });
+  if (!scan.closest) return null;
+  return { ...scan.closest, contacts: scan.contacts, stepSeconds };
+}
 
-  for (let t = from; t <= to; t += stepSeconds) {
+/** Everything one pass over the window finds: the least gap, and where contact opened and shut. */
+function walk(
+  a: HullTrack,
+  b: HullTrack,
+  over: { from: number; to: number; stepSeconds: number },
+): { closest: { metres: number; epochSeconds: number } | null; contacts: Contact[] } {
+  let closest: { metres: number; epochSeconds: number } | null = null;
+  const contacts: Contact[] = [];
+  let began: number | null = null;
+  let lastClear: number | null = null;
+
+  for (let t = over.from; t <= over.to; t += over.stepSeconds) {
     const gap = gapAt(a, b, t);
     if (gap === null) continue;
     if (!closest || gap < closest.metres) closest = { metres: gap, epochSeconds: t };
-    if (gap > 0) continue;
-    began ??= t;
-    ended = t;
+    if (gap > 0) {
+      // **The spell ends here, and this is what was missing.** Left open, a second contact
+      // after a turn joins the first into one window across the water between them.
+      if (began !== null)
+        contacts.push({ fromEpochSeconds: began, toEpochSeconds: edge(a, b, t, began) });
+      began = null;
+      lastClear = t;
+      continue;
+    }
+    began ??= lastClear === null ? t : edge(a, b, lastClear, t);
   }
-  if (!closest) return null;
-  const contact = began === null ? null : { fromEpochSeconds: began, toEpochSeconds: ended };
-  return { ...closest, contact };
+  if (began !== null) contacts.push({ fromEpochSeconds: began, toEpochSeconds: over.to });
+  return { closest, contacts };
 }
+
+/**
+ * When the hulls actually met, between a sample that was clear and one that was not.
+ *
+ * **The picture is continuous and the search is not.** A replay can be paused anywhere, so
+ * reporting the first second that happened to show contact puts the page up to a step away
+ * from the view. The positions between samples are straight lines, so the moment the drawn
+ * hulls meet is exactly defined - bisection finds it, and it is the moment the picture shows.
+ *
+ * What it cannot find is a contact that opens and closes between two steps. That is a
+ * limitation of the step, which `HullApproach` carries and the panel prints.
+ */
+function edge(a: HullTrack, b: HullTrack, clearAt: number, touchingAt: number): number {
+  let clear = clearAt;
+  let touching = touchingAt;
+  for (let step = 0; step < BISECTIONS; step += 1) {
+    const middle = (clear + touching) / 2;
+    const gap = gapAt(a, b, middle);
+    if (gap === null || gap > 0) clear = middle;
+    else touching = middle;
+  }
+  return touching;
+}
+
+/**
+ * Twenty halvings of a one-second step lands inside a microsecond, which is far below anything
+ * the answer means - the positions being interpolated - and costs twenty polygon tests.
+ */
+const BISECTIONS = 20;
 
 /** The gap at one instant, or null where either track has nothing to say about it. */
 function gapAt(a: HullTrack, b: HullTrack, epochSeconds: number): number | null {

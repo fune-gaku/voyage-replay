@@ -263,13 +263,19 @@ describe("Suo-nada, 27 November 2025", () => {
     )!;
 
     expect(hulls.metres).toBe(0);
-    expect(hulls.contact).not.toBeNull();
-    const { fromEpochSeconds, toEpochSeconds } = hulls.contact!;
-    expect(new Date(fromEpochSeconds * 1000).toISOString()).toBe("2025-11-27T09:13:28.000Z");
-    expect(toEpochSeconds - fromEpochSeconds + 1).toBe(10);
+    // One spell, not two: they meet and stay met.
+    expect(hulls.contacts).toHaveLength(1);
+    const [spell] = hulls.contacts;
+    const { fromEpochSeconds, toEpochSeconds } = spell!;
 
-    // Seven seconds before the antennae are nearest, and inside the ten of contact.
-    expect(antennae.epochSeconds - fromEpochSeconds).toBe(7);
+    // The ends are bisected off the drawn hulls, so they fall between the one-second steps
+    // the search took - which is where the picture puts them, the replay being continuous.
+    expect(fromEpochSeconds).toBeGreaterThan(Date.parse("2025-11-27T09:13:27Z") / 1000);
+    expect(fromEpochSeconds).toBeLessThan(Date.parse("2025-11-27T09:13:28Z") / 1000);
+    expect(toEpochSeconds - fromEpochSeconds).toBeCloseTo(9.5, 0);
+
+    // And it opens about seven seconds before the antennae are nearest, and has not shut.
+    expect(antennae.epochSeconds - fromEpochSeconds).toBeCloseTo(7, 0);
     expect(antennae.epochSeconds).toBeLessThanOrEqual(toEpochSeconds);
   });
 
