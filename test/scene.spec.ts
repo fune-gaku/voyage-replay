@@ -392,6 +392,31 @@ describe("the sky the water hands back", () => {
     expect(sun.intensity).toBeCloseTo(1.75, 6);
   });
 
+  /**
+   * **The exposure belongs to the condition, not to the body.** A night sky here is 0.003 and
+   * a day sky 0.60, two hundred times apart; one figure served both, and the middle of a
+   * daylight path came out at 3.1 where 1.0 is white - clipped flat across a cone fifty
+   * degrees wide, which is a hole in the water rather than a path.
+   */
+  it("keeps the middle of the path off white, in both conditions", () => {
+    for (const [light, when] of [
+      ["night", "2025-11-27T19:40:00+09:00"],
+      ["day", "2025-11-27T11:40:00+09:00"],
+    ] as const) {
+      const environment = { ...sea, lightCondition: light } satisfies Environment;
+      const parts = buildScene(environment, 1000);
+      parts.setDiagramView(false);
+      parts.setSky(conditionsAt(suoNada, environment, Date.parse(when) / 1000));
+
+      const uniforms = skyOf(parts);
+      const lobe = uniforms["uSkyBodyLobe"]?.value as Vector3;
+      const horizon = uniforms["uSkyHorizon"]?.value as Color;
+      // The body's own peak, plus the brightest the sky under it gets.
+      expect(lobe.x + horizon.r, light).toBeLessThan(1);
+      expect(lobe.x, light).toBeGreaterThan(0);
+    }
+  });
+
   /** A chart is lit for reading and answers to nothing in the sky, whichever call came last. */
   it("leaves the plan view's own lighting alone", () => {
     const parts = buildScene(sea, 1000);

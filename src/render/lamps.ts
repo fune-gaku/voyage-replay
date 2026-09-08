@@ -54,8 +54,15 @@ export interface LitLamp {
   /** Where the lamp is, in the scene's axes. */
   at: { x: number; y: number; z: number };
   colour: Color;
-  /** Its brightest, before range takes any of it. Zero is a lamp that is not lit. */
-  peak: number;
+  /**
+   * How bright this lamp is against the brightest one in the picture. One for a lamp that is
+   * simply lit, which is all this format can say about any of them.
+   *
+   * **Relative, because how bright a reflection may draw belongs to the drawn condition and
+   * not to the lamp** - the same split `core/illumination.ts` makes for the moon's phase. The
+   * scene's palette carries the exposure; see `setLamps`.
+   */
+  relativeBrightness: number;
   /** Which way the ship carrying it heads, in degrees true. Irrelevant to an all-round light. */
   headingDegreesTrue: number;
   /** The arc it shows over, as relative bearings clockwise from that bow. */
@@ -64,16 +71,6 @@ export interface LitLamp {
   /** Rule 22's range for this light, in metres. The streak dies well inside it. */
   nominalRangeMetres: number;
 }
-
-/**
- * How bright a streak is drawn at its brightest, before range takes any of it.
- *
- * **A ceiling rather than a measurement**, for the reason `BRIGHTEST_LOBE` gives about the
- * moon: Rule 22 states a minimum RANGE and no candela, and how much of a reflection reaches
- * an eye depends on the sea and the air. What the picture can honestly carry is that a lamp
- * lays a streak, where it lies, and that it dies before the lamp does.
- */
-export const BRIGHTEST_STREAK = 1.6;
 
 export interface LampUniforms {
   /** (x, y, z, peak) per lamp. A peak of zero is a lamp that is out. */
@@ -94,12 +91,15 @@ export function makeLampUniforms(): LampUniforms {
 /**
  * Load the lit lamps into the uniforms. Anything past `SHADER_LAMPS` lays no streak.
  *
+ * `exposure` is how bright the brightest streak may draw in this condition - a declared
+ * figure per drawn condition, for the reason `Palette.streak` gives.
+ *
  * **What does not fit is the page's business, not a log line.** `ui/panels.ts` counts the
  * lamps a scenario can light against this same constant and says so, because a picture
  * missing streaks under a page that lists every light is the two disagreeing - and the count
  * has to be knowable without watching a particular frame go by.
  */
-export function setLamps(uniforms: LampUniforms, lamps: LitLamp[]): void {
+export function setLamps(uniforms: LampUniforms, lamps: LitLamp[], exposure: number): void {
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -109,7 +109,7 @@ export function setLamps(uniforms: LampUniforms, lamps: LitLamp[]): void {
       slot.set(0, 0, 0, 0);
       continue;
     }
-    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, lamp.peak);
+    slot.set(lamp.at.x, lamp.at.y, lamp.at.z, exposure * lamp.relativeBrightness);
     uniforms.uLampColour.value[i]?.copy(lamp.colour);
     arc.set(
       (lamp.headingDegreesTrue * Math.PI) / 180,

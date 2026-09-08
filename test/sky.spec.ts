@@ -21,6 +21,9 @@ function gradientSky(): ReturnType<typeof makeSkyUniforms> {
   return uniforms;
 }
 
+/** What a full moon's own peak is allowed to be, which the palette decides. See `Palette`. */
+const EXPOSURE = 1;
+
 const moon = (azimuthDegrees: number, altitudeDegrees: number): Lit => ({
   body: "moon",
   altitudeDegrees,
@@ -110,7 +113,7 @@ describe("the path a body lays", () => {
 
   it("is brightest towards the body and falls away from it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured);
+    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
 
     const at = (azimuth: number): number =>
       skyColourAt(towardsBody(moon(azimuth, 41)), uniforms).getHSL({ h: 0, s: 0, l: 0 }).l;
@@ -128,7 +131,7 @@ describe("the path a body lays", () => {
    */
   it("leaves the far side of the sky where it found it", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured);
+    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
 
     const away = towardsBody(moon(11, 41));
     const withPath = skyColourAt(away, uniforms).r;
@@ -144,8 +147,8 @@ describe("the path a body lays", () => {
   it("widens with the spread it is given", () => {
     const narrow = gradientSky();
     const wide = gradientSky();
-    setSkyBody(narrow, moon(191, 41), 0.01);
-    setSkyBody(wide, moon(191, 41), 0.09);
+    setSkyBody(narrow, moon(191, 41), 0.01, EXPOSURE);
+    setSkyBody(wide, moon(191, 41), 0.09, EXPOSURE);
 
     const off = towardsBody(moon(191 + 20, 41));
     const lightness = (u: ReturnType<typeof makeSkyUniforms>): number =>
@@ -160,7 +163,7 @@ describe("the path a body lays", () => {
    */
   it("draws no path at all where nothing states a sea", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), null);
+    setSkyBody(uniforms, moon(191, 41), null, EXPOSURE);
 
     const towards = towardsBody(moon(191, 41));
     expect(skyColourAt(towards, uniforms).getHex()).toBe(
@@ -174,7 +177,7 @@ describe("the path a body lays", () => {
    */
   it("leaves a stated calm the body's own disc rather than nothing", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), 0);
+    setSkyBody(uniforms, moon(191, 41), 0, EXPOSURE);
     expect((uniforms.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(0.265, 3);
     expect(uniforms.uSeaSlope.value).toBe(0);
   });
@@ -187,7 +190,7 @@ describe("the path a body lays", () => {
    */
   it("widens the lobe by exactly what the normals have stopped carrying", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured);
+    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
     const towards = towardsBody(moon(191, 41));
 
     // Near the eye the normals carry the drawn sea's own slope; far out they carry none.
@@ -205,7 +208,7 @@ describe("the path a body lays", () => {
 
   it("draws no path where no body is up", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, null, measured);
+    setSkyBody(uniforms, null, measured, EXPOSURE);
     expect(uniforms.uSkyBodyLobe.value.y).toBe(0);
   });
 
@@ -216,17 +219,22 @@ describe("the path a body lays", () => {
   it("dims the path with the body rather than only moving it", () => {
     const full = gradientSky();
     const crescent = gradientSky();
-    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, measured);
-    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, measured);
+    setSkyBody(full, { ...moon(191, 41), relativeBrightness: 1 }, measured, EXPOSURE);
+    setSkyBody(crescent, { ...moon(191, 41), relativeBrightness: 0.06 }, measured, EXPOSURE);
     expect(crescent.uSkyBodyLobe.value.x).toBeCloseTo(full.uSkyBodyLobe.value.x * 0.06, 9);
   });
 
   /** The sun is not brighter than the ceiling; it is the ceiling. */
   it("holds the sun at the same ceiling as a full moon rather than blowing past it", () => {
     const sun = gradientSky();
-    setSkyBody(sun, { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 }, measured);
+    setSkyBody(
+      sun,
+      { ...moon(191, 41), body: "sun", relativeBrightness: 400_000 },
+      measured,
+      EXPOSURE,
+    );
     const full = gradientSky();
-    setSkyBody(full, moon(191, 41), measured);
+    setSkyBody(full, moon(191, 41), measured, EXPOSURE);
     expect(sun.uSkyBodyLobe.value.x).toBe(full.uSkyBodyLobe.value.x);
   });
 });
@@ -244,7 +252,7 @@ describe("the sky above the water", () => {
 
   it("meets the water's own reflection at the horizon", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured);
+    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
 
     // A ray just above the horizon, and the same ray as the water would reflect it.
     const grazing = new Vector3(0.2, 0.004, -0.98).normalize();
@@ -263,7 +271,7 @@ describe("the sky above the water", () => {
    */
   it("shows the body over a sea nobody stated, where the water shows none", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), null);
+    setSkyBody(uniforms, moon(191, 41), null, EXPOSURE);
     const towards = towardsBody(moon(191, 41));
 
     expect(skyDomeColourAt(towards, uniforms).b).toBeGreaterThan(
@@ -280,7 +288,7 @@ describe("the sky above the water", () => {
    */
   it("draws the body at its own size rather than the sea's", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, moon(191, 41), measured);
+    setSkyBody(uniforms, moon(191, 41), measured, EXPOSURE);
 
     // Five degrees off it: well inside the sea's lobe, and far outside the disc.
     const off = towardsBody(moon(196, 41));
@@ -291,7 +299,7 @@ describe("the sky above the water", () => {
   /** And a sky with nothing up is the gradient and nothing else. */
   it("is the gradient alone when no body is up", () => {
     const uniforms = gradientSky();
-    setSkyBody(uniforms, null, measured);
+    setSkyBody(uniforms, null, measured, EXPOSURE);
     const towards = new Vector3(0, 0.5, -0.87).normalize();
     expect(skyDomeColourAt(towards, uniforms).getHex()).toBe(
       skyGradientAt(towards, uniforms).getHex(),

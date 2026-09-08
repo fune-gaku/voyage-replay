@@ -756,6 +756,20 @@ argues about.
   anyway. What carries is the RATIO: one phase of the moon against another, and either against
   the sun.
 
+**The exposure is per condition, and once was not.** A night sky here is 0.003 and a day sky
+0.60 — two hundred times apart — and one constant served both. The middle of a daylight path
+came out at 3.1 where 1.0 is white, clipped flat across a cone fifty degrees wide: not a path
+but a hole in the water, and the first thing anyone said about the daylight view. `ambient` in
+the same palettes had been per condition all along, for the same reason. Measured after:
+
+| | the sky | the middle of the path | clipped |
+|---|---:|---:|---|
+| day | 0.105 | 0.705 | nowhere |
+| night | 0.001 | 0.066 | nowhere |
+
+A full moon still clips at its very centre, which is what a full moon's glitter does to an eye
+and to a camera. What must not happen is the clipping spreading over the water.
+
 ### A half moon is a ninth of a full one, not half
 
 The lit fraction is geometry and the brightness is not. At full the moon is seen at zero phase
