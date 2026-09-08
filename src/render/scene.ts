@@ -351,7 +351,7 @@ function viewControls(
       parts.basemap?.setView(frame);
       // The sea follows whatever is reading it, so the dense middle of the disc sits under
       // the part of the picture somebody is looking at rather than at the origin.
-      parts.water.position.set(frame.centre.east, 0, -frame.centre.north);
+      centreSeaOn(parts, frame.centre);
     },
     setDiagramView: (on: boolean): void => {
       setDiagram(scene, parts, setLighting, on);
@@ -465,9 +465,24 @@ function standAt(parts: Switchable, eye: LocalPosition | null, heading: number):
   if (parts.terrain) parts.terrain.group.visible = eye !== null;
   if (!eye) return;
 
-  parts.curvature.uEye.value.set(eye.east, 0, -eye.north);
-  parts.water.position.set(eye.east, 0, -eye.north);
+  centreSeaOn(parts, eye);
   parts.terrain?.follow(eye, heading);
+}
+
+/**
+ * Where the sea is dense, and where every distance in it is measured from. **One call, so the
+ * two cannot come apart.**
+ *
+ * The disc's rings grow from its own centre, and the band-limiting in `waves.ts` asks how far
+ * a point is from the eye - so if the eye and the centre were ever different points, the
+ * shader would judge the mesh's fineness at the wrong radius and put waves on triangles too
+ * big to hold them. They are set together here because the two views set them at different
+ * moments: a bridge frame from the watchkeeper's position, a plan frame from what the camera
+ * is over, and a bridge view whose own track has run out draws with whichever ran last.
+ */
+function centreSeaOn(parts: Switchable, at: LocalPosition): void {
+  parts.curvature.uEye.value.set(at.east, 0, -at.north);
+  parts.water.position.set(at.east, 0, -at.north);
 }
 
 /**

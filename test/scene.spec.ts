@@ -10,6 +10,7 @@ import type {
 } from "three";
 import { describe, expect, it } from "vitest";
 
+import type { LocalPosition } from "../src/core/geodesy.js";
 import { prepareTrack, sampleAt } from "../src/core/track.js";
 import type { Environment, Track } from "../src/core/types.js";
 import type { Frame } from "../src/render/basemap.js";
@@ -138,10 +139,10 @@ describe("the sea under something floating", () => {
   } as const satisfies Environment;
 
   /** How far the drawn water moves at a point, over a couple of minutes of the scenario. */
-  function riseAt(parts: ReturnType<typeof buildScene>, north: number): number {
+  function riseAt(parts: ReturnType<typeof buildScene>, at: LocalPosition): number {
     let sum = 0;
     for (let seconds = 0; seconds < 120; seconds += 0.5) {
-      sum += parts.drawnSurfaceAt({ east: 0, north }, seconds).heightMetres ** 2;
+      sum += parts.drawnSurfaceAt(at, seconds).heightMetres ** 2;
     }
     return Math.sqrt(sum / 240);
   }
@@ -156,8 +157,41 @@ describe("the sea under something floating", () => {
     // there and the sea keeps two fifths of its variance; a mark heaving to all of it
     // would be riding twice the water that is drawn under her.
     expect(displacedFraction(250)).toBe(1);
-    expect(riseAt(parts, 250)).toBeLessThan(riseAt(parts, 20) * 0.8);
-    expect(riseAt(parts, 250)).toBeGreaterThan(0);
+    expect(riseAt(parts, { east: 0, north: 250 })).toBeLessThan(
+      riseAt(parts, { east: 0, north: 20 }) * 0.8,
+    );
+    expect(riseAt(parts, { east: 0, north: 250 })).toBeGreaterThan(0);
+  });
+
+  /**
+   * **The disc's centre and the eye have to be the same point.** The rings grow from the
+   * centre, and the band asks how far a point is from the eye - so if a frame ever set one
+   * without the other, the shader would judge the mesh's fineness at the wrong radius. The
+   * two views set them at different moments, and a bridge view whose own track has run out
+   * sets neither, drawing with whichever ran last.
+   */
+  it("keeps the sea dense about the same point the distances are measured from", () => {
+    const parts = buildScene(environment, 1000);
+    parts.setDiagramView(false);
+    const water = parts.scene.children.find((child) => child.name === "water");
+    const centre = { east: 4000, north: -2500 };
+
+    parts.setView({ centre, extentMetres: 9000, aspect: 1.5 });
+    expect(water?.position.x).toBeCloseTo(centre.east, 6);
+    expect(water?.position.z).toBeCloseTo(-centre.north, 6);
+    // Four kilometres from the origin, and the water beside that centre is the water
+    // beside an eye: the distances are measured from the point the disc was moved to,
+    // rather than from the origin, where they would put this 4 km out and flat.
+    expect(riseAt(parts, { east: centre.east + 20, north: centre.north })).toBeGreaterThan(0.6);
+
+    const eye = { east: -700, north: 300 };
+    parts.setEye(eye, 0);
+    expect(water?.position.x).toBeCloseTo(eye.east, 6);
+    expect(water?.position.z).toBeCloseTo(-eye.north, 6);
+    expect(riseAt(parts, { east: eye.east + 20, north: eye.north })).toBeGreaterThan(0.6);
+    // And the place the sea used to be dense about is now four kilometres off, where the
+    // mesh has no vertices for waves at all.
+    expect(riseAt(parts, centre)).toBe(0);
   });
 
   /** Close in, the mesh has vertices for the sea's own waves and nothing is taken away. */
@@ -168,7 +202,7 @@ describe("the sea under something floating", () => {
 
     // A 3 m sea has a surface standard deviation of Hs/4, and the swell that carries it is
     // hundreds of metres long - all of which the mesh under a 20 m point still holds.
-    expect(riseAt(parts, 20)).toBeGreaterThan(0.6);
+    expect(riseAt(parts, { east: 0, north: 20 })).toBeGreaterThan(0.6);
   });
 });
 
