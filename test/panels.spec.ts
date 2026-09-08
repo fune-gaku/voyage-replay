@@ -352,7 +352,9 @@ describe("renderPanels", () => {
 
     expect(overlapping).toContain("in contact");
     // And says what the search could have missed, which is anything shorter than its step.
-    expect(overlapping).toContain("falling wholly between two looks is not there to be narrowed");
+    // The real floor, which is not the step: the search halves until it can prove an
+    // interval empty, so saying "every 1 s" as the limit understates it by a thousand.
+    expect(overlapping).toContain("halved every interval it could not prove empty, down to 1 ms");
     expect(overlapping).toMatch(/\d\d:\d\d:\d\d to \d\d:\d\d:\d\d local, [\d.]+ s/);
     // And not a range in metres, which is what it would have printed before.
     expect(overlapping).not.toContain("Between hulls</th><td>0.0 m");

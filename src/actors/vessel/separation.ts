@@ -200,8 +200,21 @@ export interface HullApproach {
    * of a collision that did not happen, from data that says it did not.
    */
   contacts: Contact[];
-  /** The step the search ran at. A contact shorter than this can fall between two of them. */
+  /** The step the coarse pass ran at, before anything was refined. */
   stepSeconds: number;
+  /**
+   * **The shortest interval the search ever left unexamined, which is the real floor.**
+   *
+   * The step is not it: intervals are halved until two proofs discharge, so most of a
+   * reconstruction is settled at the step and the neighbourhood of an encounter is settled far
+   * below it. What stops the halving is this - a time floor for the one interval that cannot
+   * discharge at all, where a track's direction changes which field it comes from and the drawn
+   * ship jumps rather than turns.
+   *
+   * Reporting the step as the limit understated the search by three orders of magnitude and
+   * described a method it no longer uses. `ui/panels.ts` prints this.
+   */
+  finestSeconds: number;
 }
 
 /**
@@ -222,10 +235,10 @@ export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullA
   const to = Math.min(a.track.endSeconds, b.track.endSeconds);
   checkStep(stepSeconds, from, to);
   if (to < from) return null;
-  const over = { from, to, stepSeconds };
-  const scan = walk(a, b, over);
+  const scan = walk(a, b, { from, to, stepSeconds });
   if (!scan.closest) return null;
-  return { ...closest(a, b, scan.closest, over), contacts: scan.contacts, stepSeconds };
+  const finestSeconds = Math.max(FINEST_SECONDS, stepSeconds / 2 ** DEEPEST);
+  return { ...scan.closest, contacts: scan.contacts, stepSeconds, finestSeconds };
 }
 
 /**
@@ -296,7 +309,17 @@ interface Where {
   outline: LocalPosition[];
   reported: LocalPosition;
   headingDegreesTrue: number;
-  headingStated: boolean;
+  /**
+   * WHICH field the direction came from, not merely whether there was one.
+   *
+   * **`headingDegreesTrue ?? cogDegreesTrue` hides a jump.** Where a track states a heading at
+   * one sample and not at the one before, `sampleAt` hands back the course for the first half
+   * of the span and the heading for the second, and the drawn ship turns with the course and
+   * then snaps to the heading at the midpoint. Both halves have A direction, so a flag saying
+   * only that finds nothing wrong - and the bound below, reading two ends that happen to
+   * agree, certifies that she never turned.
+   */
+  headingFrom: "heading" | "course" | "none";
   /** The furthest any outline point lies from the reported position: her turning radius. */
   swingMetres: number;
 }
@@ -314,13 +337,19 @@ function whereAt(ship: HullTrack, at: number): Where | null {
   const state = sampleAt(ship.track, at);
   if (!state) return null;
   const offset = offsetMetres(hullCentreOffset(ship.positionAt, ship.vessel.referencePointOffsets));
-  const placement = placementFor(state.headingDegreesTrue ?? state.cogDegreesTrue, offset);
+  const stated = state.headingDegreesTrue ?? state.cogDegreesTrue;
+  const placement = placementFor(stated, offset);
   const shape = planOutline(hullDimensions(ship.vessel), isBoxBowed(ship.vessel));
   return {
     outline: placedOutline(shape, placement, state.position),
     reported: state.position,
     headingDegreesTrue: placement.headingDegreesTrue,
-    headingStated: placement.headingStated,
+    headingFrom:
+      state.headingDegreesTrue !== undefined
+        ? "heading"
+        : state.cogDegreesTrue !== undefined
+          ? "course"
+          : "none",
     swingMetres: swingOf(shape, placement.offset),
   };
 }
@@ -362,12 +391,14 @@ function lookAt(a: HullTrack, b: HullTrack, at: number): Look | null {
  * never change how far apart they are, and a bound off their ground speeds calls every parallel
  * course an encounter about to happen.
  *
- * Infinity where the heading is stated at one end and not at the other, because there the drawn
- * ship jumps rather than turns - `placementFor` and issue #12 - and nothing bounds a jump.
+ * Infinity where the direction came from a different field at the two ends - heading at one and
+ * course at the other, or one of them and nothing at the other - because there the drawn ship
+ * jumps rather than turns: `placementFor` and issue #12. Nothing bounds a jump, and asking only
+ * whether SOME direction was available misses the commoner half of it.
  */
 function travelled(before: Look, after: Look): number {
-  if (before.a.headingStated !== after.a.headingStated) return Number.POSITIVE_INFINITY;
-  if (before.b.headingStated !== after.b.headingStated) return Number.POSITIVE_INFINITY;
+  if (before.a.headingFrom !== after.a.headingFrom) return Number.POSITIVE_INFINITY;
+  if (before.b.headingFrom !== after.b.headingFrom) return Number.POSITIVE_INFINITY;
   // **Relative, not absolute.** What can change the gap is how the two move with respect to
   // each other: two ships steaming north together cover miles and stay exactly as far apart.
   // Bounding each one's ground speed instead made every parallel course look like an
@@ -396,25 +427,18 @@ function shortWayRound(degrees: number): number {
 }
 
 /**
- * Whether the two hulls can possibly have changed state between two looks.
+ * How far this pair is from changing state: the gap when clear, the depth when not.
  *
- * **Clear or touching, the certificate is the same shape: how far they are from changing.**
- * A pair with water between them cannot touch without closing that water; a pair already
- * through each other cannot come apart without backing the deepest part of one out of the
- * other. Either way, if the two of them together cannot travel that far in the time, nothing
- * happened in between and the interval is done with.
+ * **Clear or touching, the certificate is the same shape.** A pair with water between them
+ * cannot touch without closing it; a pair already through each other cannot come apart without
+ * backing the deepest part of one out of the other. Either way, if the two together cannot
+ * travel that far in the time, nothing happened in between.
  *
  * The depth is used here and nowhere else. `separationMetres` still answers zero for a pair in
  * contact, for the reason it gives - a depth through two invented bows is a figure about this
  * tool's plan shape - and that argument is about what a page may claim, not about what an
  * interval may be discharged with.
  */
-function couldTurnOver(before: Look, after: Look): boolean {
-  const room = Math.min(clearance(before), clearance(after));
-  return room <= travelled(before, after);
-}
-
-/** How far this pair is from changing state: the gap when clear, the depth when not. */
 function clearance(look: Look): number {
   return look.gap > 0 ? look.gap : overlapDepth(look.a.outline, look.b.outline);
 }
@@ -461,52 +485,82 @@ function middleOf(outline: LocalPosition[]): LocalPosition {
   return { east: east / count, north: north / count };
 }
 
+/** The state one pass carries: every look taken, and the least gap any of them showed. */
+interface Search {
+  taken: Look[];
+  least: number;
+}
+
 /**
- * Every look worth taking: the step, and then as finely as the bound demands.
+ * Every look worth taking: the step, and then as finely as two proofs demand.
  *
- * **Halving until the bound discharges, rather than slicing a fixed number of times.** A fixed
- * sweep is a resolution wearing the clothes of a proof: whatever it is set to, two hulls can
- * touch and part inside one of its slices, and the boundary hunt below then joins two spells
- * across the water between them. Recursion stops where nothing CAN have happened - most of a
- * reconstruction discharges on the first test, the ships being miles apart - and goes deep only
- * where the two are close enough to be about to touch.
+ * **Halving until both discharge, rather than slicing a fixed number of times.** A fixed sweep
+ * is a resolution wearing the clothes of a proof: whatever it is set to, two hulls can touch
+ * and part inside one of its slices. Recursion stops where nothing CAN have happened - most of
+ * a reconstruction discharges on the first test, the ships being miles apart - and goes deep
+ * only where the two are close enough to matter.
  *
- * `DEEPEST` is what is left over. An interval that will not discharge by then is handed back as
- * it stands, so an encounter shorter than a step over two to the twentieth is not seen.
- * `HullApproach` carries the step and `ui/panels.ts` prints it.
+ * **Two proofs, because there are two questions and one of them was going unasked.** Whether
+ * the pair changed state is settled by the clearance and the travel; whether a nearer approach
+ * hides in the interval is not. An interval whose ends are 100 m apart where the two can only
+ * close 90 m cannot touch - and can still pass at 10 m. That was reported as the least gap for
+ * as long as some other look happened to hold a smaller number, which is a plausible figure
+ * for a range nobody came within.
+ *
+ * So the second proof is the branch and bound: an interval can hold nothing nearer than its
+ * lesser end less what the two can travel, and where that is no better than the best already
+ * in hand there is nothing in it to look for.
  */
 function looks(
   a: HullTrack,
   b: HullTrack,
   over: { from: number; to: number; stepSeconds: number },
 ): Look[] {
-  const taken: Look[] = [];
-  let previous: Look | null = null;
+  // **The coarse pass first, all of it.** The second proof is a branch and bound, and a bound
+  // is only worth what is already in hand: refining left to right spends its whole first half
+  // proving there is nothing nearer than a figure it is about to beat. One sweep of the step
+  // costs almost nothing and starts the refinement knowing roughly how close they came.
+  const coarse: Look[] = [];
   for (const at of instants(over, a, b)) {
     const look = lookAt(a, b, at);
-    if (!look) continue;
-    if (previous) split(a, b, { before: previous, after: look }, taken);
-    taken.push(look);
-    previous = look;
+    if (look) coarse.push(look);
   }
-  return taken;
+  const search: Search = { taken: [], least: Math.min(...coarse.map((look) => look.gap)) };
+  for (const [index, look] of coarse.entries()) {
+    const previous = coarse[index - 1];
+    if (previous) split(a, b, { before: previous, after: look }, search);
+    search.taken.push(look);
+  }
+  return search.taken;
 }
 
-/** Everything strictly between two looks that the bound cannot rule out, in order. */
+/** Everything strictly between two looks that neither proof can rule out, in order. */
 function split(
   a: HullTrack,
   b: HullTrack,
   span: { before: Look; after: Look; depth?: number },
-  into: Look[],
+  search: Search,
 ): void {
   const depth = span.depth ?? 0;
-  if (span.after.at - span.before.at <= FINEST_SECONDS) return;
-  if (!couldTurnOver(span.before, span.after) || depth >= DEEPEST) return;
+  if (settled(span.before, span.after, search.least)) return;
+  if (span.after.at - span.before.at <= FINEST_SECONDS || depth >= DEEPEST) return;
   const middle = lookAt(a, b, (span.before.at + span.after.at) / 2);
   if (!middle) return;
-  split(a, b, { before: span.before, after: middle, depth: depth + 1 }, into);
-  into.push(middle);
-  split(a, b, { before: middle, after: span.after, depth: depth + 1 }, into);
+  search.least = Math.min(search.least, middle.gap);
+  split(a, b, { before: span.before, after: middle, depth: depth + 1 }, search);
+  search.taken.push(middle);
+  split(a, b, { before: middle, after: span.after, depth: depth + 1 }, search);
+}
+
+/** Whether an interval can hold neither a change of state nor a nearer approach than `least`. */
+function settled(before: Look, after: Look, least: number): boolean {
+  const reach = travelled(before, after);
+  const stays = Math.min(clearance(before), clearance(after)) > reach;
+  // The least a gap can be is nothing, which matters once something has touched: with the
+  // best in hand at zero, no interval anywhere can hold anything nearer, and a bound that
+  // forgets it goes on halving every interval of a collision down to the floor.
+  const couldBe = Math.max(0, Math.min(before.gap, after.gap) - reach);
+  return stays && couldBe >= least;
 }
 
 /**
@@ -556,52 +610,6 @@ function walk(
   if (began !== null) contacts.push({ fromEpochSeconds: began, toEpochSeconds: over.to });
   return { closest, contacts };
 }
-
-/**
- * The least gap near the step that showed it, rather than the value that step happened to hold.
- *
- * **The contact edges were bisected and this was not, which left the page asserting a grid
- * reading as a distance.** Two ships passing without touching are nearest somewhere between
- * two looks, so the panel printed a gap up to a step stale and a moment to match.
- *
- * **A finer look, not a cleverer one.** The first version of this ran a ternary search and
- * called the gap smooth and single-minimumed over the window, which it is not: what is being
- * measured is the shortest distance between two polygons that are TURNING, and which pair of
- * vertex and edge is nearest switches as they go. The function is piecewise, and a search that
- * discards half its window on two probes can walk away from the deeper of two valleys and
- * report the shallower one - the same false precision this was meant to remove, one level in.
- * A sub-scan assumes nothing: it looks at every slice.
- *
- * What it still cannot see is a nearer approach in a window the coarse scan skipped over
- * entirely. That is the step's limit, the same one that lets a short contact go unnoticed, and
- * the panel declares them together.
- */
-function closest(
-  a: HullTrack,
-  b: HullTrack,
-  found: { metres: number; epochSeconds: number },
-  over: { from: number; to: number; stepSeconds: number },
-): { metres: number; epochSeconds: number } {
-  if (found.metres <= 0) return found;
-  const low = Math.max(over.from, found.epochSeconds - over.stepSeconds);
-  const high = Math.min(over.to, found.epochSeconds + over.stepSeconds);
-  const slice = (high - low) / SLICES;
-  let best = found;
-  for (let i = 0; i <= SLICES; i += 1) {
-    const at = low + i * slice;
-    const gap = gapAt(a, b, at);
-    if (gap !== null && gap < best.metres) best = { metres: gap, epochSeconds: at };
-  }
-  return best;
-}
-
-/**
- * How finely the window either side of the best look is swept.
- *
- * Two hundred and fifty-six slices of a one-second step puts the moment inside four
- * milliseconds, for two hundred and fifty-six polygon comparisons done once.
- */
-const SLICES = 256;
 
 /**
  * When the hulls actually met, between a sample that was clear and one that was not.

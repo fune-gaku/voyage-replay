@@ -485,6 +485,44 @@ describe("contact over a track", () => {
   });
 
   /**
+   * **Discharging an interval proves they did not touch in it, not that they did not close.**
+   * Two ends 100 m apart where the pair can only close 90 m cannot meet - and can still pass
+   * at 10 m in the middle. For as long as the search only asked about state changes, that
+   * interval was skipped and whatever smaller number some other look happened to hold was
+   * reported as the closest they came: a plausible figure for a range nobody came within.
+   *
+   * So the second proof is a branch and bound, and this is what it is for. A pass that dips
+   * between two coarse looks, against a scan fine enough to see it.
+   */
+  it("finds a near pass hiding between two looks that could not touch", () => {
+    const a = prepareActor(actor("A", alongside([0, 0, 0]), BIG_SHIP), ORIGIN);
+    // B comes in to 40 m and goes out again inside a minute, never close enough to touch.
+    const b = prepareActor(actor("B", alongside([0.0009, 0.0004, 0.0009]), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const pair = [
+      { track: a, ...ship },
+      { track: b, ...ship },
+    ] as const;
+
+    const fine = hullApproach(pair[0], pair[1], 0.05);
+    const coarse = hullApproach(pair[0], pair[1], 120);
+
+    expect(fine?.contacts).toEqual([]);
+    expect(coarse?.metres).toBeCloseTo(fine?.metres ?? 0, 1);
+    expect(coarse?.epochSeconds).toBeCloseTo(fine?.epochSeconds ?? 0, 0);
+  });
+
+  /** And the floor it stopped at is carried, because the step is not the floor. */
+  it("carries the finest interval it left unexamined", () => {
+    const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const approach = hullApproach({ track: a, ...ship }, { track: a, ...ship });
+
+    expect(approach?.stepSeconds).toBe(1);
+    expect(approach?.finestSeconds).toBe(1e-3);
+  });
+
+  /**
    * **A turning ship is where a cleverer search goes wrong.** The first version of the
    * narrowing ran a ternary search, which assumes the window holds one minimum. What is being
    * measured is the shortest distance between two polygons that are TURNING, and which pair of

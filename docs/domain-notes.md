@@ -154,7 +154,7 @@ because that is where a ship's straight line bends: two looks a minute apart can
 back where they started with a whole encounter in between.
 
 Between two adjacent looks it asks whether anything COULD have happened, and halves the interval
-until the answer is no. Two parts to that.
+until the answer is no. Three parts to that.
 
 **How far they can have gone.** Between samples the reported position runs in a straight line
 and the hull turns through the difference of two headings, so no point of her travels further
@@ -165,14 +165,28 @@ journey from the two ends.
 
 **How far they are from changing.** Water between them is how much they must close to touch; a
 pair already through each other must back the deepest part of one out of the other to come
-apart. If the two together cannot travel that far in the time, the interval is done with. That
-depth is a certificate and never a figure on the page — the argument against reporting one is
-about what a page may claim, not about what an interval may be discharged with.
+apart. If the two together cannot travel that far in the time, the interval holds no change of
+state. That depth is a certificate and never a figure on the page — the argument against
+reporting one is about what a page may claim, not about what an interval may be discharged with.
+It counts each outline's middle as well as its corners, because two hulls exactly on top of each
+other have every corner of one lying ON the other's side and would otherwise measure nothing.
+
+**And whether anything nearer hides in it**, which is a different question and went unasked for
+a while. An interval whose ends are 100 m apart where the pair can only close 90 m holds no
+contact — and can still hold a pass at 10 m. Skipping it and reporting whatever smaller number
+another look happened to hold is a plausible figure for a range nobody came within. So the least
+gap is a branch and bound: an interval can hold nothing nearer than its lesser end less what the
+two can travel, floored at nothing, and where that beats nothing already in hand there is
+nothing in it to look for. The coarse pass runs to the end before any refining starts, because a
+bound is worth what is already in hand.
 
 Most of a reconstruction discharges on the first test, the ships being miles apart, and the
-halving goes deep only where they are about to touch. What is left is a floor: an interval that
-will not discharge after twenty halvings is left as it stands, so an encounter shorter than a
-step over two to the twentieth is not seen. The step is carried on the result and printed.
+halving goes deep only where they are about to touch. What is left is a floor — **a millisecond,
+not the step**. One interval can never be discharged: where a track states a direction one way
+at one sample and another way at the next, `sampleAt` swaps the source at the midpoint and the
+drawn ship jumps rather than turns, and nothing bounds a jump. That floor is carried on the
+result and printed, because reporting the step as the limit understated the search by three
+orders of magnitude and described a method it no longer uses.
 
 ## How a ship actually moves
 

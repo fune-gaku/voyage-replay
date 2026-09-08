@@ -748,11 +748,14 @@ function hullNote(
     "generated - a plausible plan of a ship of the right size, not either ship's lines - so " +
     `every metre of it is a metre of this tool's guess. Its length and beam come from ${dimensionSource(both)}. ` +
     `And ${against(hulls, antennaeAt)} the reported positions are nearest, so the two rows are not two ` +
-    "readings of one instant. Whether they touch or pass, the moment is narrowed off those " +
-    "hulls rather than left on the search - but the positions between samples are joined by " +
-    `straight lines, so the times are this tool's interpolation and not the source's. It ` +
-    `looked every ${hulls.stepSeconds} s and narrowed from the nearest look, so a pass or a ` +
-    "touch falling wholly between two looks is not there to be narrowed towards."
+    "readings of one instant. Whether they touch or pass, the moment comes off those hulls " +
+    "rather than off the search - but the positions between samples are joined by straight " +
+    `lines, so the times are this tool's interpolation and not the source's. It looked every ` +
+    `${hulls.stepSeconds} s and then halved every interval it could not prove empty, down to ` +
+    `${(hulls.finestSeconds * 1000).toFixed(0)} ms. An approach or a touch lasting less than ` +
+    "that could sit inside the one interval nothing can prove empty - where a track states a " +
+    "direction one way at one sample and another way at the next, and the hull jumps rather " +
+    "than turns."
   );
 }
 
