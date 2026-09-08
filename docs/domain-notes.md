@@ -704,3 +704,137 @@ the page says so.
 
 It weighs most at resonance, where the response goes as one over twice it — which is to say
 **the choice matters most exactly where a one-degree-of-freedom model is least trustworthy**.
+
+## The sky, and the path a body lays on the water
+
+The water reflects the sky — Schlick's approximation of Fresnel, about two per cent head-on and
+one at a graze — and that reflection is most of why a sea looks like a sea. Until #37 it
+reflected **one colour**, so it made the waves visible and said nothing about the sky or where
+the moon was.
+
+There is no sky in this scene: no dome, no environment map, no extra pass. **The only place a
+sky appears is in the water**, so a body shows up in the reflection and never above the horizon,
+and `ui/panels.ts` says so rather than leaving a reader to wonder.
+
+### The path is evidence; the brightness is not
+
+Where a body is reflected off a wavy sea it lays a lane of light, and the lane is directional: a
+target on its bearing is seen against it or lost in it, which is the kind of thing a report
+argues about.
+
+- **Where it lies** is the body's own azimuth, computed from the clock and the position.
+- **How wide it is** follows from the sea's slope — tilt a facet by an angle and the ray it
+  reflects turns by twice that — so a glitter path is a direct measurement of the surface.
+  See the note below on which width, because "about twice the rms slope" is not the number a
+  Gaussian lobe wants.
+- **How bright it was** is not computable from anything in a report. Cloud decides it and no
+  source this project has met states it, and this renderer is not photometrically calibrated
+  anyway. What carries is the RATIO: one phase of the moon against another, and either against
+  the sun.
+
+### A half moon is a ninth of a full one, not half
+
+The lit fraction is geometry and the brightness is not. At full the moon is seen at zero phase
+angle, where the shadows between the regolith grains hide behind the grains casting them and the
+disc surges — the opposition effect. Allen's relation, as fitted by Krisciunas and Schaefer
+(*PASP* 103, 1991, 1033), adds `0.026 a + 4e-9 a⁴` magnitudes at phase angle `a`:
+
+| lit | phase angle | against a full moon |
+|---:|---:|---:|
+| 100% | 0° | 1.00 |
+| 50% | 90° | 0.091 |
+| 41% | 100° | 0.062 |
+| 25% | 120° | 0.026 |
+| 10% | 143° | 0.007 |
+
+Scaling light by the lit fraction is out by an order of magnitude at the crescent.
+
+### The width is declared, not read off the drawn sea
+
+This is why #37 waited for #36, and why widening the band was not enough on its own. Cox and
+Munk photographed sun glitter off Maui in 1951–52 and fitted `mss = 0.003 + 0.00512 U` (*JOSA*
+44, 1954, 838) — the whole surface's slope, capillary-gravity ripples included.
+
+| Hs | wind that raises it | mss | rms slope | lobe σ | lane at half brightness |
+|---:|---:|---:|---:|---:|---:|
+| 1 m | 6.8 m/s | 0.038 | 11.0° | 15.8° | 37° |
+| 2 m | 9.7 m/s | 0.053 | 12.9° | 18.6° | 44° |
+| 3 m | 11.8 m/s | 0.064 | **14.2°** | **20.4°** | **48°** |
+| 5 m | 15.3 m/s | 0.081 | 15.9° | 23.1° | 54° |
+
+**Three widths, and they are not interchangeable.** The rms slope is `sqrt(mss)`, the way one
+is conventionally quoted. "About twice the rms slope" — 28.3° for a 3 m sea, and the figure
+the issue used — is a characteristic radius in two dimensions. What a Gaussian lobe takes is
+the standard deviation along ONE axis: `mss` is the total of two slope components, so one axis
+carries half of it, and the ray turns by twice the facet, giving `sigma = sqrt(2 mss)` = 20.4°.
+Handing the 28.3 to the lobe draws a lane half again too wide, and the page and the picture
+then describe different water. **The page prints the full width at half maximum**, because
+that is the one figure a reader could check against the screen.
+
+The drawn sea's slope is 5.4° at Hs 3 after #36 — a lobe of 7.7° against the sea's own 20.4 —
+so reflecting a point body off the drawn normals alone lays a lane a third of the width the
+sea lays: **water sharper than any that exists, asserted by a picture**. So the missing
+roughness goes into the body's own lobe. Slopes add in quadrature, so what is missing is
+`measured − drawn` as variances, and the body is given `sqrt(2 (measured − drawn))` = 18.9°,
+which with what the normals already do comes back to 20.4°.
+
+**How much is missing is a per-fragment question, not a per-scene one.** The shading drops
+each component where the range or the frame runs out of pixels for it, and past 2.5 km fades
+the whole normal to flat — so a lobe sized once against the whole drawn spectrum narrows with
+distance and ends as a mirror spot on water drawn flat, and the lane's width would depend on
+how far away it is and how big somebody's window is. The shader therefore carries the sea's
+TOTAL slope as the target and subtracts what the normals under each fragment are actually
+carrying. `core/illumination.ts` holds the rule and the GLSL mirrors it, for the reason
+`meshCarries` gives: nothing in Node can compile a shader to ask it.
+
+**Shading in roughness a mesh cannot carry is ordinary practice. Declaring it is not**, and the
+alternative is a number tuned until the picture looks right.
+
+### The ray has to leave the water that is drawn
+
+The reflection starts from the fragment's world position, and that position is moved twice:
+the waves lift it and `curvature.ts` sinks it by the drop that puts a horizon in the picture.
+Taken before either — which is where the varying was first assigned, at the top of the vertex
+chunk — the ray leaves the MEAN sea while the normal it bounces off belongs to the drawn one.
+
+The angles are small (about half a degree from a metre of wave height at a hundred metres, and
+under a tenth near the horizon, against a lobe tens of degrees wide) and that is not the
+point: it is a plausible pattern computed off a surface the picture does not have, which is
+this project's whole failure mode in miniature. The position is therefore taken again at
+`project_vertex`, after everything that moves it — rather than recomputing the drop, which
+would put the curvature's formula in a second file.
+
+Only the vertical part changes, so the wave phases, which read `.xz`, are untouched.
+
+### Where a sea is not stated, no path is drawn — and a stated calm is not that
+
+No sea, no slope, no width, and a mirror-sharp body on water this tool decided to draw flat
+would assert a calm nobody recorded — the same failure as drawing a flat sea in the first
+place. The gradient stays and the lane does not appear; the page says why.
+
+**A sea stated flat is the other fact, and the source gives it.** Calm water mirrors, so the
+body is drawn at its own half degree across — the sun's and the moon's are within a few per
+cent of each other, which is why eclipses work — and lays a point of light rather than a lane.
+Both cases draw no wave components at all, so only the estimate can tell them apart, and
+collapsing them would report a figure the source states as one it withholds. `sea state 0`
+reaches this branch as well as a stated `significantHeightMetres: 0`.
+
+### One direction for the whole frame
+
+The key light was fixed at an arbitrary `(1, 2, 1)` and deliberately so, with the reasoning
+recorded and issue #15 named. A sea handing back a moon on 191° while the hulls are lit from
+somewhere else is one picture making two claims, so #37 takes that piece of #15 with it: the sky
+and the key light are driven from the same computed direction.
+
+**And the phase dims the key light too.** The night's directional figure is a FULL moon's, so
+every other phase scales from it by the same law the water's lobe uses — a page saying a half
+moon is a ninth of a full one, over hulls whose moonlight never changes, would be one frame
+making two claims about how much light there was. The sun clamps to the full figure rather
+than to four hundred thousand times it.
+
+**Which body may light the picture follows the picture, not the almanac.** The renderer draws
+night or day from the light condition the FILE states, because that is a witness's word about
+the dark. Where the two disagree — a file saying night with the sun computed above the horizon,
+which is what a mistyped date or time zone looks like — the water must not hand back a sun over
+a night palette. That would report the disagreement wordlessly, in a picture, where the panel
+reports it in a sentence a reader can check.

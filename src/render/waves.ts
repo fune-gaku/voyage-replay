@@ -25,9 +25,10 @@
  * thing in the picture telling the truth about time, which reads as the sea being still.
  */
 
-import { Color, Vector2, Vector4, type Material } from "three";
+import { Vector2, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
+import { makeSkyUniforms, SKY_GLSL, type SkyUniforms } from "./sky.js";
 import { DISC } from "./water.js";
 
 /**
@@ -153,8 +154,13 @@ export interface WaveUniforms {
   uWaveTime: { value: number };
   /** 1 where the sea is drawn, 0 for the plan view. Nothing between means anything. */
   uWaveScale: { value: number };
-  /** What the water reflects. The scene's own sky, so the two cannot disagree. */
-  uSkyColour: { value: Color };
+  /**
+   * What the water reflects, as a function of direction rather than as one colour.
+   *
+   * The scene's own sky, so the two cannot disagree - and the only place a sky is drawn at
+   * all, since there is no dome and no environment map. See `render/sky.ts`.
+   */
+  sky: SkyUniforms;
   /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
@@ -224,7 +230,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWaveTime: { value: 0 },
     uWaveScale: { value: 0 },
     uPixelAngle: { value: pixelAngle(55, 1080) },
-    uSkyColour: { value: new Color(0x000000) },
+    sky: makeSkyUniforms(),
   };
 }
 
@@ -272,7 +278,9 @@ varying vec3 vWaveWorld;
  */
 const FRAGMENT_DECLARATIONS = `${DECLARATIONS}
 uniform vec3 uEye;
-uniform vec3 uSkyColour;
+${SKY_GLSL}
+vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
+float gCarriedSlope = 0.0;
 `;
 
 /**
@@ -310,6 +318,9 @@ const FADE = (near: Vector2): string =>
 const DISPLACEMENT = `
 #include <begin_vertex>
 vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+// The MEAN surface, and only the horizontal part of it is used from here: the phases below
+// and the ones in the fragment stage read .xz, which no vertical displacement touches. The
+// height is put back at DRAWN_SURFACE below, once everything that moves it has run.
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
@@ -323,6 +334,24 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
   }
   transformed.y += fade * height;
 }
+`;
+
+/**
+ * The world position of the water as it is actually DRAWN, for the reflection to start from.
+ *
+ * **At `project_vertex` rather than beside the displacement**, because two things move this
+ * surface and only one of them is in this file: the waves lift it here, and `curvature.ts`
+ * sinks it afterwards by the drop that puts a horizon in the picture. Taken before either,
+ * the reflected ray leaves the mean sea while the normal it bounces off belongs to the drawn
+ * one - a plausible pattern in the wrong place, which is this project's whole failure mode.
+ *
+ * Injecting here rather than recomputing the drop keeps the curvature's formula in one file.
+ * The horizontal part is unchanged by both, so the wave phases above and in the fragment
+ * stage are unaffected by the reassignment.
+ */
+const DRAWN_SURFACE = `
+vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+#include <project_vertex>
 `;
 
 /**
@@ -355,24 +384,44 @@ const NORMALS = `
     float wavelength = 6.2831853 / length( w.xy );
     float carries = smoothstep( 0.0, 1.0, wavelength / ( away * uPixelAngle + 1e-6 ) );
     slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    // **What this fragment's normals actually carry**, which is less than the sea has wherever
+    // the band or the range has taken components out. The reflection gives the difference back
+    // to the body, so the lane keeps its measured width instead of narrowing with distance.
+    float steep = carries * w.z * length( w.xy );
+    gCarriedSlope += 0.5 * steep * steep;
   }
-  vec3 waved = ( viewMatrix * vec4( normalize( vec3( -slope.x, 1.0, -slope.y ) ), 0.0 ) ).xyz;
+  // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
+  // the sky is a function of a world direction - so the reflection stage below would have to
+  // undo the rotation to ask it anything. Mixed by the same fade, so the two agree about how
+  // much of this sea is drawn where.
+  vec3 world = normalize( vec3( -slope.x, 1.0, -slope.y ) );
+  gWorldNormal = normalize( mix( vec3( 0.0, 1.0, 0.0 ), world, fade ) );
+  vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
+  // The whole surface fades to flat past a few kilometres as well, and slope goes with it.
+  gCarriedSlope *= fade * fade;
 }
 `;
 
 /**
- * The sky, handed back by the water at the angle it is seen at.
+ * The sky, handed back by the water in the direction it is reflected towards.
  *
  * After the lighting rather than before it, because this is reflected light and not
  * something the surface is being lit by. `vViewPosition` points from the fragment to the
  * camera, which is what the angle is measured from.
+ *
+ * **The direction is where the reflected ray goes, not merely how steeply it leaves.** That
+ * is the whole change: a sea reflecting one colour makes the waves visible and says nothing
+ * about the sky, while a sea reflecting a direction lays a path of light under the body and
+ * a reader can take a bearing off it. The eye is `cameraPosition` rather than `uEye`, which
+ * carries the watchkeeper's position at sea level and not her height.
  */
 const REFLECTION = `
 {
   float towards = clamp( dot( normalize( vViewPosition ), normal ), 0.0, 1.0 );
   float sky = mix( ${WATER_REFLECTANCE_HEAD_ON}, 1.0, pow( 1.0 - towards, 5.0 ) );
-  outgoingLight = mix( outgoingLight, uSkyColour, sky );
+  vec3 look = normalize( vWaveWorld - cameraPosition );
+  outgoingLight = mix( outgoingLight, skyTowards( reflect( look, gWorldNormal ), gCarriedSlope ), sky );
 }
 #include <opaque_fragment>
 `;
@@ -398,8 +447,13 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
+    shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", DRAWN_SURFACE);
     shader.fragmentShader = FRAGMENT_DECLARATIONS + shader.fragmentShader;
-    shader.uniforms["uSkyColour"] = uniforms.uSkyColour;
+    // Every sky uniform by name, so adding one to `SkyUniforms` cannot leave it unregistered
+    // - which compiles, runs, and draws a sky with nothing in it.
+    for (const name of Object.keys(uniforms.sky) as (keyof SkyUniforms)[]) {
+      shader.uniforms[name] = uniforms.sky[name];
+    }
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <normal_fragment_begin>",
       NORMALS,

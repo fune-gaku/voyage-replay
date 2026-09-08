@@ -12,6 +12,7 @@ import {
   offsetMetres,
   type OffsetMetres,
 } from "../actors/vessel/reference-point.js";
+import { conditionsAt, type Conditions } from "../core/conditions.js";
 import {
   distanceMetres,
   offsetAlongHeading,
@@ -193,6 +194,15 @@ interface Stage {
   startSeconds: number;
   endSeconds: number;
   sceneParts: SceneParts;
+  /**
+   * The conditions at an instant, which the sky needs and the renderer must not work out for
+   * itself.
+   *
+   * A closure rather than the environment block, because `render/` reads `Conditions` and
+   * never the scenario's own fields - and a function of time rather than a value, because
+   * the sun and the moon are the one part of the weather that moves while a scenario runs.
+   */
+  conditionsAt: (epochSeconds: number) => Conditions;
   diagram: Group;
   cast: Cast[];
   marks: Moored[];
@@ -454,6 +464,10 @@ export class Replay {
     this.stage.diagram.visible = diagramMode;
     this.stage.sceneParts.setDiagramView(diagramMode);
     this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
+    // Every frame, because the sky is the one part of the environment that moves: the
+    // reference case runs eighty-seven minutes and nautical twilight ends eleven of them
+    // before the collision. A sky set once would freeze the moon at the opening frame.
+    this.stage.sceneParts.setSky(this.stage.conditionsAt(this.currentSeconds));
     // After the eye is known, since what the sea does under a buoy depends on how far off
     // it is - the water's geometry fades with distance and the buoy has to fade with it.
     this.stage.sceneParts.setEye(eye?.position ?? null, eye?.heading ?? 0);
@@ -766,6 +780,8 @@ function buildStage(scenario: Scenario, arrivals: Omit<Ground, "origin">): Stage
     startSeconds: Math.min(...tracks.map((t) => t.startSeconds)),
     endSeconds: Math.max(...tracks.map((t) => t.endSeconds)),
     sceneParts,
+    conditionsAt: (epochSeconds: number): Conditions =>
+      conditionsAt(scenario.origin, scenario.environment, epochSeconds),
     diagram,
     cast,
     marks,

@@ -1210,6 +1210,36 @@ export function periodFromWindSeconds(speedKnots: number): number {
  * the ranges rather than the sea. Only a sea whose gentlest reading still exceeds the most
  * the wind could raise is worth a reader's attention.
  */
+/**
+ * Cox and Munk's mean square slope for a clean sea under this wind: `0.003 + 0.00512 U`.
+ *
+ * Measured from sun glitter photographed off Maui in 1951-52 (Cox and Munk, *Journal of the
+ * Optical Society of America* 44 (1954) 838), with `U` the wind at 12.5 m. It is the whole
+ * surface's slope, capillary-gravity ripples included - which is why a JONSWAP gravity
+ * spectrum cannot reach it however far its band is widened, and why the difference has to be
+ * named rather than integrated for.
+ *
+ * A variance rather than an angle, because that is how slopes add: the drawn surface's own
+ * slope and whatever is missing from it combine in quadrature, and only in this form.
+ */
+export function coxMunkSlopeVariance(windSpeedMetresPerSecond: number): number {
+  return 0.003 + 0.00512 * Math.max(windSpeedMetresPerSecond, 0);
+}
+
+/**
+ * The wind that would have raised a sea this size, from the fully developed relation.
+ *
+ * `Hs = 0.21 U^2 / g` inverted - the same inversion `assumedPeakPeriodSeconds` makes to get
+ * a period, so the two cannot disagree about which wind a sea belongs to. It is not a stated
+ * wind and must not be reported as one: a sea drawn from a height belongs to about this
+ * wind, and a slope quoted for some other wind would be about a surface nobody is looking at.
+ */
+export function windRaisingMetresPerSecond(significantHeightMetres: number): number {
+  return Math.sqrt(
+    (Math.max(significantHeightMetres, 0) * GRAVITY_METRES_PER_SECOND_SQUARED) / 0.21,
+  );
+}
+
 export function seaExceedsWind(sea: SeaEstimate | null, wind: WindEstimate | null): boolean | null {
   if (!sea || !wind || wind.source === "direction-only") return null;
   if (wind.fastestIsOpen) return null;
