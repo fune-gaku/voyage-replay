@@ -227,11 +227,12 @@ export function candelaFromNominalRange(nauticalMiles: number): number {
  *
  * | depression | of the nominal |
  * |---:|---:|
- * | 0-5 deg | 1.00 |
- * | 7.5 deg | 0.60 |
- * | 15 deg | 0.14 |
- * | 30 deg | 0.02 |
- * | 60 deg | 0.001 |
+ * | 0-5 deg | 1.000 |
+ * | 7.5 deg | 0.600 |
+ * | 10 deg | 0.360 |
+ * | 15 deg | 0.130 |
+ * | 30 deg | 0.0060 |
+ * | 60 deg | 0.000013 |
  */
 export function verticalSpread(depressionDegrees: number): number {
   const below = Math.abs(depressionDegrees);
@@ -267,8 +268,8 @@ export const BEAM_FALL_PER_DEGREE =
  *
  * **Those are with the beam pointed at the water, which it is not.** `verticalSpread` takes
  * the depression into account and cuts the near field away: the same masthead lights the sea
- * thirty metres ahead of its own ship at 0.0012 lx rather than 0.04, because that water lies
- * thirty-four degrees below its beam.
+ * thirty metres ahead of its own ship at 0.00011 lx rather than 0.04, because that water lies
+ * thirty-four degrees below its beam, where six thousandths of the beam is left.
  *
  * Starlight is about 0.002 lx and a full moon 0.25. **The drawn figure is the one with the
  * beam profile in, and it is a quarter of starlight**: 0.00049 lx at a hundred metres,

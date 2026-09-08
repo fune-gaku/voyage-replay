@@ -952,8 +952,8 @@ flooding the water ahead of her, and why the first version of this did:
 
 The two points are the rule's; the shape between and below them is declared.
 
-So the light a lamp puts on the water **peaks where its beam grazes the surface** — about a
-hundred metres out for a masthead twenty metres up — and is nearly nothing underneath it:
+So the light a lamp puts on the water **peaks where its beam grazes the surface** — 78 m out
+for a masthead twenty metres up, at 0.00053 lx — and is nearly nothing underneath it:
 
 | 6 NM masthead, 20 m up | 20 m | 30 m | 100 m | 300 m |
 |---|---:|---:|---:|---:|

@@ -170,25 +170,39 @@ describe("how far a streak reaches", () => {
     expect(verticalSpread(0)).toBe(1);
     expect(verticalSpread(5)).toBe(1);
     expect(verticalSpread(7.5)).toBeCloseTo(0.6, 6);
-    expect(verticalSpread(15)).toBeLessThan(0.15);
-    expect(verticalSpread(45)).toBeLessThan(0.001);
+    // **The tail is pinned to the value and not to a bound**, because the table in
+    // `core/illumination.ts` drifted off the curve it documents while bounds went on passing:
+    // it said 0.14 at fifteen degrees where the curve gives 0.130, and 0.001 at sixty where
+    // it gives 0.000013. A `toBeLessThan(0.15)` is true of both, so nothing said.
+    expect(verticalSpread(10)).toBeCloseTo(0.36, 4);
+    expect(verticalSpread(15)).toBeCloseTo(0.1296, 4);
+    expect(verticalSpread(30)).toBeCloseTo(0.006047, 6);
+    expect(verticalSpread(60)).toBeCloseTo(1.316e-5, 8);
     // Symmetric: five degrees up is as much within the band as five degrees down.
     expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);
   });
 
   /**
-   * The light a lamp puts on the water therefore peaks a hundred metres out rather than at
-   * its own feet - where its beam grazes the surface, which is where a lamp on a dark night
-   * actually shows.
+   * The light a lamp puts on the water therefore peaks well out from the ship rather than at
+   * her own feet - where its beam grazes the surface, which is where a lamp on a dark night
+   * actually shows. Seventy-eight metres for a masthead twenty metres up, and the figures
+   * either side of it are pinned so that the ones quoted in prose have somewhere to be
+   * checked against.
    */
   it("lights the water where its beam grazes it, not underneath itself", () => {
     const masthead = candelaFromNominalRange(6);
     const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
 
-    expect(at(30)).toBeLessThan(at(100));
-    expect(at(20)).toBeLessThan(at(100) / 10);
-    // And it is starlight either way: this is a signature, not a floodlight.
-    expect(at(100)).toBeLessThan(0.002);
+    expect(at(20)).toBeCloseTo(0.0000235, 7);
+    expect(at(30)).toBeCloseTo(0.000114, 6);
+    expect(at(78)).toBeCloseTo(0.000531, 6);
+    expect(at(100)).toBeCloseTo(0.000489, 6);
+    expect(at(300)).toBeCloseTo(0.0000693, 7);
+    // The peak is out there and not underneath, which is the whole point of the profile.
+    expect(at(78)).toBeGreaterThan(at(30));
+    expect(at(78)).toBeGreaterThan(at(300));
+    // And it is a quarter of starlight at its brightest: a signature, not a floodlight.
+    expect(at(78)).toBeLessThan(0.002 / 3);
   });
 
   it("puts a quarter of starlight on the water at a hundred metres", () => {
