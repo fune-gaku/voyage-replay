@@ -594,15 +594,18 @@ function buildFog(
 interface Lights {
   setDiagram: (on: boolean) => void;
   /**
-   * Point the key light at the body the water is reflecting.
+   * Point the key light at the body the water is reflecting, or put it out.
    *
    * **One direction for the whole frame.** A sea handing back a moon on 191 degrees while
    * the hulls are lit from somewhere else is one picture making two claims - the failure
    * this project keeps meeting - and the direction has been computable all along:
    * `core/celestial.ts` has had it since the panels started printing it.
    *
-   * Below the horizon there is no body and the light stays where it was rather than being
-   * driven under the sea, which would light the hulls from beneath.
+   * **Null puts the directional light out rather than leaving it where it was.** There is
+   * then no body: a moonless night has no light with a direction in it, so nothing has a lit
+   * side and a shaded one, and the scene is carried by the ambient alone. Leaving the light
+   * standing would light the hulls from wherever the moon was before it set - which makes a
+   * frame depend on how the viewer got to it, since scrubbing backwards never restores it.
    */
   pointAt: (towards: Vector3 | null) => void;
 }
@@ -617,15 +620,28 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   scene.add(ambient);
   scene.add(key);
 
+  // Both are held rather than read back off the light, because the two callers arrive in
+  // either order within a frame and each has to leave the other's decision standing.
+  let diagram = false;
+  let lit = true;
+  const apply = (): void => {
+    ambient.intensity = diagram ? Math.max(palette.ambient, 1.35) : palette.ambient;
+    // A chart is lit for reading and answers to nothing in the sky; a bridge view is lit by
+    // whatever is up there, and by nothing at all when nothing is.
+    key.intensity = diagram ? 0.8 : lit ? (night ? 0.25 : 1.75) : 0;
+  };
+
   return {
     setDiagram: (on: boolean): void => {
-      ambient.intensity = on ? Math.max(palette.ambient, 1.35) : palette.ambient;
-      key.intensity = on ? 0.8 : night ? 0.25 : 1.75;
+      diagram = on;
+      apply();
     },
     // A directional light in three shines from its position towards the origin, so the
     // position IS the direction to the body - scaled up only to keep it clear of the scene.
     pointAt: (towards: Vector3 | null): void => {
+      lit = towards !== null;
       if (towards) key.position.copy(towards).multiplyScalar(1000);
+      apply();
     },
   };
 }

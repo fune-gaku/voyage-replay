@@ -316,6 +316,41 @@ describe("the sky the water hands back", () => {
   });
 
   /**
+   * **A frame must not depend on how the viewer got to it.** A key light left standing where
+   * the moon was before it set lights the hulls from a bearing nothing is at, and scrubbing
+   * backwards never puts it right - the same claim the water makes, said about the hulls.
+   */
+  it("puts the key light out when nothing is up, whichever order the frames came in", () => {
+    const parts = buildScene(sea, 1000);
+    parts.setDiagramView(false);
+    const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    expect(key.intensity).toBeGreaterThan(0);
+
+    // Nine hours on: the moon has set, and this is drawn as night so no sun may replace it.
+    parts.setSky(conditionsAt(suoNada, sea, collision + 9 * 3600));
+    expect(key.intensity).toBe(0);
+
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    expect(key.intensity).toBeGreaterThan(0);
+  });
+
+  /** A chart is lit for reading and answers to nothing in the sky, whichever call came last. */
+  it("leaves the plan view's own lighting alone", () => {
+    const parts = buildScene(sea, 1000);
+    const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
+
+    parts.setDiagramView(true);
+    parts.setSky(conditionsAt(suoNada, sea, collision + 9 * 3600));
+    expect(key.intensity).toBeCloseTo(0.8, 6);
+
+    parts.setSky(conditionsAt(suoNada, sea, collision));
+    parts.setDiagramView(true);
+    expect(key.intensity).toBeCloseTo(0.8, 6);
+  });
+
+  /**
    * **The sky moves while the scenario runs**, which is why it is set every frame rather
    * than when the scene was built: the reference case is eighty-seven minutes long and
    * nautical twilight ends eleven minutes before the collision.

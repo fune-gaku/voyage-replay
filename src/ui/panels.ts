@@ -198,7 +198,7 @@ function noPathBecause(conditions: Conditions): string {
       "Neither the sun nor the moon is above the horizon at this moment, so nothing lays a " +
       "path on the water and the sea reflects only the sky's own colour. On a night that is " +
       "the whole difference between a hull seen against a lane of light and one seen against " +
-      "nothing."
+      `nothing. ${LIT_FROM_NOWHERE}`
     );
   }
   const up = sun.altitudeDegrees > 0 ? "sun" : "moon";
@@ -208,9 +208,20 @@ function noPathBecause(conditions: Conditions): string {
     `above the horizon, but the view is drawn as ${drawnAs} because that is what the file ` +
     `says, and a ${drawnAs} is not lit by the ${up}. The two disagree, which the line above ` +
     "says in words - putting it in the water instead would be a picture arguing with a " +
-    "table, and only one of them can be checked."
+    `table, and only one of them can be checked. ${LIT_FROM_NOWHERE}`
   );
 }
+
+/**
+ * With no body, the scene has no directional light either - which is the same claim, said
+ * about the hulls rather than about the water.
+ *
+ * A key light left standing where the moon was before it set would light them from a bearing
+ * nothing is at, and would make a frame depend on how the viewer got to it.
+ */
+const LIT_FROM_NOWHERE =
+  "The hulls are lit without a direction as well: nothing has a lit side and a shaded one, " +
+  "because there is nothing up there to cast one.";
 
 /**
  * Said once, under every path. The renderer is not photometrically calibrated, so the only
