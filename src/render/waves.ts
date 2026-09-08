@@ -420,6 +420,12 @@ const NORMALS = `
  * about the sky, while a sea reflecting a direction lays a path of light under the body and
  * a reader can take a bearing off it. The eye is `cameraPosition` rather than `uEye`, which
  * carries the watchkeeper's position at sea level and not her height.
+ *
+ * **`cameraPosition` comes from three's own fragment prefix**, which no test here can reach:
+ * `ShaderLib` exposes the shader bodies and the prefix is built inside `WebGLProgram`. It is
+ * declared in both prefixes in the version installed, checked by hand. A three that dropped
+ * it from the fragment one would fail to compile this material rather than draw it wrongly,
+ * which is the better of the two failures - but it is worth knowing where to look.
  */
 const REFLECTION = `
 {
