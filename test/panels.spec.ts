@@ -1203,6 +1203,22 @@ describe("the path on the water", () => {
     expect(html).toContain("nothing states a sea");
     expect(html).toContain("assert a calm nobody recorded");
     expect(html).not.toContain("degrees wide");
+    // And the sentence before it does not claim a reflection the picture has not drawn.
+    expect(html).not.toContain("so its reflection lies on that bearing");
+  });
+
+  /**
+   * **A sea stated flat is not a sea nobody stated.** Calm water mirrors, on somebody's
+   * authority, and calling that "nothing states a sea" reports a figure the source gives as
+   * one it withholds - the same collapse the band row makes between a flat sea and one too
+   * small to draw, one section down.
+   */
+  it("tells a stated calm from a sea nobody stated", () => {
+    const html = panelsFor(moonlit({ significantHeightMetres: 0, derivation: "measured" }));
+    expect(html).toContain("The file states a sea of no height");
+    expect(html).toContain("mirror image rather than a lane");
+    expect(html).not.toContain("nothing states a sea");
+    expect(html).not.toContain("assert a calm nobody recorded");
   });
 
   /**
@@ -1245,7 +1261,7 @@ describe("the path on the water", () => {
    * cloud decides how much light reached the sea and no report this project has met states it.
    */
   it("holds the brightness out as a bound rather than a reading", () => {
-    const html = panelsFor(moonlit());
+    const html = panelsFor(moonlit({ significantHeightMetres: 3, derivation: "measured" }));
     expect(html).toContain("readable brightness rather than a measured one");
     expect(html).toContain("a half moon is about a ninth of a full one");
     // And where the sky is: nowhere but in the water, since there is no dome over the scene.

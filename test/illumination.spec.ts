@@ -142,12 +142,21 @@ describe("how much wider the reflected body has to be drawn", () => {
   });
 
   /**
-   * **No sea stated, no width.** A mirror-sharp moon on dead flat water would assert a calm
-   * nobody recorded, which is the strongest claim this renderer can make about a sea it was
-   * told nothing about.
+   * **No sea stated, no width.** A mirror-sharp moon on water this tool decided to draw flat
+   * would assert a calm nobody recorded, which is the strongest claim this renderer can make
+   * about a sea it was told nothing about.
    */
   it("refuses to give a width for a sea nobody stated", () => {
-    expect(glitterSpreadRadians(0, 0)).toBeNull();
+    expect(glitterSpreadRadians(null, 0)).toBeNull();
+  });
+
+  /**
+   * **A sea stated flat is a different fact, and the source gives it.** Calm water mirrors,
+   * so the body is drawn at its own size and no wider - a point of light rather than a lane.
+   * Collapsing the two would report a figure the source states as one it withholds.
+   */
+  it("gives a stated calm no spread at all, which is not the same as none", () => {
+    expect(glitterSpreadRadians(0, 0)).toBe(0);
   });
 
   /** A drawn surface steeper than the measured one needs nothing added, and must not go NaN. */

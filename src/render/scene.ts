@@ -33,6 +33,7 @@ import {
   surfaceAt,
   waveComponents,
   type Riding,
+  type SeaEstimate,
   type SurfacePoint,
   type WaveComponent,
 } from "../core/seaway.js";
@@ -247,7 +248,8 @@ export function buildScene(
   scene.fog = fog;
 
   const curvature = makeCurvatureUniforms();
-  const water = addWater(scene, palette, curvature, environment);
+  // Split rather than spread whole: the mesh is the scene's, the rest is the sea's.
+  const { mesh: water, ...sea } = addWater(scene, palette, curvature, environment);
   const { terrain, basemap } = addGround(scene, palette, curvature, ground);
   const lights = addLighting(scene, palette, night);
 
@@ -257,14 +259,13 @@ export function buildScene(
   actors.name = "actors";
   scene.add(actors);
 
-  const parts = {
+  const parts: Switchable = {
+    ...sea,
+    water,
     basemap,
     terrain,
-    water: water.mesh,
     fog,
     curvature,
-    waves: water.waves,
-    sea: water.sea,
     grid: addGrid(scene),
   };
   return { scene, actors, ...viewControls(scene, parts, lights, { extentMetres, night }) };
@@ -295,7 +296,7 @@ function addWater(
   palette: Palette,
   curvature: CurvatureUniforms,
   environment: Environment | undefined,
-): { mesh: Mesh; waves: WaveUniforms; sea: WaveComponent[] } {
+): { mesh: Mesh; waves: WaveUniforms; sea: WaveComponent[]; estimate: SeaEstimate | null } {
   const sea = seawayFrom(environment);
   const material = new MeshStandardMaterial({
     color: palette.water,
@@ -321,7 +322,7 @@ function addWater(
 
   const mesh = buildWater(material);
   scene.add(mesh);
-  return { mesh, waves, sea: components };
+  return { mesh, waves, sea: components, estimate: sea };
 }
 
 /**
@@ -365,6 +366,12 @@ interface Switchable {
   curvature: CurvatureUniforms;
   waves: WaveUniforms;
   sea: WaveComponent[];
+  /**
+   * What the file said about the sea, as against what came out of it. Null where nothing
+   * states one - which is not the same fact as a sea stated flat, and only this can tell them
+   * apart: both draw no components at all.
+   */
+  estimate: SeaEstimate | null;
   grid: GridControl;
 }
 
@@ -430,7 +437,7 @@ function seaControls(
       // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
       // same flag the waves answer to, asked rather than worked out a second time.
       const drawnAsSea = parts.waves.uWaveScale.value > 0;
-      setSkyBody(parts.waves.sky, lit, drawnAsSea ? spreadOver(parts.sea) : null);
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? spreadOver(parts) : null);
     },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
@@ -476,11 +483,14 @@ function setDiagram(
  * on flat water would assert a calm nobody recorded, which is the strongest claim this
  * renderer can make about a sea it was told nothing about.
  */
-function spreadOver(sea: WaveComponent[]): number | null {
-  if (sea.length === 0) return null;
+function spreadOver(parts: Switchable): number | null {
+  // **Null and zero are different answers here.** No sea stated means no slope to take; a sea
+  // stated flat is a calm on somebody's authority, and calm water mirrors. Asking the
+  // components alone would collapse the two, since both come out empty.
+  if (!parts.estimate) return null;
   let height = 0;
   let slope = 0;
-  for (const wave of sea) {
+  for (const wave of parts.sea) {
     height += wave.amplitudeMetres ** 2 / 2;
     slope += (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2;
   }

@@ -74,6 +74,16 @@ const BRIGHTEST_LOBE = 2.5;
 const FULL_MOON_LOBE = 1;
 
 /**
+ * The sun and the moon are both about half a degree across, which is why eclipses work.
+ *
+ * It is the floor under the lobe's width: on a sea stated flat there is no slope to spread
+ * the reflection, and what is left is the disc itself, mirrored. Convolved in quadrature with
+ * the sea's own spread, where there is one, it changes nothing at all - a quarter of a degree
+ * against twenty-six.
+ */
+const BODY_ANGULAR_RADIUS_RADIANS = (0.265 * Math.PI) / 180;
+
+/**
  * The sky in one direction: the gradient, plus the body's lobe where one is up.
  *
  * `towards` must be a unit vector in world axes, where y is up. Directions below the horizon
@@ -133,15 +143,18 @@ export function makeSkyUniforms(): SkyUniforms {
  * Point the sky at a body, or at none.
  *
  * `spreadRadians` is null where the file states no sea: there is then no slope to widen the
- * body with, and a mirror-sharp moon on dead flat water would assert a calm nobody recorded.
- * The gradient stays; the path does not appear.
+ * body with, and a mirror-sharp moon on water this tool decided to draw flat would assert a
+ * calm nobody recorded. The gradient stays; the path does not appear.
+ *
+ * Zero is a different answer - a sea stated calm, on somebody's authority - and it leaves the
+ * body its own half degree, which is the mirror image calm water gives.
  */
 export function setSkyBody(
   uniforms: SkyUniforms,
   lit: Lit | null,
   spreadRadians: number | null,
 ): void {
-  if (!lit || spreadRadians === null || spreadRadians <= 0) {
+  if (!lit || spreadRadians === null) {
     uniforms.uSkyBody.value.set(0, 0, 0);
     uniforms.uSkyBodyLobe.value.set(0, 0, 0);
     return;
@@ -149,7 +162,7 @@ export function setSkyBody(
   uniforms.uSkyBody.value.copy(towardsBody(lit));
   uniforms.uSkyBodyLobe.value.set(
     BRIGHTEST_LOBE * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
-    spreadRadians,
+    Math.hypot(spreadRadians, BODY_ANGULAR_RADIUS_RADIANS),
     0,
   );
 }

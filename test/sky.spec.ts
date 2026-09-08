@@ -160,6 +160,22 @@ describe("the path a body lays", () => {
     );
   });
 
+  /**
+   * A sea stated calm mirrors: the body keeps its own half degree - which is why eclipses
+   * work - and lays a point of light rather than a lane.
+   */
+  it("leaves a stated calm the body's own disc rather than nothing", () => {
+    const uniforms = gradientSky();
+    setSkyBody(uniforms, moon(191, 41), 0);
+    const width = uniforms.uSkyBodyLobe.value.y;
+    expect((width * 180) / Math.PI).toBeCloseTo(0.265, 3);
+
+    // And against a real sea's spread it disappears: a quarter degree against twenty-six.
+    const rough = gradientSky();
+    setSkyBody(rough, moon(191, 41), spread);
+    expect((rough.uSkyBodyLobe.value.y * 180) / Math.PI).toBeCloseTo(26.3, 2);
+  });
+
   it("draws no path where no body is up", () => {
     const uniforms = gradientSky();
     setSkyBody(uniforms, null, spread);

@@ -786,11 +786,18 @@ would put the curvature's formula in a second file.
 
 Only the vertical part changes, so the wave phases, which read `.xz`, are untouched.
 
-### Where a sea is not stated, no path is drawn
+### Where a sea is not stated, no path is drawn — and a stated calm is not that
 
-No sea, no slope, no width — and a mirror-sharp body on dead flat water would assert a calm
-nobody recorded, which is the same failure as drawing a flat sea in the first place. The
-gradient stays and the lane does not appear; the page says why.
+No sea, no slope, no width, and a mirror-sharp body on water this tool decided to draw flat
+would assert a calm nobody recorded — the same failure as drawing a flat sea in the first
+place. The gradient stays and the lane does not appear; the page says why.
+
+**A sea stated flat is the other fact, and the source gives it.** Calm water mirrors, so the
+body is drawn at its own half degree across — the sun's and the moon's are within a few per
+cent of each other, which is why eclipses work — and lays a point of light rather than a lane.
+Both cases draw no wave components at all, so only the estimate can tell them apart, and
+collapsing them would report a figure the source states as one it withholds. `sea state 0`
+reaches this branch as well as a stated `significantHeightMetres: 0`.
 
 ### One direction for the whole frame
 

@@ -138,14 +138,18 @@ export function lightingAt(conditions: Conditions, drawnAsNight: boolean): Lit |
  * The alternative is a number tuned until the picture looks right, which is the thing this
  * project spends its time undoing.
  *
- * Returns null where there is no sea stated: no slope, no width, and a mirror-sharp body on
- * dead flat water would assert a calm nobody recorded.
+ * **Null where NO sea is stated; zero where a flat one is.** They are different facts and
+ * collapsing them loses the one the source actually gives. Nothing stated means no slope to
+ * take, and a mirror-sharp body on water this tool decided to draw flat would assert a calm
+ * nobody recorded. A stated calm is that calm, on somebody's authority, and a mirror is what
+ * calm water does - so the body is drawn at its own angular size and no wider.
  */
 export function glitterSpreadRadians(
-  significantHeightMetres: number,
+  significantHeightMetres: number | null,
   drawnSlopeVariance: number,
 ): number | null {
-  if (significantHeightMetres <= 0) return null;
+  if (significantHeightMetres === null) return null;
+  if (significantHeightMetres <= 0) return 0;
   const measured = coxMunkSlopeVariance(windRaisingMetresPerSecond(significantHeightMetres));
   // Never negative: a drawn surface steeper than the measured one needs nothing added, and
   // the square root of a negative would come back as a silent NaN in a uniform.

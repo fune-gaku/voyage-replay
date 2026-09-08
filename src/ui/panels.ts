@@ -144,10 +144,21 @@ function pathNote(conditions: Conditions): string {
         ),
       )
     : [];
-  const where =
+  const stands =
     `The ${lit.body} stands ${lit.altitudeDegrees.toFixed(0)} degrees up on ` +
-    `${lit.azimuthDegrees.toFixed(0)} degrees, so its reflection lies on that bearing. `;
-  return where + widthSentence(drawn) + BRIGHTNESS_IS_A_BOUND;
+    `${lit.azimuthDegrees.toFixed(0)} degrees`;
+  // **Only claim the reflection where one is drawn.** Saying its reflection lies on a bearing
+  // and then that no path is drawn is one paragraph contradicting itself.
+  if (drawn.length === 0) {
+    // A stated calm still draws the body, mirrored; a sea nobody stated draws nothing of it,
+    // so the brightness caveat has nothing to be about.
+    const drawsIt = conditions.sea ? ` ${BRIGHTNESS_IS_A_BOUND}` : "";
+    return `${stands}. ${noSlopeFor(conditions)}${drawsIt} ${SKY_ONLY_IN_THE_WATER}`;
+  }
+  return (
+    `${stands}, so its reflection lies on that bearing. ${widthOf(drawn)}` +
+    `${BRIGHTNESS_IS_A_BOUND} ${SKY_ONLY_IN_THE_WATER}`
+  );
 }
 
 /**
@@ -158,14 +169,7 @@ function pathNote(conditions: Conditions): string {
  * real one, and what is missing is put into the body rather than left out, which is a
  * decision to declare rather than a number to tune.
  */
-function widthSentence(drawn: WaveComponent[]): string {
-  if (drawn.length === 0) {
-    return (
-      "No path is drawn, because nothing states a sea: the width of one is the water's own " +
-      "slope and there is none to take. A body mirrored off flat water would assert a calm " +
-      "nobody recorded. "
-    );
-  }
+function widthOf(drawn: WaveComponent[]): string {
   const heights = drawn.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
   const measured = coxMunkSlopeDegrees(4 * Math.sqrt(heights));
   return (
@@ -174,6 +178,30 @@ function widthSentence(drawn: WaveComponent[]): string {
     `surface is flatter than the measured one (${rmsSlopeDegrees(drawn).toFixed(1)} degrees ` +
     `against ${measured.toFixed(1)}), so the difference is put into the body's own spread ` +
     "rather than left out of the picture. "
+  );
+}
+
+/**
+ * Why a body that is up still lays no lane - and **there are two of these as well.**
+ *
+ * A sea nobody states has no slope to take, and a body mirrored off water this tool decided
+ * to draw flat would assert a calm nobody recorded. A sea stated flat is that calm on
+ * somebody's authority, and calm water does mirror: the body is drawn at its own half degree
+ * and no wider, which is a point of light rather than a lane. Calling the second one "nothing
+ * states a sea" would report a figure the source gives as a figure it withholds.
+ */
+function noSlopeFor(conditions: Conditions): string {
+  if (!conditions.sea) {
+    return (
+      "No path is drawn, because nothing states a sea: the width of one is the water's own " +
+      "slope and there is none to take. A body mirrored off water this tool decided to draw " +
+      "flat would assert a calm nobody recorded."
+    );
+  }
+  return (
+    "The file states a sea of no height, so the water is drawn flat and the reflection is a " +
+    "mirror image rather than a lane: the body at its own half degree across, which is what " +
+    "calm water gives. A lane is what slope makes, and a calm has none."
   );
 }
 
@@ -230,10 +258,19 @@ const LIT_FROM_NOWHERE =
  */
 const BRIGHTNESS_IS_A_BOUND =
   "How bright it was is not drawn from anything: cloud decides that and the source does not " +
-  "state it, so the path is drawn at a readable brightness rather than a measured one. What " +
-  "does carry is the RATIO between phases - a half moon is about a ninth of a full one, not " +
-  "half of it. The sky is drawn nowhere but in the water: there is no dome over this scene, " +
-  "so the body appears in the reflection and not above the horizon.";
+  "state it, so it is drawn at a readable brightness rather than a measured one. What does " +
+  "carry is the RATIO between phases - a half moon is about a ninth of a full one, not half " +
+  "of it.";
+
+/**
+ * Where the sky is, said wherever a body is up - because it is not where a reader looks.
+ *
+ * There is no dome over this scene and no environment map: the water IS the sky here, so the
+ * body appears in the reflection and never above the horizon.
+ */
+const SKY_ONLY_IN_THE_WATER =
+  "The sky is drawn nowhere but in the water: there is no dome over this scene, so the body " +
+  "appears in the reflection and not above the horizon.";
 
 /**
  * What sky the view put over this scenario, which is a claim of its own.
