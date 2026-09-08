@@ -285,6 +285,11 @@ So the band is cut where waves stop being drawable rather than where the slope c
 measured relation and not from the drawn surface — which is a different statement from letting
 the drawn band and the analysed one drift apart, and has to be made deliberately.
 
+The shading's own limit is a pixel of the **drawing buffer**, not of the CSS box: a retina
+screen puts two device pixels in each layout one, and taking the layout height would drop
+every component at half the range it should — making the sea's drawn steepness a property of
+the reader's display, with nothing on screen to say so.
+
 **The picture then draws that band twice, and only one of the two can float anything.** The
 geometry carries a component while the mesh has vertices for it — the disc's rings grow 8.73
 per cent of their radius, so eight samples to a wavelength runs out at 12 m of wave near the

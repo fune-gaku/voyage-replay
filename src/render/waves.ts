@@ -158,7 +158,9 @@ export interface WaveUniforms {
   /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
-   * Set from the frame, because a constant would make the drawn band depend on the window.
+   * Set from the frame, because a constant would make the drawn band depend on the window -
+   * and from the DRAWING BUFFER's height rather than the layout box's, since that is what the
+   * fragment shader is sampled on. A retina screen has two device pixels to each CSS one.
    */
   uPixelAngle: { value: number };
 }
@@ -169,6 +171,11 @@ export interface WaveUniforms {
  * A wave is drawn while its own wavelength covers more of the picture than this; below it, it
  * is noise crawling across the water rather than a wave, and it is faded out where the eye
  * would stop separating it anyway.
+ *
+ * **`heightPixels` is the drawing buffer's, not the CSS box's.** The fragment shader runs on
+ * device pixels, and a retina screen has two of them to each layout pixel - so a caller
+ * passing `clientHeight` would drop every component at half the range it should, and the
+ * drawn band would depend on the reader's display.
  */
 export function pixelAngle(verticalFieldOfViewDegrees: number, heightPixels: number): number {
   const perPixel = (verticalFieldOfViewDegrees * Math.PI) / 180 / Math.max(heightPixels, 1);

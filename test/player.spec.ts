@@ -1,6 +1,15 @@
 import { OrthographicCamera, PerspectiveCamera, Texture, Vector3 } from "three";
 import type * as THREE from "three";
-import type { Group, Object3D, Points, PointsMaterial, Scene } from "three";
+import type {
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  Points,
+  PointsMaterial,
+  Scene,
+  WebGLRenderer,
+} from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
@@ -50,8 +59,13 @@ vi.mock("three", async (importOriginal) => {
     ...actual,
     WebGLRenderer: class {
       autoClear = true;
+      private pixelRatio = 1;
       setPixelRatio(ratio: number): void {
+        this.pixelRatio = ratio;
         gl.pixelRatios.push(ratio);
+      }
+      getPixelRatio(): number {
+        return this.pixelRatio;
       }
       setSize(width: number, height: number): void {
         gl.sizes.push([width, height]);
@@ -996,6 +1010,40 @@ describe("the canvas", () => {
     vi.stubGlobal("window", { devicePixelRatio: 3 });
     replayOf();
     expect(gl.pixelRatios.at(-1)).toBe(2);
+  });
+
+  /**
+   * **The shortest drawable wave is measured in DEVICE pixels, not layout ones.**
+   *
+   * The fragment shader runs on the drawing buffer, which a retina screen makes twice the
+   * CSS box in each direction. Taking the layout height would drop every component at half
+   * the range it should - so the drawn band, and with it the sea's steepness, would depend
+   * on the reader's display rather than on the window. Nothing on screen would say so.
+   */
+  it("measures the drawn band in device pixels, not layout ones", () => {
+    const angleWith = (devicePixelRatio: number): number => {
+      vi.stubGlobal("window", { devicePixelRatio });
+      replayOf();
+      const water = lastFrame().scene.children.find((child: Object3D) => child.name === "water");
+      const material = (water as Mesh).material as MeshStandardMaterial;
+      const uniforms: Record<string, { value: number }> = {};
+      const shader = {
+        uniforms,
+        vertexShader: "#include <begin_vertex>",
+        fragmentShader: "#include <normal_fragment_begin>\n#include <opaque_fragment>",
+      };
+      // three's own signature; the patch never touches the renderer it is handed.
+      const renderer = null as unknown as WebGLRenderer;
+      material.onBeforeCompile(
+        shader as unknown as Parameters<MeshStandardMaterial["onBeforeCompile"]>[0],
+        renderer,
+      );
+      return uniforms["uPixelAngle"]?.value ?? 0;
+    };
+
+    const one = angleWith(1);
+    expect(one).toBeGreaterThan(0);
+    expect(angleWith(2)).toBeCloseTo(one / 2, 12);
   });
 
   it("gives the GL context back when disposed", () => {

@@ -1287,16 +1287,22 @@ const WHAT_NOBODY_STATED =
 /**
  * **She is given the sea the picture draws, not the sea the page describes.**
  *
- * The mesh band-limits every component to the vertices under it, so the chop is in the water
- * near the eye and gone a few hundred metres out. A buoy handed the whole spectrum there
- * would heave to waves that are not beneath her, which is the hovering of #34 arriving
- * through the band rather than through the range fade.
+ * Two things take the sea away with distance and both apply to her. The band goes first:
+ * every component is dropped where the vertices under it run out, so the chop is gone within
+ * a couple of hundred metres while the swell is still there. Then the displaced geometry
+ * itself fades between 250 and 600 m, past which the water is drawn flat and she sits still
+ * on it - which is #34's rule, not an omission.
+ *
+ * Naming only the band would say the swell reaches her at any distance, and the page would
+ * then be describing water the picture stopped drawing.
  */
 const RIDES_THE_DRAWN_SEA =
-  "She rides the sea as it is DRAWN under her rather than the sea described above: the mesh " +
-  "holds the swell everywhere and the chop only near the eye, so a buoy a few hundred metres " +
-  "off answers less than one alongside. Given the whole spectrum over water drawn without " +
-  "it, she would hover.";
+  "She rides the sea as it is DRAWN under her rather than the sea described above: the chop " +
+  "goes out of the water within a couple of hundred metres, where the mesh runs out of " +
+  "vertices for it, and the displaced surface itself flattens between 250 and 600 m - so a " +
+  "buoy a few hundred metres off answers less than one alongside, and one beyond that lies " +
+  "still on water drawn flat. Given the whole spectrum over water drawn without it, she " +
+  "would hover.";
 
 /** The same riding the renderer uses, from the same resolved shape. */
 function ridingFor(mark: Mark, region: BuoyageRegion | null): Riding {
