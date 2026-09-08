@@ -381,13 +381,15 @@ const WHAT_A_LAMP_DOES =
   "MINIMUM intensity a light must have to comply, and section 9 caps how bright it may be " +
   "without dazzling, so a real lamp is somewhere in that band and no casualty report says " +
   "where: the 94-to-12 between a masthead and a sidelight is the ratio of two legal minima " +
-  "rather than of two fittings. The vertical spread is weaker than that. Section 10 requires " +
-  "the full intensity only within 5 degrees of the horizontal and 60 per cent of it within " +
-  "7.5, and nothing whatever below - and the sea a lamp lights is all below. This masthead's " +
-  "brightest water is 14 degrees under its beam and the hundred metre figure is 11, both out " +
-  "in the open where the rule asks for nothing. So the light on the water is this tool's " +
-  "curve, not a floor under anyone's lamp, and the real one may have been brighter or dimmer " +
-  "than what is drawn. ";
+  "rather than of two fittings. The vertical spread is weaker than that, and which water it " +
+  "binds depends on how far off that water is. Section 10 requires the full intensity only " +
+  "within 5 degrees of the horizontal and 60 per cent of it within 7.5, and nothing below - " +
+  "and for a masthead twenty metres up those two angles fall on the sea at 229 and 152 " +
+  "metres. So the faint water beyond 229 m is drawn at the floor and is a bound on a real " +
+  "lamp; the bright part is not. The brightest patch, at 78 m, sits 14 degrees under the " +
+  "beam where the rule asks for nothing, and it is 3.4 times the light where the guarantee " +
+  "starts. **The lit patch anyone would notice is this tool's curve**, and the real lamp may " +
+  "have been brighter or dimmer than what is drawn there. ";
 
 /**
  * **Read the bearing off a streak and not the length.**

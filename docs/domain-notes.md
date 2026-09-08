@@ -947,11 +947,20 @@ runs *above* the second, and below 7.5° has no floor to be above:
 | 7.5° | 0.600 | 0.60 | the floor again |
 | below 7.5° | 0.54 ↓ | — | **nothing is required** |
 
-And that last row is the whole of the picture. A masthead 20 m up lights the sea hardest at
-78 m, which is 14.4° down; the hundred-metre figure quoted throughout is 11.3° down. **Every
-lit patch of sea in this renderer comes out of the region Annex I leaves open.** So the light
-on the water is this project's curve, not a bound on anybody's lamp — it may be brighter or
-dimmer than the fitting that was really there, and the panel says so.
+A patch of sea's depression falls as it gets further off, so those bands are **ranges on the
+water**. For a masthead 20 m up, 7.5° lands at 152 m and 5° at 229 m:
+
+| water | depression | what the drawn value is |
+|---|---:|---|
+| inside 152 m | over 7.5° | this project's tail; no rule under it |
+| 152–229 m | 7.5° to 5° | above the 60 % floor; a lamp may be dimmer |
+| beyond 229 m | under 5° | the floor exactly — a bound on a real lamp |
+
+**The bright part is the part with no rule under it.** The peak is at 78 m and the figure
+quoted throughout is at 100 m, both inside 152, and the peak is 3.4× the light at 229 m where
+the guarantee starts. So the lit patch anyone would notice is this project's curve rather than
+a bound on anybody's lamp, while the faint water further out is a floor. The panel says which
+is which, and `test/lamps.spec.ts` pins the two crossings.
 
 | light | range | minimum candela |
 |---|---:|---:|

@@ -1302,9 +1302,12 @@ describe("the streaks the lamps lay", () => {
     // nothing below 7.5 degrees, and every lit patch of sea is below it - so calling the
     // whole photometric chain a floor would be the same overclaim facing the other way.
     expect(html).toContain("the ratio of two legal minima rather than of two fittings");
-    expect(html).toContain("the sea a lamp lights is all below");
-    expect(html).toContain("not a floor under anyone");
+    expect(html).toContain("those two angles fall on the sea at 229 and 152");
+    expect(html).toContain("beyond 229 m is drawn at the floor");
+    expect(html).toContain("The lit patch anyone would notice is this tool");
+    // And not the two overclaims this sentence has already been, in both directions.
     expect(html).not.toContain("All of that is a FLOOR");
+    expect(html).not.toContain("the sea a lamp lights is all below");
   });
 
   /**

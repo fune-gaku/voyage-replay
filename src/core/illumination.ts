@@ -246,14 +246,21 @@ export function minimumCandelaForRange(nauticalMiles: number): number {
  * | 7.5 deg | 0.600 | 0.60 | the floor again |
  * | below 7.5 | 0.54 down | none | **the rule requires nothing at all** |
  *
- * Which means the picture is a floor only for water within five degrees of a lamp's
- * horizontal, and that is not where the water is. A masthead twenty metres up lights the sea
- * hardest at 78 m, which is 14.4 degrees down, and the hundred-metre figure quoted everywhere
- * is 11.3 degrees down. **Every lit patch of sea in this renderer comes out of the region
- * Annex I leaves open**, so the light on the water is this project's curve rather than a bound
- * on anybody's lamp, and it may be brighter or dimmer than the fitting that was really there.
- * What survives as a floor is the intensity itself, out of section 8, and the shape within
- * five degrees - neither of which is what lights the sea.
+ * A patch of sea's depression falls as it gets further off, so those bands are RANGES on the
+ * water. For a masthead twenty metres up: 7.5 degrees is 152 m out and 5 degrees is 229 m.
+ *
+ * | water | depression | what the drawn value is |
+ * |---|---:|---|
+ * | inside 152 m | over 7.5 deg | this project's tail; the rule requires nothing |
+ * | 152-229 m | 7.5 to 5 deg | above the 60 per cent floor; a lamp may be dimmer |
+ * | beyond 229 m | under 5 deg | the floor exactly, and a bound on a real lamp |
+ *
+ * **The bright part is the part with no rule under it.** The peak is at 78 m and the figure
+ * quoted throughout is at 100 m; both are inside 152 and rest entirely on the chosen tail, and
+ * the peak is 3.4 times the light at 229 m where the guarantee starts. So the near field - the
+ * lit patch anyone would notice - is this project's curve rather than a bound on anybody's
+ * lamp, while the faint water further out is a floor. What survives as a bound everywhere is
+ * the intensity itself, out of section 8.
  *
  * | depression | of the nominal |
  * |---:|---:|

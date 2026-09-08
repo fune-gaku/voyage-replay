@@ -205,16 +205,26 @@ describe("how far a streak reaches", () => {
     expect(verticalSpread(6)).toBeCloseTo(0.8152, 4);
     expect(verticalSpread(6)).toBeGreaterThan(0.6);
     expect(verticalSpread(7.5)).toBeCloseTo(0.6, 6);
-    // Below the second band the rule says nothing, and this is where the water is lit.
-    const masthead = minimumCandelaForRange(6);
+    // **A patch of sea's depression falls as it gets further off, so the bands are RANGES.**
+    // For a masthead twenty metres up: 7.5 degrees lands at 152 m, 5 degrees at 229 m. Water
+    // beyond 229 m is drawn at the floor and IS a bound on a real lamp; water inside 152 m
+    // rests on the tail. Saying either of those about all of the water is an overclaim, and
+    // this suite has now had it both ways round.
     const depressionAt = (r: number) => (Math.asin(20 / Math.hypot(r, 20)) * 180) / Math.PI;
+    expect(depressionAt(151.9)).toBeCloseTo(7.5, 2);
+    expect(depressionAt(228.6)).toBeCloseTo(5.0, 2);
+    expect(depressionAt(300)).toBeLessThan(5);
+    expect(verticalSpread(depressionAt(300))).toBe(1);
+
+    // But the bright part is the part with no rule under it: the peak is well inside 152 m.
+    const masthead = minimumCandelaForRange(6);
+    const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
     expect(depressionAt(78)).toBeCloseTo(14.38, 2);
     expect(depressionAt(100)).toBeCloseTo(11.31, 2);
-    expect(depressionAt(78)).toBeGreaterThan(7.5);
-    // And that is the brightest sea the lamp makes, so the peak rests entirely on the tail.
-    const at = (r: number) => lampLuxOnWater(masthead, 20, Math.hypot(r, 20));
     expect(at(78)).toBeGreaterThan(at(30));
     expect(at(78)).toBeGreaterThan(at(300));
+    // And it is 3.4 times the light at the range where the guarantee starts.
+    expect(at(78) / at(228.6)).toBeCloseTo(3.4, 1);
     // Symmetric: five degrees up is as much within the band as five degrees down.
     expect(verticalSpread(-7.5)).toBeCloseTo(verticalSpread(7.5), 12);
   });
