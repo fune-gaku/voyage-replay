@@ -362,11 +362,15 @@ describe("renderPanels", () => {
   });
 
   /**
-   * And where something IS left, it says how much rather than naming a cause it cannot check.
-   * A ship whose direction changes which field it comes from makes the drawn hull jump at the
-   * midpoint of the span, and nothing bounds a jump.
+   * And where something IS left, it says how much - and nothing about why.
+   *
+   * **The figure cannot tell the reasons apart.** The halving stops at its floor, at its depth,
+   * or at a budget that keeps a grazing contact from refining for ever, and one number carries
+   * none of that. Naming a cause beside it would put in front of a reader something the page
+   * does not know, which is the fault this whole section is about arriving in the sentence
+   * that reports it.
    */
-  it("says how long a stretch it could not account for", () => {
+  it("says how long a stretch it could not account for, and not why", () => {
     const swapping = actor("B", westboundPoints(), BIG_SHIP);
     swapping.track.points = swapping.track.points.map((point, index) => ({
       ...point,
@@ -375,7 +379,8 @@ describe("renderPanels", () => {
     const html = panelsFor(scenario([actor("A", northboundPoints(), BIG_SHIP), swapping]));
 
     expect(html).toMatch(/longest stretch it could not account for is [\d.]+ (ms|s)/);
-    expect(html).toContain("the hull jumps rather than turns");
+    expect(html).toContain("began and ended inside one of those could have gone unseen");
+    expect(html).not.toContain("the hull jumps rather than turns");
   });
 
   /** Where a ship carries no particulars there is no hull to measure, and the page says so. */

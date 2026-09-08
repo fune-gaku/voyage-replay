@@ -187,7 +187,9 @@ halving goes deep only where they are about to touch.
 understated the search by three orders of magnitude and described a method it no longer uses;
 naming the floor instead would still be a claim about the search rather than a report of it. So
 the longest interval the halving stopped on is carried out on the result and printed, and the
-page says how long it is rather than guessing why.
+page says how long it is and nothing about why — one number cannot tell the reasons below apart,
+and naming one of them beside it would put a cause in front of a reader that the page does not
+have.
 
 Three things stop it. The floor of a millisecond, which is far below what positions interpolated
 between samples a minute apart can mean. The depth cap. And a budget on the refining, which

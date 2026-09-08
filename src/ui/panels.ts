@@ -780,13 +780,12 @@ function dimensionSource(both: [Prepared, Prepared]): string {
 /**
  * What the search could not account for, in as many words - and it is measured, not assumed.
  *
- * **The place it always gives up is where the drawn ship jumps**: a track that states her
- * direction in one field at one sample and another at the next has `sampleAt` swap the source
- * at the midpoint, and nothing bounds a jump. But naming that as the only one would be a claim
- * about the whole search rather than a report of it - a proof can also run out of halvings, or
- * the refining out of budget, and a page cannot tell a reader which without being told.
- *
- * So `hullApproach` measures the longest interval it stopped on, and this says that.
+ * **The length and what it means, and nothing about why.** `unprovenSeconds` is the longest
+ * interval the halving stopped on; it does not carry a reason, and the halving stops for three
+ * of them - its floor, its depth, and a budget that keeps a grazing contact from refining for
+ * ever. Naming one or two of those beside a figure that cannot tell them apart puts a cause in
+ * front of a reader that the page does not know, which is the fault this whole area has been
+ * about, arriving in the sentence that reports it.
  */
 function leftOver(hulls: HullApproach): string {
   if (hulls.unprovenSeconds <= 0) {
@@ -797,10 +796,8 @@ function leftOver(hulls: HullApproach): string {
       ? `${(hulls.unprovenSeconds * 1000).toFixed(0)} ms`
       : `${hulls.unprovenSeconds.toFixed(1)} s`;
   return (
-    `The longest stretch it could not account for is ${span}, so an approach or a touch ` +
-    "shorter than that could have passed inside it. That happens where the hull jumps rather " +
-    "than turns - a track stating her direction in one field at one sample and another at the " +
-    "next - and wherever the halving reached its own floor."
+    `The longest stretch it could not account for is ${span}, so an approach or a touch that ` +
+    "began and ended inside one of those could have gone unseen."
   );
 }
 
