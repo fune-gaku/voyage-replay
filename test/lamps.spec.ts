@@ -295,9 +295,7 @@ describe("the copy that runs on the card", () => {
   it("hands the water it lights back separately from the water it is mirrored in", () => {
     expect(LAMPS_GLSL).toContain("out vec3 lit");
     expect(LAMPS_GLSL).toContain("float landing = max( dot( toLamp, up ), 0.0 );");
-    expect(LAMPS_GLSL).toContain(
-      "lit += uLampColour[ i ] * uLampPool * uLampLux * lux * fall;",
-    );
+    expect(LAMPS_GLSL).toContain("lit += uLampColour[ i ] * uLampPool * uLampLux * lux * fall;");
   });
 
   /**
