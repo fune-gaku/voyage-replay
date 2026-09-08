@@ -28,6 +28,7 @@
 import { Color, Vector2, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
+import { DISC } from "./water.js";
 
 /**
  * How many components the shader carries. Fixed, because a shader's array size is - and
@@ -80,14 +81,33 @@ const SHORTEST_DRAWN_PIXELS = 8;
 /**
  * How the mesh under a wave is spaced, and how many samples a wave needs to be one.
  *
- * `water.ts` lays its rings geometrically at 8.73 per cent, so the spacing at any distance is
- * that fraction of it - with a floor, since the innermost rings are metres apart rather than
- * millimetres. Eight samples is the same count the shading uses for a pixel: below it a
- * sinusoid stops reading as a sinusoid, whether the sampler is a vertex or a fragment.
+ * **Both numbers come from `water.ts` rather than being written again here.** The disc lays
+ * its rings geometrically, so the spacing at any distance is that fraction of it - and inside
+ * the innermost ring there is no spacing at all, only a fan from one centre vertex, which is
+ * coarser than anything outside it. A copy of these that drifted from the mesh would put
+ * waves on triangles too big to hold them, which is the failure this whole fade exists to
+ * stop.
+ *
+ * Eight samples is the same count the shading uses for a pixel: below it a sinusoid stops
+ * reading as a sinusoid, whether the sampler is a vertex or a fragment.
  */
-const RING_GROWTH = 0.0873;
-const NEAREST_SPACING = 1.5;
 const SAMPLES_PER_WAVE = 8;
+
+/**
+ * How far apart the vertices are under a point this far from the eye.
+ *
+ * A step at the innermost ring, because the mesh has one: outside it the rings are 8.7 per
+ * cent of the radius apart, which at 5 m is under half a metre, and inside it the cap is a
+ * single triangle fan whose only samples are the centre and the rim. Smoothing across that
+ * would claim the cap can carry waves it cannot. **Nothing in a level bridge view is inside
+ * it** - a 20 m eye with a 55 degree window sees water from about 38 m out - so the step is
+ * where no frame looks.
+ */
+function meshSpacingMetres(distanceFromEyeMetres: number): number {
+  return distanceFromEyeMetres < DISC.innerMetres
+    ? DISC.innerMetres
+    : distanceFromEyeMetres * DISC.growth;
+}
 
 /**
  * How much of one component the mesh under a point can actually carry there.
@@ -103,7 +123,7 @@ const SAMPLES_PER_WAVE = 8;
  * kept in this file, next to each other, so that they are edited together.
  */
 export function meshCarries(wavelengthMetres: number, distanceFromEyeMetres: number): number {
-  const spacing = Math.max(distanceFromEyeMetres * RING_GROWTH, NEAREST_SPACING);
+  const spacing = meshSpacingMetres(distanceFromEyeMetres);
   const t = Math.min(Math.max(wavelengthMetres / (SAMPLES_PER_WAVE * spacing), 0), 1);
   // smoothstep, as GLSL defines it.
   return t * t * (3 - 2 * t);
@@ -242,6 +262,8 @@ const FADE = (near: Vector2): string =>
  * - and a 2 m wave sampled there does not come out short, it comes out as a slow false swell
  * crawling across the water, which moves the horizon and the hulls standing on it. Aliasing in
  * the normals is noise; aliasing in the geometry is a different sea.
+ *
+ * The spacing is `water.ts`'s own, written into the shader from it, so the two cannot drift.
  */
 const DISPLACEMENT = `
 #include <begin_vertex>
@@ -249,7 +271,7 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
-  float spacing = max( away * ${RING_GROWTH.toFixed(4)}, ${NEAREST_SPACING.toFixed(1)} );
+  float spacing = away < ${DISC.innerMetres.toFixed(1)} ? ${DISC.innerMetres.toFixed(1)} : away * ${DISC.growth.toFixed(6)};
   float height = 0.0;
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];

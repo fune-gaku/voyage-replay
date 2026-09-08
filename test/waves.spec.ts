@@ -7,6 +7,7 @@ import {
   waveComponents,
   type WaveComponent,
 } from "../src/core/seaway.js";
+import { DISC } from "../src/render/water.js";
 import {
   applyWaves,
   displacedFraction,
@@ -254,16 +255,33 @@ describe("dropping each component where its own wavelength runs out", () => {
     expect(meshCarries(2, 250)).toBeLessThan(0.01);
   });
 
-  /** Close in, the vertices are metres apart and the same short wave is drawable again. */
+  /** Just outside the innermost ring the rings are half a metre apart, and a chop is drawable. */
   it("gives the same short wave back near the eye, where there are vertices for it", () => {
-    expect(meshCarries(12, 5)).toBeCloseTo(1, 6);
+    expect(meshCarries(12, DISC.innerMetres * 1.01)).toBeCloseTo(1, 6);
     expect(meshCarries(12, 400)).toBeLessThan(0.05);
   });
 
-  /** A fade rather than a cut, so a mark crossing the range does not step. */
+  /**
+   * **Inside the innermost ring there are no rings.** The disc closes with a fan from one
+   * centre vertex, so the only samples across that cap are the centre and the rim - coarser
+   * than anything outside it, and the one place a floor of "the rings are metres apart" got
+   * it backwards. Nothing in a level bridge view is in there: a 20 m eye with a 55 degree
+   * window sees water from about 38 m out.
+   */
+  it("treats the centre cap as the coarsest patch of the disc, not the finest", () => {
+    expect(meshCarries(12, 1)).toBeLessThan(meshCarries(12, DISC.innerMetres * 1.01));
+    // A fan 5 m across cannot hold a 12 m wave; the mesh a metre outside it can.
+    expect(meshCarries(12, 1)).toBeLessThan(0.3);
+  });
+
+  /**
+   * A fade rather than a cut, so a mark crossing the range does not step - and it only falls,
+   * once past the centre cap. Inside that the disc is coarser again, which is the mesh's own
+   * shape rather than this rule's.
+   */
   it("fades rather than switches, and never leaves the unit interval", () => {
     let last = 1;
-    for (const away of [0, 10, 50, 100, 200, 400, 800, 2000]) {
+    for (const away of [10, 50, 100, 200, 400, 800, 2000]) {
       const carries = meshCarries(30, away);
       expect(carries, `${away} m`).toBeLessThanOrEqual(last + 1e-12);
       expect(carries, `${away} m`).toBeGreaterThanOrEqual(0);
@@ -300,7 +318,7 @@ describe("dropping each component where its own wavelength runs out", () => {
     applyWaves(material, makeWaveUniforms());
     const shader = compile(material);
 
-    expect(shader.vertexShader).toContain("float spacing = max( away * 0.0873, 1.5 );");
+    expect(shader.vertexShader).toContain("away < 5.0 ? 5.0 : away * 0.087278");
     expect(shader.vertexShader).toContain("wavelength / ( 8.0 * spacing )");
     // The uniform is declared in both stages; only the fragment one measures against it.
     expect(shader.fragmentShader).toContain("wavelength / ( away * uPixelAngle");

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
+import { seawayFrom, waveComponents } from "../src/core/seaway.js";
 import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
 import { escapeHtml, renderPanels } from "../src/ui/panels.js";
@@ -1066,7 +1067,61 @@ describe("the band the sea is drawn from", () => {
   it("draws no band over a sea with no waves in it", () => {
     const subject = scenario();
     subject.environment = { lightCondition: "day", seaState: 0 };
-    expect(panelsFor(subject)).toContain("none, on a sea of no height");
+    const html = panelsFor(subject);
+
+    expect(html).toContain("none, on a sea of no height");
+    // And the note under it went with the band. A page that warned about the steepness of a
+    // flat surface would be describing a different picture from the one beside it.
+    expect(html).not.toContain("Cox and Munk");
+    expect(html).not.toContain("drawn flatter than it was");
+  });
+
+  /**
+   * **The row is the components the renderer draws, not the band they were cut from.** Each
+   * is sampled from inside its own equal-energy bin, so the bins' ends are not the sea's:
+   * the lowest reaches a sixth of the peak frequency, which is four kilometres of wavelength
+   * on a 3 m sea. Printing an edge would be the page describing a wave the picture has not
+   * got - the failure this project keeps meeting, in its smallest form.
+   */
+  it("prints the wavelengths the renderer actually draws", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 3, derivation: "measured" },
+    };
+    const sea = seawayFrom(subject.environment);
+    if (!sea) throw new Error("a stated 3 m sea has to give an estimate");
+    const drawn = waveComponents(sea.rough).filter((wave) => wave.amplitudeMetres >= 0.001);
+    const lengths = drawn.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
+
+    const html = panelsFor(subject);
+    expect(html).toContain(
+      `${Math.min(...lengths).toFixed(1)} m to ${Math.max(...lengths).toFixed(0)} m of wavelength`,
+    );
+    // The lowest bin's own edge is 6 Tp, or about 4 km. Nothing that long is drawn.
+    expect(Math.max(...lengths)).toBeLessThan(1000);
+  });
+
+  /**
+   * The slope quoted is this sea's, summed off those same components - not a figure taken
+   * once on a 3 m sea and printed over every other.
+   */
+  it("quotes the slope of the sea in front of it", () => {
+    const gentle = scenario();
+    gentle.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.6, derivation: "measured" },
+    };
+    const heavy = scenario();
+    heavy.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 5, derivation: "measured" },
+    };
+
+    // Cox and Munk's measured slope grows with the wind that raises the sea; the drawn one
+    // barely moves, because the wavelengths grow with the sea as well. Both are stated.
+    expect(panelsFor(gentle)).toContain("10 degrees rms");
+    expect(panelsFor(heavy)).toContain("16 degrees rms");
   });
 });
 

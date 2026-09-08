@@ -28,6 +28,28 @@ const INNER_METRES = 5;
  */
 const OUTER_METRES = 3_000_000;
 
+/**
+ * What the disc is made of, for whoever has to know how finely the sea can be drawn on it.
+ *
+ * **Exported rather than restated.** `render/waves.ts` band-limits every wave component to
+ * the vertices under it, and a copy of these numbers that drifted from the mesh would put
+ * waves on triangles too big to hold them - which does not draw a short wave short, it draws
+ * a slow false swell. The mesh is the authority on its own spacing.
+ */
+export const DISC = {
+  /**
+   * The innermost ring. **Inside it the disc is a fan from a single centre vertex**, so the
+   * only samples across that cap are the centre and the rim: the sea cannot be drawn there
+   * at anything finer than the cap's own radius. Nothing in a level bridge view reaches it -
+   * a 20 m eye with a 55 degree window sees water from about 38 m out.
+   */
+  innerMetres: INNER_METRES,
+  /** Radial spacing as a fraction of the radius, outside that cap. */
+  growth: (OUTER_METRES / INNER_METRES) ** (1 / (RINGS - 1)) - 1,
+  /** Sectors round the circle. Their spacing is `2 pi r / sectors`, finer than the radial. */
+  sectors: SECTORS,
+};
+
 export function buildWater(material: Material): Mesh {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(ringVertices(), 3));

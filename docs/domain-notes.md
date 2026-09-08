@@ -265,6 +265,20 @@ are equal-energy bins: each carries its bin's height variance exactly and its sl
 only approximately, one frequency standing for a range over which `k²` varies by a factor of a
 few. More components narrow that gap; nothing closes it.
 
+**And equal-energy binning puts almost nothing in the widened part.** Counted on a 3 m sea:
+38 of the 40 components fall between 23 m and 174 m of wavelength, one falls at 1.9 m, and one
+comes out with no amplitude at all. The short one carries 0.07 per cent of the height and
+**half of the slope**; the dead one is the lowest bin, which runs from a sixth of the peak
+frequency — four kilometres of wavelength — where a JONSWAP spectrum holds nothing, sampled
+somewhere inside itself.
+
+That the slope survives on one sample is not luck: the slope density `k²S(ω)` falls as `ω⁻¹`,
+so every octave of the tail contributes about the same, and where in the bin the sample lands
+hardly matters. What does not survive is the TEXTURE — one sinusoid at one wavelength and one
+bearing is a regular ripple, not a chop. The page prints the wavelengths that carry the sea
+rather than the bins' own edges, because a component of no amplitude is not a wave the picture
+has. Binning that gives the tail more than one component is issue #50.
+
 So the band is cut where waves stop being drawable rather than where the slope comes right, and
 **what is missing is named on the page rather than quietly integrated for**. A glitter path
 (#37) measures the full slope including those ripples, so its width has to come from the

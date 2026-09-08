@@ -30,11 +30,12 @@ import { ASSUMED_MARK } from "../render/mark.js";
 import { isNight } from "../render/scene.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
-  TAIL_CUTOFF_FRACTION_OF_PEAK,
   forceClass,
   fullyDevelopedHeightMetres,
   meanOfHighest,
+  waveComponents,
   type SeaEstimate,
+  type WaveComponent,
   type WindEstimate,
 } from "../core/seaway.js";
 import { occludedFractionBounds } from "../core/visibility.js";
@@ -470,6 +471,11 @@ function seaSection(scenario: Scenario): string {
   const wind = windRows(conditions) + disagreementNote(conditions);
   if (!sea) return wind + `<p>${escapeHtml(NO_SEA)}</p>`;
 
+  // The components the RENDERER draws, not a second reading of the band. The generator is
+  // seeded from the sea itself, so this is the same set - and the sea drawn is the rough end
+  // of the estimate, which is what `render/scene.ts` passes to the water.
+  const drawn = waveComponents(sea.rough);
+
   const rows: [string, string][] = [
     ["From", sea.source === "stated" ? "figures in the file" : "the stated sea state"],
     ["Significant height", heightRange(sea)],
@@ -491,39 +497,96 @@ function seaSection(scenario: Scenario): string {
           : `${sea.fromDegreesTrue.toFixed(0)} deg true (${DIRECTION_SOURCE[sea.directionFrom]})`,
     ],
     ["Derivation", sea.derivation],
-    ["Waves drawn", bandRow(sea)],
+    ["Waves drawn", bandRow(drawn)],
   ];
-  return wind + keyValueTable(rows) + note(seaCaveat(sea)) + note(SLOPE_NOTE);
+  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
+}
+
+/**
+ * **A wave a millimetre high is not drawn, whatever the arithmetic says it is.**
+ *
+ * The lowest bin runs from a sixth of the peak frequency, where a JONSWAP spectrum holds
+ * essentially nothing, and its component is sampled from inside it - so a sea comes out with
+ * one component of four hundred metres and no amplitude at all. Reporting that as the long
+ * end of the drawn band would be the page describing a wave the picture does not have.
+ */
+const DRAWN_FLOOR_METRES = 0.001;
+
+/** The shortest and longest wavelengths actually carrying the drawn sea, or null for a calm. */
+function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number } | null {
+  const lengths = drawn
+    .filter((wave) => wave.amplitudeMetres >= DRAWN_FLOOR_METRES)
+    .map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre);
+  if (lengths.length === 0) return null;
+  return { shortest: Math.min(...lengths), longest: Math.max(...lengths) };
 }
 
 /**
  * Which waves are in the drawn sea, which is a statement about the picture rather than the
  * water: it decides how steep the surface is and how often it crosses a sight line.
+ *
+ * **Measured off the components themselves rather than off the band's edges.** Each is
+ * sampled from somewhere inside its own equal-energy bin, so the band's ends are not the
+ * drawn sea's ends: the bins reach from a sixth of the peak frequency to eight times it,
+ * while the waves that come out of them for a 3 m sea run from 1.9 m to 174 m. Printing the
+ * edge would be the page describing a sea the picture does not have.
  */
-function bandRow(sea: SeaEstimate): string {
-  const period = sea.rough.peakPeriodSeconds;
-  if (sea.periodFrom === "none" || period <= 0) return "none, on a sea of no height";
-  const longest = (GRAVITY * (period * 1.5) ** 2) / (2 * Math.PI);
-  const shortest = (GRAVITY * (period * TAIL_CUTOFF_FRACTION_OF_PEAK) ** 2) / (2 * Math.PI);
-  return `${shortest.toFixed(1)} m to about ${longest.toFixed(0)} m of wavelength`;
+function bandRow(drawn: WaveComponent[]): string {
+  const band = drawnBand(drawn);
+  if (!band) return "none, on a sea of no height";
+  return `${band.shortest.toFixed(1)} m to ${band.longest.toFixed(0)} m of wavelength`;
+}
+
+/** The rms slope of a surface made of these components: `atan` of the summed variance. */
+function rmsSlopeDegrees(drawn: WaveComponent[]): number {
+  const variance = drawn.reduce(
+    (total, wave) => total + (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2,
+    0,
+  );
+  return (Math.atan(Math.sqrt(variance)) * 180) / Math.PI;
 }
 
 /**
- * **What the band leaves out, said rather than integrated for.**
+ * **What the band leaves out, said rather than integrated for - and only where there is a
+ * band.** A sea of no height has no waves drawn and no slope to fall short of, and a page
+ * that warned about the steepness of a flat surface would be describing another picture.
  *
- * The slope of a sea lives in its short waves, and the shortest here are about a metre - so
- * the drawn surface is markedly flatter than a real one. Widening the band cannot close that:
- * the rest of the slope is in capillary-gravity ripples, which the spectrum this is built on
- * does not describe and no screen can draw. Saying so is the alternative to a picture that
- * looks right for a reason nobody could check.
+ * Both figures are this sea's own. The drawn one is summed from the components above; the
+ * measured one is Cox and Munk's `mss = 0.003 + 0.00512 U` for the wind that raises a sea
+ * this size, since no report carries a slope. Widening the band cannot close the gap: the
+ * rest is in capillary-gravity ripples, which the spectrum this is built on does not
+ * describe and no screen can draw.
  */
-const SLOPE_NOTE =
-  "The drawn sea carries waves from a metre or two up. Most of a real sea's SLOPE is in " +
-  "shorter waves than that - Cox and Munk measured about 14 degrees rms for the wind that " +
-  "raises a 3 m sea, against 5 or 6 here - so the water is drawn flatter than it was, and " +
-  "the difference is in ripples this spectrum does not describe and no screen can draw. The " +
-  "same band decides how often the sea crosses a sight line, so the hidden fractions below " +
-  "move with it: it is one choice, made once, for the picture and the arithmetic together.";
+function slopeNote(drawn: WaveComponent[]): string {
+  const band = drawnBand(drawn);
+  if (!band) return "";
+  const heights = drawn.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
+  const measured = coxMunkSlopeDegrees(4 * Math.sqrt(heights));
+  return (
+    `The drawn sea carries waves from ${band.shortest.toFixed(1)} m up. Most of a real sea's ` +
+    "SLOPE is in shorter waves than that - Cox and Munk measured about " +
+    `${measured.toFixed(0)} degrees rms for the wind that raises a sea this size, against ` +
+    `${rmsSlopeDegrees(drawn).toFixed(1)} here - so the water is drawn flatter than it was, ` +
+    "and the difference is in ripples this spectrum does not describe and no screen can " +
+    "draw. The same band decides how often the sea crosses a sight line, so the hidden " +
+    "fractions below move with it: it is one choice, made once, for the picture and the " +
+    "arithmetic together."
+  );
+}
+
+/**
+ * Cox and Munk's clean-surface slope for the wind that would raise this sea, in degrees.
+ *
+ * The wind comes back out of the fully developed relation `Hs = 0.21 U^2 / g`, the same
+ * inversion `assumedPeakPeriodSeconds` makes to get a period - so this says "a sea this size
+ * belongs to about this wind, and that wind's surface is this steep". A stated wind is not
+ * used: the sea drawn came from the height, and a slope quoted for some other wind would be
+ * about a surface nobody is looking at.
+ */
+function coxMunkSlopeDegrees(significantHeightMetres: number): number {
+  const windSpeed = Math.sqrt((significantHeightMetres * GRAVITY) / 0.21);
+  return (Math.atan(Math.sqrt(0.003 + 0.00512 * windSpeed)) * 180) / Math.PI;
+}
 
 const GRAVITY = 9.81;
 
