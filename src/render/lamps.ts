@@ -53,6 +53,7 @@ import {
   ANNEX_I_FULL_DEGREES,
   BEAM_FALL_PER_DEGREE,
   STREAK_REACH_OF_NOMINAL,
+  verticalSpread,
 } from "../core/illumination.js";
 
 /** The rule's own full-intensity half-angle, in radians, for the shader. */
@@ -206,6 +207,84 @@ function wrap(degrees: number): number {
   return ((degrees % 360) + 360) % 360;
 }
 
+/** What one lamp adds to one patch of water: its image in it, and the light it lands on it. */
+export interface LampLight {
+  /** The lamp seen in the water - a reflection, and so subject to Fresnel outside this. */
+  streak: number;
+  /** The water the lamp lights, which is not a reflection and takes no Fresnel. */
+  pool: number;
+}
+
+/**
+ * The TypeScript mirror of the loop in `LAMPS_GLSL`, for anything that has to ASK.
+ *
+ * **Nothing in Node can compile a shader**, and this file has now twice been reasoned into
+ * the wrong radiometry and back - once by scaling a streak with the distance to the eye,
+ * which merges every lamp on a ship into one lane, and once by leaving the beam profile out,
+ * which lights the sea under a ship's own bow. Both were arguments; neither survived a
+ * measurement. So the rule is written where a measurement can reach it.
+ */
+export function lampLight(
+  lamp: LitLamp,
+  patch: { at: Point; up: Point },
+  where: { eye: Point; lobeWidthRadians: number },
+  exposure: { streak: number; pool: number; luxToScreen: number },
+): LampLight {
+  const { at, up } = patch;
+  const towards = { x: lamp.at.x - at.x, y: lamp.at.y - at.y, z: lamp.at.z - at.z };
+  const slant = Math.max(Math.hypot(towards.x, towards.y, towards.z), 1);
+  const path = slant + Math.hypot(where.eye.x - at.x, where.eye.y - at.y, where.eye.z - at.z);
+  const reach = lamp.nominalRangeMetres * STREAK_REACH_OF_NOMINAL;
+  if (path >= reach || !litFromLamp({ x: at.x, z: at.z }, lamp, arcOf(lamp))) {
+    return { streak: 0, pool: 0 };
+  }
+
+  const toLamp = { x: towards.x / slant, y: towards.y / slant, z: towards.z / slant };
+  const landing = Math.max(dot(toLamp, up), 0);
+  // How far below the lamp's own horizon this patch lies - geometry, not the facet's tilt.
+  const spread = verticalSpread((Math.asin(Math.min(Math.max(toLamp.y, 0), 1)) * 180) / Math.PI);
+  const t = Math.min(Math.max(path / reach, 0), 1);
+  const common =
+    exposure.luxToScreen * ((lamp.candela * spread) / (slant * slant)) * (1 - t * t * (3 - 2 * t));
+
+  const away = Math.acos(Math.min(Math.max(dot(reflectedAt(patch, where.eye), toLamp), -1), 1));
+  return {
+    streak: exposure.streak * common * Math.exp(-0.5 * (away / where.lobeWidthRadians) ** 2),
+    pool: exposure.pool * common * landing,
+  };
+}
+
+/** Where the eye's own ray goes after this patch turns it, which decides what it shows. */
+function reflectedAt(patch: { at: Point; up: Point }, eye: Point): Point {
+  const look = unit({ x: patch.at.x - eye.x, y: patch.at.y - eye.y, z: patch.at.z - eye.z });
+  const along = 2 * dot(look, patch.up);
+  return {
+    x: look.x - along * patch.up.x,
+    y: look.y - along * patch.up.y,
+    z: look.z - along * patch.up.z,
+  };
+}
+
+interface Point {
+  x: number;
+  y: number;
+  z: number;
+}
+
+function dot(a: Point, b: Point): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/** The arc as `litFromLamp` wants it, which is the only shape difference between the two. */
+function arcOf(lamp: LitLamp): { startDegrees: number; endDegrees: number } {
+  return { startDegrees: lamp.arcStartDegrees, endDegrees: lamp.arcEndDegrees };
+}
+
+function unit(v: Point): Point {
+  const length = Math.max(Math.hypot(v.x, v.y, v.z), 1e-9);
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
 /**
  * The GLSL, beside the rule it mirrors. `render/waves.ts` pastes it after `SKY_GLSL`, whose
  * `lobeWidth` it calls.
@@ -263,7 +342,11 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // it at seven and a half; below that a real one falls away fast. Left out - which is how
     // this went in - a ship's own masthead light floods the sea at her feet, where the beam
     // is not pointed at all.
-    float depression = asin( clamp( landing, 0.0, 1.0 ) );
+    // **From the geometry, not from the facet.** How far below the lamp's own horizon this
+    // patch lies is a fact about where the two are; the tilt of the wave standing there has
+    // nothing to do with it, and taking the incidence cosine for it lets a tilted facet pull
+    // the beam down to itself.
+    float depression = asin( clamp( toLamp.y, 0.0, 1.0 ) );
     float spread = depression <= ${FULL_BEAM_RADIANS.toFixed(5)}
       ? 1.0
       : exp( -${BEAM_FALL_PER_RADIAN.toFixed(4)} * ( depression - ${FULL_BEAM_RADIANS.toFixed(5)} ) );
