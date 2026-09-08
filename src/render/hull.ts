@@ -23,7 +23,12 @@ import {
 } from "three";
 
 import { assumedHeights } from "../actors/vessel/heights.js";
-import { hullDimensions, isBoxBowed, planOutline } from "../actors/vessel/hull-shape.js";
+import {
+  hullDimensions,
+  isBoxBowed,
+  offsetsMeasureHull,
+  planOutline,
+} from "../actors/vessel/hull-shape.js";
 import type { Vessel } from "../core/types.js";
 
 /**
@@ -57,7 +62,12 @@ export interface HullParts {
  */
 function bridgeOffsetOf(vessel: Vessel): { metres: number; fromOffsets: boolean } {
   const offsets = vessel.referencePointOffsets;
-  if (!offsets) return { metres: -vessel.loaMetres * BRIDGE_FRACTION_AFT, fromOffsets: false };
+  // **Stated is not measured, and the same test decides it as decides her size.** Four zeroes
+  // are a valid file and measure nothing; taking them here would put her bridge amidships and
+  // call it measured, on a hull the page has already said fell back to the particulars.
+  if (!offsets || !offsetsMeasureHull(vessel)) {
+    return { metres: -vessel.loaMetres * BRIDGE_FRACTION_AFT, fromOffsets: false };
+  }
   return {
     metres: -(offsets.fromBowMetres - offsets.fromSternMetres) / 2,
     fromOffsets: true,

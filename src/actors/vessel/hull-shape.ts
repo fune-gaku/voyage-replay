@@ -75,6 +75,19 @@ export function hullDimensions(vessel: Vessel): HullDimensions {
   return { ...measured, from: "offsets", offsetsStated: true };
 }
 
+/**
+ * Whether this ship's four offsets measure a hull, which decides everything taken off them.
+ *
+ * **Presence is not usability, and the two must be one question.** A ship whose dimensions
+ * never came through carries four zeroes; they are stated, and they measure nothing. Anything
+ * that asks "does she have offsets" rather than "do they measure her" ends up drawing from a
+ * source the rest of the page has already declared unusable - a bridge placed amidships and
+ * reported as measured, over a hull the same page says fell back to the particulars.
+ */
+export function offsetsMeasureHull(vessel: Vessel): boolean {
+  return hullDimensions(vessel).from === "offsets";
+}
+
 function fromOffsets(offsets: ReferencePointOffsets): { lengthMetres: number; beamMetres: number } {
   return {
     lengthMetres: offsets.fromBowMetres + offsets.fromSternMetres,

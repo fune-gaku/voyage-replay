@@ -406,6 +406,25 @@ describe("contact over a track", () => {
     expect((spell?.toEpochSeconds ?? 0) - (spell?.fromEpochSeconds ?? 0)).toBeCloseTo(0.4, 3);
   });
 
+  /**
+   * **A step of zero walks for ever.** It is a public boundary of the arithmetic, so one
+   * degenerate argument would otherwise stop the process rather than return a wrong answer.
+   * Substituting a sensible step would hide the caller's mistake behind something that looks
+   * like an answer.
+   */
+  it("refuses a step that is not a positive number of seconds", () => {
+    const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
+    const ship = { vessel: BIG_SHIP, positionAt: "gps-antenna" } as const;
+    const pair = [
+      { track: a, ...ship },
+      { track: a, ...ship },
+    ] as const;
+
+    for (const step of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => hullApproach(pair[0], pair[1], step), `${step}`).toThrow(/positive step/);
+    }
+  });
+
   it("is null where the two tracks never overlap in time", () => {
     const a = prepareActor(actor("A", alongside([0, 0]), BIG_SHIP), ORIGIN);
     const late = actor("B", alongside([0, 0]), BIG_SHIP);

@@ -9,7 +9,7 @@
 
 import { assumedHeights } from "../actors/vessel/heights.js";
 import { describeAspect, visibleLights } from "../actors/vessel/lights.js";
-import { hullDimensions } from "../actors/vessel/hull-shape.js";
+import { hullDimensions, offsetsMeasureHull } from "../actors/vessel/hull-shape.js";
 import { hullCentreOffset } from "../actors/vessel/reference-point.js";
 import { hullApproach, type Contact, type HullApproach } from "../actors/vessel/separation.js";
 import { bearingDegrees, distanceMetres, normaliseDegrees } from "../core/geodesy.js";
@@ -571,7 +571,9 @@ function hullOffsetCell(prepared: Prepared): string {
 function hullShapeCell(vessel: Vessel | undefined): string {
   if (!vessel) return "-";
   const bow = vessel.type === "pushing-ahead" ? "box bow" : "generic";
-  return vessel.referencePointOffsets ? `${bow}, bridge measured` : `${bow}, bridge assumed`;
+  // The same test `render/hull.ts` places the bridge by: four offsets that measure no hull are
+  // stated and useless, and calling that measured describes the wrong ship in one word.
+  return offsetsMeasureHull(vessel) ? `${bow}, bridge measured` : `${bow}, bridge assumed`;
 }
 
 /**

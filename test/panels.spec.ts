@@ -257,6 +257,25 @@ describe("renderPanels", () => {
    * the schema's floor on each is zero - and the size then falls back to the particulars;
    * saying she stated none would be false where a reader can check.
    */
+  /** And the actor table says "bridge assumed" for her, by the same test. */
+  it("does not call a bridge measured from offsets that measure no hull", () => {
+    const zeroed = {
+      ...BIG_SHIP,
+      referencePointOffsets: {
+        fromBowMetres: 0,
+        fromSternMetres: 0,
+        fromPortMetres: 0,
+        fromStarboardMetres: 0,
+      },
+    };
+    const html = panelsFor(
+      scenario([actor("A", northboundPoints(), zeroed), actor("B", westboundPoints(), COASTER)]),
+    );
+
+    expect(html).not.toContain("bridge measured");
+    expect(html).toContain("bridge assumed");
+  });
+
   it("separates offsets that were not stated from offsets that measure nothing", () => {
     const zeroed = {
       ...BIG_SHIP,

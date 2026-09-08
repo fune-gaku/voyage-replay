@@ -212,6 +212,12 @@ export interface HullApproach {
  * rather than as a depth for the reason `separationMetres` gives.
  */
 export function hullApproach(a: HullTrack, b: HullTrack, stepSeconds = 1): HullApproach | null {
+  // **A step of zero walks for ever and a negative one walks away.** Substituting a sensible
+  // one would hide a caller's mistake behind an answer that looks like an answer; this is a
+  // programming error rather than anything a file can say, so it says so.
+  if (!Number.isFinite(stepSeconds) || stepSeconds <= 0) {
+    throw new Error(`hullApproach needs a positive step in seconds, not ${stepSeconds}`);
+  }
   const from = Math.max(a.track.startSeconds, b.track.startSeconds);
   const to = Math.min(a.track.endSeconds, b.track.endSeconds);
   if (to < from) return null;
