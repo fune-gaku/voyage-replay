@@ -1077,6 +1077,25 @@ describe("the band the sea is drawn from", () => {
   });
 
   /**
+   * **Two different nothings.** A sea of no height has no components at all; a sea of four
+   * millimetres has forty and not one of them stands high enough to be drawn. Calling the
+   * second "a sea of no height" would contradict the height printed in the row above it -
+   * the same fault, one row apart, as the note that warned about the steepness of a flat sea.
+   */
+  it("tells a flat sea from one too small to draw", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0.004, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(html).toContain("0.004 m");
+    expect(html).toContain("nothing in this sea stands a millimetre high");
+    expect(html).not.toContain("on a sea of no height");
+  });
+
+  /**
    * **The row is the components the renderer draws, not the band they were cut from.** Each
    * is sampled from inside its own equal-energy bin, so the bins' ends are not the sea's:
    * the lowest reaches a sixth of the peak frequency, which is four kilometres of wavelength

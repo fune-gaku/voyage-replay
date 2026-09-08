@@ -532,8 +532,12 @@ function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number 
  * edge would be the page describing a sea the picture does not have.
  */
 function bandRow(drawn: WaveComponent[]): string {
+  // Two different nothings. A sea of no height has no components at all; a sea of four
+  // millimetres has forty of them and not one that stands high enough to draw. Saying "no
+  // height" over a height printed in the row above would be the page contradicting itself.
+  if (drawn.length === 0) return "none, on a sea of no height";
   const band = drawnBand(drawn);
-  if (!band) return "none, on a sea of no height";
+  if (!band) return "none - nothing in this sea stands a millimetre high";
   return `${band.shortest.toFixed(1)} m to ${band.longest.toFixed(0)} m of wavelength`;
 }
 
