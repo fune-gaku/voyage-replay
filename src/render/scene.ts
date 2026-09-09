@@ -224,7 +224,7 @@ const NIGHT = {
   zenith: 0x4a6690,
   /** A clear moonless sky, in cd/m2 at the horizon. */
   skyCandela: 2e-4,
-  exposure: 200,
+  exposure: 76,
   streak: 1,
 };
 const DAY = {
@@ -232,7 +232,7 @@ const DAY = {
   zenith: 0x3d7ac4,
   /** A clear day, in cd/m2 at the horizon. */
   skyCandela: 8000,
-  exposure: 9.1e-5,
+  exposure: 4.6e-5,
   streak: 1,
 };
 
@@ -264,8 +264,8 @@ const LAND_ALBEDO = 0x6b7a5e;
  * reflect another, and nothing in the picture would say which was wrong.
  */
 function skyIlluminanceLux(palette: Palette): number {
-  const ends = [palette.sky, palette.zenith].map(brightnessOf);
-  return Math.PI * palette.skyCandela * (((ends[0] ?? 0) + (ends[1] ?? 0)) / 2);
+  const ends = [palette.sky, palette.zenith].map((hex) => brightnessOf(hex) / skyScale(palette));
+  return Math.PI * (((ends[0] ?? 0) + (ends[1] ?? 0)) / 2);
 }
 
 /** Rec. 709's weights, on the linear values a hex becomes once three has read it as sRGB. */
@@ -276,7 +276,24 @@ function brightnessOf(hex: number): number {
 
 /** The sky's two ends as radiances, which is what the water hands back and the dome draws. */
 function skyRadiance(hex: number, palette: Palette): Color {
-  return new Color(hex).multiplyScalar(palette.skyCandela);
+  return new Color(hex).multiplyScalar(1 / skyScale(palette));
+}
+
+/**
+ * How many of the palette's units make one candela per square metre.
+ *
+ * **A hex is not a level, and multiplying one by a luminance does not make it that
+ * luminance.** three reads `0x9dc0e6` into a linear triple whose Rec. 709 luminance is 0.506,
+ * so `colour * 8000` is a sky of 4045 cd/m2 - and the declared figure, the one `CLAUDE.md`
+ * and the plan and this file all call the horizon's luminance, was never what the horizon
+ * had. The scale is defined by the HORIZON, so the zenith keeps its ratio to it and the
+ * gradient is still the two hexes': the sky is a shape as well as a level.
+ *
+ * Found reviewing #74. The exposures moved with it - the sky renders exactly as it did, and
+ * what changed is everything measured against it.
+ */
+function skyScale(palette: Palette): number {
+  return brightnessOf(palette.sky) / palette.skyCandela;
 }
 
 /**
@@ -769,11 +786,14 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   // **The ambient IS the sky, so it is the sky's colour and not white.** White ambient plus a
   // warm sun is a light with no blue in it anywhere, and everything neutral in the frame -
   // whitecaps first, being the only white thing in a sea - comes out tan.
-  const ambient = new AmbientLight(palette.sky, skyIlluminanceLux(palette));
+  // Both intensities are left to `apply` below, which is the one place that knows whether
+  // this is a chart or the world.
+  const ambient = new AmbientLight(palette.sky, 0);
   // A clear day is directional: most of the light from one place, little of it diffuse. The
   // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
   // which is not warm, and tinting it would be inventing a sunset.
-  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, 0);
+  const keyColour = night ? 0xffffff : 0xfff4e2;
+  const key = new DirectionalLight(keyColour, 0);
   key.position.set(1, 2, 1);
   scene.add(ambient);
   scene.add(key);
@@ -786,8 +806,17 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
     // **A chart is not a photograph and is not lit like one.** Its colours are chosen for
     // reading, and `exposureFor` leaves it out of the tone mapping altogether - so the two
     // figures that used to serve every view stay here, serving the one they were made for.
-    ambient.intensity = diagram ? DIAGRAM_AMBIENT : skyIlluminanceLux(palette);
-    key.intensity = diagram ? DIAGRAM_KEY : lux;
+    //
+    // **In the world, each is divided by its own colour's luminance, or the figure is not
+    // delivered.** three multiplies a light's colour by its intensity, so a sky hex of
+    // luminance 0.51 handed an illuminance in lux gives half the lux - and that illuminance
+    // was worked out FROM the same colour, so the sky's brightness went in twice. The
+    // chart's two figures were chosen against these hexes as they stand, and a diagram's
+    // light is not an illuminance to begin with. Found reviewing #74.
+    ambient.intensity = diagram
+      ? DIAGRAM_AMBIENT
+      : skyIlluminanceLux(palette) / brightnessOf(palette.sky);
+    key.intensity = diagram ? DIAGRAM_KEY : lux / brightnessOf(keyColour);
   };
   apply();
 
