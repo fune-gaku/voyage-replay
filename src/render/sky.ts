@@ -36,13 +36,20 @@ export interface SkyUniforms {
   /** Towards the body, in world axes. Zero length where no body is up. */
   uSkyBody: { value: Vector3 };
   /**
-   * The body's lobe: its peak radiance against the sky's own, and its own angular radius.
-   * A radius of zero draws no body at all.
+   * The body's lobe: **the illuminance it delivers, in lux**, and its own angular radius. A
+   * radius of zero draws no body at all.
+   *
+   * **Lux rather than a chosen peak, because the peak follows from it.** A mirror spreads the
+   * body's flux over the lobe it makes; spread it over a solid angle and the radiance is the
+   * flux divided by that angle, `E / (2 pi width^2)` for a Gaussian. It used to be a figure
+   * per drawn condition - one more of the declared ones - and it does not have to be:
+   * measured that way, a full moon's glitter comes out at 0.38 cd/m2 against the 0.3 that
+   * issue #60's own table has for it, and the sun's at 1.5e5 against a day sky of 8000.
    *
    * **The width is not in here, because it is not the same everywhere.** The normals carry
    * some of the sea's slope and how much depends on the range - the shading band-limits each
    * component and then fades the lot to flat past a few kilometres - so what the lobe has to
-   * make up is a per-fragment quantity. See `uSeaSlope`.
+   * make up is a per-fragment quantity, and so therefore is the peak. See `uSeaSlope`.
    */
   uSkyBodyLobe: { value: Vector2 };
   /**
@@ -69,8 +76,16 @@ export interface SkyUniforms {
  */
 const HORIZON_POWER = 2.5;
 
-/** Relative brightness at which a body draws at the full exposure. Anything above clamps. */
-const FULL_MOON_LOBE = 1;
+/**
+ * What a full moon puts on a surface facing it, in lux.
+ *
+ * The one figure the light in a night picture rests on, and it is measured rather than
+ * chosen. Everything else follows: `core/illumination.ts` carries how bright a body is
+ * against a full moon - the sun is 400 000 times it - so this times that ratio is the
+ * illuminance of whatever is up, which is both what lights the scene and what the water
+ * hands back in its lobe.
+ */
+export const FULL_MOON_LUX = 0.25;
 
 /**
  * The sun and the moon are both about half a degree across, which is why eclipses work.
@@ -123,7 +138,9 @@ export function bodyGlowAt(towards: Vector3, uniforms: SkyUniforms, width: numbe
   const lobe = uniforms.uSkyBodyLobe.value;
   if (lobe.y <= 0 || uniforms.uSkyBody.value.lengthSq() === 0) return new Color(0, 0, 0);
   const away = Math.acos(Math.min(Math.max(towards.dot(uniforms.uSkyBody.value), -1), 1));
-  const glow = lobe.x * Math.exp(-0.5 * (away / width) ** 2);
+  // The body's flux spread over the lobe it was spread into: a Gaussian of this width covers
+  // 2 pi width^2 of sky, so that is what its illuminance is divided by to become a radiance.
+  const glow = (lobe.x / (2 * Math.PI * width * width)) * Math.exp(-0.5 * (away / width) ** 2);
   return new Color(glow, glow, glow);
 }
 
@@ -209,7 +226,9 @@ float lobeWidth( float carried, float radius ) {
 vec3 bodyGlow( vec3 towards, float width ) {
   if ( uSkyBodyLobe.y <= 0.0 || dot( uSkyBody, uSkyBody ) == 0.0 ) return vec3( 0.0 );
   float away = acos( clamp( dot( towards, uSkyBody ), -1.0, 1.0 ) );
-  return vec3( uSkyBodyLobe.x * exp( -0.5 * pow( away / width, 2.0 ) ) );
+  // The body's flux spread over the lobe: a Gaussian of this width covers 2 pi width^2, so
+  // dividing its illuminance by that is what turns it back into a radiance.
+  return vec3( uSkyBodyLobe.x / ( 6.2831853 * width * width ) * exp( -0.5 * pow( away / width, 2.0 ) ) );
 }
 
 // What the WATER hands back. The body is dropped where no sea is stated - a mirror-sharp
@@ -245,6 +264,12 @@ vec3 skyTowards( vec3 towards, float carried ) {
  * so the sky and its reflection could not disagree; one function is not enough if the two
  * ends of it leave through different pipelines.
  *
+ * **The exposure is the same story and was the same omission.** Once the gradient is a
+ * radiance rather than a screen value (#60), a dome that does not go through the tone mapping
+ * writes thousands of candelas per square metre straight at the canvas and comes out white
+ * from horizon to zenith - which is what it did, measured, the first time the sky was given
+ * real units. Both chunks, in three's own order.
+ *
  * `colorspace_pars_fragment` is in three's fragment prefix unconditionally, so the include
  * needs nothing declared alongside it.
  */
@@ -253,6 +278,7 @@ varying vec3 vSkyDirection;
 void main() {
   vec3 towards = normalize( vSkyDirection );
   gl_FragColor = vec4( skyGradient( towards ) + bodyGlow( towards, uSkyBodyLobe.y ), 1.0 );
+  #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
 `;
@@ -330,7 +356,6 @@ export function setSkyBody(
   uniforms: SkyUniforms,
   lit: Lit | null,
   measuredSlopeVariance: number | null,
-  exposure: number,
 ): void {
   // **Each is set whether or not the other is there.** A moonless night is when a lamp's
   // streak is the whole picture and the lamps reflect in the same water; and a body is up
@@ -343,8 +368,11 @@ export function setSkyBody(
     return;
   }
   uniforms.uSkyBody.value.copy(towardsBody(lit));
+  // **Not clamped to a full moon any more.** It was, because the figure was a screen value
+  // and the sun would have taken the picture off the top of it; now it is lux, the sun IS
+  // four hundred thousand times the moon, and what keeps that on a screen is the exposure.
   uniforms.uSkyBodyLobe.value.set(
-    exposure * Math.min(lit.relativeBrightness / FULL_MOON_LOBE, 1),
+    FULL_MOON_LUX * lit.relativeBrightness,
     BODY_ANGULAR_RADIUS_RADIANS,
   );
 }

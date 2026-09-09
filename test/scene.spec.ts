@@ -372,7 +372,7 @@ describe("the sky the water hands back", () => {
    * of a full one, over a picture whose lane fades while the moonlight on the hulls does
    * not, is one frame making two claims about how much light there was.
    */
-  it("dims the key light with the moon's phase, and holds the sun at the full figure", () => {
+  it("dims the key light with the moon's phase, and lets the sun be the sun", () => {
     const parts = buildScene(sea, 1000);
     parts.setDiagramView("world");
     const key = parts.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
@@ -381,15 +381,18 @@ describe("the sky the water hands back", () => {
     parts.setSky(conditionsAt(suoNada, sea, collision));
     const crescent = key.intensity;
     expect(crescent).toBeGreaterThan(0);
-    expect(crescent).toBeLessThan(0.25 / 5);
+    expect(crescent, "a fraction of a full moon's quarter of a lux").toBeLessThan(0.25 / 5);
 
-    // The sun is clamped to the full figure rather than four hundred thousand times it.
+    // **And the sun is not held level with a full moon**, which it was while the figure was
+    // a screen value: four hundred thousand times it, in lux, and the exposure is what keeps
+    // that on a screen. Drawing a sunlit sea and a moonlit one as though they returned the
+    // same light is the flattening issue #60 is about.
     const day = { ...sea, lightCondition: "day" } as const satisfies Environment;
     const lit = buildScene(day, 1000);
     lit.setDiagramView("world");
     const sun = lit.scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight;
     lit.setSky(conditionsAt(suoNada, day, Date.parse("2025-11-27T12:00:00+09:00") / 1000));
-    expect(sun.intensity).toBeCloseTo(1.75, 6);
+    expect(sun.intensity).toBeCloseTo(0.25 * 400_000, 0);
   });
 
   /**
@@ -398,7 +401,8 @@ describe("the sky the water hands back", () => {
    * daylight path came out at 3.1 where 1.0 is white - clipped flat across a cone fifty
    * degrees wide, which is a hole in the water rather than a path.
    */
-  it("keeps the middle of the path off white, in both conditions", () => {
+  it("puts a night and a day on one screen, through exposures four orders apart", () => {
+    const exposures: number[] = [];
     for (const [light, when] of [
       ["night", "2025-11-27T19:40:00+09:00"],
       ["day", "2025-11-27T11:40:00+09:00"],
@@ -408,13 +412,23 @@ describe("the sky the water hands back", () => {
       parts.setDiagramView("world");
       parts.setSky(conditionsAt(suoNada, environment, Date.parse(when) / 1000));
 
-      const uniforms = skyOf(parts);
-      const lobe = uniforms["uSkyBodyLobe"]?.value as Vector3;
-      const horizon = uniforms["uSkyHorizon"]?.value as Color;
-      // The body's own peak, plus the brightest the sky under it gets.
-      expect(lobe.x + horizon.r, light).toBeLessThan(1);
-      expect(lobe.x, light).toBeGreaterThan(0);
+      const exposure = parts.exposureFor("world") ?? 0;
+      exposures.push(exposure);
+
+      // The sky's own radiance, through this condition's exposure: on the screen and not
+      // off either end of it.
+      const horizon = skyOf(parts)["uSkyHorizon"]?.value as Color;
+      expect(horizon.b * exposure, `${light} sky`).toBeGreaterThan(0.002);
+      expect(horizon.b * exposure, `${light} sky`).toBeLessThan(1);
+
+      // And the body is in lux now rather than in screen values.
+      const lobe = skyOf(parts)["uSkyBodyLobe"]?.value as Vector3;
+      expect(lobe.x, `${light} body`).toBeGreaterThan(0);
     }
+
+    // **Which is the whole of it.** A moonless sea and a day sky are ten million apart and
+    // no single mapping shows both, so the exposure is a property of the condition.
+    expect((exposures[0] ?? 0) / (exposures[1] ?? 1)).toBeGreaterThan(1_000);
   });
 
   /** A chart is lit for reading and answers to nothing in the sky, whichever call came last. */
@@ -667,11 +681,17 @@ describe("what a fine day and a night are made of", () => {
     const keyOf = (scene: { children: { type: string }[] }): number =>
       (scene.children.find((c) => c.type === "DirectionalLight") as DirectionalLight).intensity;
 
-    const day = buildScene({ lightCondition: "day" }, 1000).scene;
-    expect(keyOf(day)).toBeGreaterThan(ambientOf(day) * 2);
+    // The key is out until something is known to be up there, so the sky is set first.
+    const off = { lat: 33.905, lon: 131.7116667 };
+    const noon = Date.parse("2025-11-27T11:40:00+09:00") / 1000;
+    const day = buildScene({ lightCondition: "day" }, 1000);
+    day.setSky(conditionsAt(off, { lightCondition: "day" }, noon));
+    expect(keyOf(day.scene)).toBeGreaterThan(ambientOf(day.scene) * 2);
 
-    const night = buildScene({ lightCondition: "night" }, 1000).scene;
-    expect(keyOf(night)).toBeLessThan(ambientOf(night));
+    // A moonless night has nothing with a direction in it at all, so nothing has a lit side.
+    const night = buildScene({ lightCondition: "night" }, 1000);
+    night.setSky(conditionsAt(off, { lightCondition: "night" }, noon));
+    expect(keyOf(night.scene)).toBeLessThan(ambientOf(night.scene));
   });
 
   /**

@@ -124,9 +124,8 @@ export interface LampUniforms {
   /**
    * **What a lux draws as.** The one figure per condition that maps the computed illuminance
    * onto the screen - and it is shared with the body's own exposure, so that a lamp and the
-   * moon are drawn on one scale. See `Palette.luxToScreen`.
+   * moon are drawn on one scale.
    */
-  uLampLux: { value: number };
 }
 
 export function makeLampUniforms(): LampUniforms {
@@ -136,15 +135,16 @@ export function makeLampUniforms(): LampUniforms {
     uLampArc: { value: Array.from({ length: SHADER_LAMPS }, () => new Vector4()) },
     uLampPool: { value: 0 },
     uLampStreak: { value: 0 },
-    uLampLux: { value: 0 },
   };
 }
 
 /**
  * Load the lit lamps into the uniforms. Anything past `SHADER_LAMPS` lays no streak.
  *
- * `exposure` is how bright the brightest streak and the brightest pool may draw in this
- * condition - declared figures per drawn condition, for the reason `Palette.streak` gives.
+ * `exposure` is what the water gives back: the pool's is the water's own albedo over pi,
+ * which is Lambert's law and is computed, and the streak's is the one figure in the lamps
+ * still chosen. Both turn the lux landing on a patch into a radiance, and what turns a
+ * radiance into a pixel is the renderer's exposure, once, for everything in the frame.
  *
  * **What does not fit is the page's business, not a log line.** `ui/panels.ts` counts the
  * lamps a scenario can light against this same constant and says so, because a picture
@@ -154,11 +154,10 @@ export function makeLampUniforms(): LampUniforms {
 export function setLamps(
   uniforms: LampUniforms,
   lamps: LitLamp[],
-  exposure: { streak: number; pool: number; luxToScreen: number },
+  exposure: { streak: number; pool: number },
 ): void {
   uniforms.uLampPool.value = exposure.pool;
   uniforms.uLampStreak.value = exposure.streak;
-  uniforms.uLampLux.value = exposure.luxToScreen;
   for (let i = 0; i < SHADER_LAMPS; i += 1) {
     const lamp = lamps[i];
     const slot = uniforms.uLamp.value[i];
@@ -232,7 +231,7 @@ export function lampLight(
   lamp: LitLamp,
   patch: { at: Point; up: Point },
   where: { eye: Point; lobeWidthRadians: number },
-  exposure: { streak: number; pool: number; luxToScreen: number },
+  exposure: { streak: number; pool: number },
 ): LampLight {
   const { at, up } = patch;
   const towards = { x: lamp.at.x - at.x, y: lamp.at.y - at.y, z: lamp.at.z - at.z };
@@ -247,7 +246,7 @@ export function lampLight(
   const landing = Math.max(dot(toLamp, up), 0);
   // How far below the lamp's own horizon this patch lies - geometry, not the facet's tilt.
   const spread = verticalSpread((Math.asin(Math.min(Math.max(toLamp.y, 0), 1)) * 180) / Math.PI);
-  const reaching = exposure.luxToScreen * ((lamp.minimumCandela * spread) / (slant * slant));
+  const reaching = (lamp.minimumCandela * spread) / (slant * slant);
 
   const path = slant + Math.hypot(where.eye.x - at.x, where.eye.y - at.y, where.eye.z - at.z);
   const away = Math.acos(Math.min(Math.max(dot(reflectedAt(patch, where.eye), toLamp), -1), 1));
@@ -319,7 +318,6 @@ uniform vec3 uLampColour[${SHADER_LAMPS}];
 uniform vec4 uLampArc[${SHADER_LAMPS}];
 uniform float uLampPool;
 uniform float uLampStreak;
-uniform float uLampLux;
 
 // Smoothed to nothing at the reach, or the light would end at a visible edge. Which distance
 // is handed in is the whole question the caller has to answer: the streak's is the way round
@@ -394,7 +392,7 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // And it takes no incidence cosine - a mirror does not care how obliquely the light
     // arrives, only where it goes.
     float away = acos( clamp( dot( reflected, toLamp ), -1.0, 1.0 ) );
-    sum += uLampColour[ i ] * uLampStreak * uLampLux * reaching * lampFade( path, reach )
+    sum += uLampColour[ i ] * uLampStreak * reaching * lampFade( path, reach )
       * exp( -0.5 * pow( away / width, 2.0 ) );
 
     // The pool does, because that is what Lambert's law is: light spread over the area it
@@ -404,7 +402,7 @@ vec3 lampsTowards( vec3 reflected, vec3 at, vec3 up, float carried, out vec3 lit
     // is: the same water two hundred metres under a six-mile masthead lost a factor of
     // eighty between an eye alongside and one three kilometres off, and went out altogether
     // at 5.4 km while the lamp itself was nominally good for 11.1.
-    lit += uLampColour[ i ] * uLampPool * uLampLux * reaching * landing * lampFade( slant, reach );
+    lit += uLampColour[ i ] * uLampPool * reaching * landing * lampFade( slant, reach );
   }
   return sum;
 }

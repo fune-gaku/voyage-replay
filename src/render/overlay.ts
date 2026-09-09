@@ -128,7 +128,13 @@ interface Frame {
 }
 
 function newPlaque(corner: Corner, family: string): Plaque {
-  const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ transparent: true }));
+  // **Not tone mapped.** The clock and the credits are lettering, not light: put through an
+  // exposure set for a moonless sea they would be unreadable, and through a day's they would
+  // be gone. Nothing in this pass is a radiance.
+  const mesh = new Mesh(
+    new PlaneGeometry(1, 1),
+    new MeshBasicMaterial({ transparent: true, toneMapped: false }),
+  );
   mesh.visible = false;
   return {
     corner,

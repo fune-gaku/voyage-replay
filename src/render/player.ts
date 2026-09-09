@@ -4,7 +4,16 @@
  */
 
 import type { PerspectiveCamera } from "three";
-import { Color, Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
+import {
+  Color,
+  Group,
+  NeutralToneMapping,
+  NoToneMapping,
+  Vector3,
+  WebGLRenderer,
+  type Camera,
+  type OrthographicCamera,
+} from "three";
 
 import {
   hullCentreOffset,
@@ -64,6 +73,29 @@ import { TERRAIN_CREDIT } from "./terrain.js";
 
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
 const ACTOR_COLOURS = [0xd8443c, 0x3f7bd8, 0xd8b23c, 0x46b07a];
+
+/**
+ * The brightest a hull may be taken to reflect, once its colour is an albedo (#60).
+ *
+ * **An identity colour is not a measured paint.** The reds and blues above are the ones an
+ * investigator's chart uses to tell two ships apart, chosen to be legible on white paper -
+ * and the red's linear value is 0.68, which is more light than any paint returns. Left as an
+ * albedo it makes a hull that clips to a bright coral in full sun and stays plainly visible
+ * under starlight, both of which are claims about how she looked that nothing supports.
+ *
+ * A third is about the top of what a gloss topcoat manages. Scaling to it keeps the hue that
+ * identifies her - which is the whole job of the colour - and takes away the brightness,
+ * which was never doing any work. The chart's hulls darken with it, being the same material,
+ * and stay the same red and blue.
+ */
+const BRIGHTEST_PAINT = 0.35;
+
+/** An identity colour as something that could reflect light. See `BRIGHTEST_PAINT`. */
+function hullAlbedo(colour: number): Color {
+  const albedo = new Color(colour);
+  const brightest = Math.max(albedo.r, albedo.g, albedo.b);
+  return brightest > BRIGHTEST_PAINT ? albedo.multiplyScalar(BRIGHTEST_PAINT / brightest) : albedo;
+}
 
 const DEFAULT_VESSEL: Vessel = { loaMetres: 30, beamMetres: 8 };
 
@@ -531,6 +563,27 @@ export class Replay {
     this.renderer.dispose();
   }
 
+  /**
+   * What a candela per square metre draws as, in this picture.
+   *
+   * **Khronos's PBR Neutral rather than a filmic curve**, because this tool has no business
+   * grading anything: it leaves colours alone until they approach the top and then rolls
+   * them off instead of clipping, which is the whole of what is wanted - a full moon's
+   * glitter and a night sea are three orders of magnitude apart and both have to be on the
+   * screen at once.
+   *
+   * **And it is off over a chart.** A drawing is not a photograph, so its colours pass
+   * through untouched; the curve subtracts a small offset even from the dark end, so a plan
+   * view drawn through it would come out slightly and pointlessly wrong. Changing the mode
+   * makes three rebuild the programs it has cached, which is a hitch the first time each
+   * picture is drawn and nothing afterwards.
+   */
+  private expose(picture: Picture): void {
+    const exposure = this.stage.sceneParts.exposureFor(picture);
+    this.renderer.toneMapping = exposure === null ? NoToneMapping : NeutralToneMapping;
+    this.renderer.toneMappingExposure = exposure ?? 1;
+  }
+
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
     // **Asked once, of the viewpoint, and handed down.** Every consumer below used to derive
@@ -546,6 +599,7 @@ export class Replay {
 
     this.stage.diagram.visible = picture === "chart";
     this.stage.sceneParts.setDiagramView(picture);
+    this.expose(picture);
     this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
     // Every frame, because the sky is the one part of the environment that moves: the
     // reference case runs eighty-seven minutes and nautical twilight ends eleven of them
@@ -1036,7 +1090,10 @@ function enterStage(
 
 function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
   const vessel = actor.vessel ?? DEFAULT_VESSEL;
-  const hull = buildHull(vessel, colour);
+  // The track line keeps the identity colour as authored - it is a line on a drawing, not a
+  // surface with light falling on it - while the hull takes it as something that could
+  // reflect. See `BRIGHTEST_PAINT`.
+  const hull = buildHull(vessel, hullAlbedo(colour).getHex());
   const lights = buildNavigationLights(vessel, hull.eyeHeightMetres * 0.4);
 
   // The track reports the GPS antenna; a hull is drawn about its own centre. Everything
