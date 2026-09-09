@@ -1,4 +1,7 @@
+import type { AmbientLight } from "three";
 import { OrthographicCamera, PerspectiveCamera, Texture, Vector3 } from "three";
+
+import type { ViewSelection } from "../src/render/view.js";
 import type * as THREE from "three";
 import type {
   Group,
@@ -738,12 +741,249 @@ describe("which of another ship's lamps a bridge can see", () => {
   it("leaves every lamp lit in the plan view, which is a diagram", () => {
     const replay = replayOf();
     replay.setView({ kind: "bridge", actorId: "A" });
-    replay.setView({ kind: "overhead" });
+    replay.setView({ kind: "chart" });
 
     const lamps = partsOf(ships(lastFrame().scene)[1]!)[1]!.children.filter(
       (child) => child.type === "Points",
     );
     expect(lamps.every((lamp) => lamp.visible)).toBe(true);
+  });
+});
+
+/**
+ * **The split this suite exists to check.** Which camera is up used to decide what kind of
+ * picture was being drawn, and eight things read that decision - so a viewpoint that was
+ * neither of the two that existed had no answer to any of them. A free eye is in the world and
+ * is aboard nobody, and every one of the eight has to follow the picture rather than the
+ * camera for that to be expressible at all. Issue #63.
+ */
+describe("a viewpoint that is neither a chart nor a bridge", () => {
+  const ALOFT = {
+    kind: "free",
+    at: { east: 0, north: 0 },
+    headingDegreesTrue: 90,
+    heightMetres: 200,
+    depressionDegrees: 30,
+  } as const;
+
+  /** The camera the last frame was drawn with. */
+  function cameraNow(): PerspectiveCamera {
+    return lastFrame().camera as PerspectiveCamera;
+  }
+
+  /** One ship's own group, whose height above the waterline is the earth's bulge under her. */
+  function shipNow(which: number): Object3D {
+    const ship = ships(lastFrame().scene)[which];
+    if (!ship) throw new Error("no such ship on stage");
+    return ship;
+  }
+
+  /** The plan view's own furniture: grid, track lines, light sectors. */
+  function diagramNow(): Object3D {
+    return groupsOf(lastFrame().scene)[1];
+  }
+
+  /** How many of one ship's lamps are drawn for whoever is watching. */
+  function lampsShowing(which: number): number {
+    return partsOf(shipNow(which))[1]!.children.filter(
+      (child) => child.visible && child.type === "Points",
+    ).length;
+  }
+
+  it("draws with a camera that is neither the chart's nor the bridge's", () => {
+    const replay = replayOf();
+    const chart = cameraNow();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const bridge = cameraNow();
+    replay.setView(ALOFT);
+    const free = cameraNow();
+
+    expect(free).not.toBe(chart);
+    expect(free).not.toBe(bridge);
+  });
+
+  /** Put where it was told, at the height it was told, looking down by the angle it was told. */
+  it("stands where it is put and looks where it is pointed", () => {
+    const replay = replayOf();
+    replay.setView(ALOFT);
+    const camera = cameraNow();
+
+    expect(camera.position.y, "height above the water").toBeCloseTo(200, 6);
+    expect(camera.position.x, "east").toBeCloseTo(0, 6);
+    // Thirty degrees below the horizontal, and turned onto 090.
+    expect((camera.rotation.x * 180) / Math.PI, "depression").toBeCloseTo(-30, 6);
+    expect(camera.rotation.order, "yaw then pitch").toBe("YXZ");
+  });
+
+  /**
+   * **The world, not a chart.** The earth bends away from a free eye as it does from a bridge,
+   * because curvature is a property of the viewpoint and a free viewpoint is a place. Drawing
+   * it flat would be a chart seen from an angle, which is a different claim about the picture.
+   */
+  it("bends the earth under the hulls, as a bridge does and a chart does not", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const flat = shipNow(1).position.y;
+    replay.setView(ALOFT);
+    const curved = shipNow(1).position.y;
+
+    expect(flat, "a chart is drawn flat").toBeCloseTo(0, 6);
+    expect(curved, "the world is not").toBeLessThan(0);
+  });
+
+  /** And the plan view's own furniture, which annotates a drawing, is not over a place. */
+  it("puts away the chart's own furniture", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    expect(diagramNow().visible, "over a chart").toBe(true);
+    replay.setView(ALOFT);
+    expect(diagramNow().visible, "over the world").toBe(false);
+  });
+
+  /** The scene's ambient light, which `setDiagramView` lifts for a chart and not for a place. */
+  function ambientNow(): number {
+    const light = lastFrame().scene.children.find(
+      (child): child is AmbientLight => child.type === "AmbientLight",
+    );
+    if (!light) throw new Error("no ambient light in the scene");
+    return light.intensity;
+  }
+
+  /**
+   * The lamps handed to the water on the frame just drawn.
+   *
+   * The uniforms only exist inside `onBeforeCompile`, which no renderer here ever runs, so
+   * the material is asked to fill a shader of its own - the same way the reflection suite
+   * below does it.
+   */
+  function lampsOnTheWater(): number {
+    const water = lastFrame().scene.children.find((child: Object3D) => child.name === "water");
+    const uniforms: Record<string, { value: unknown }> = {};
+    const shader = {
+      uniforms,
+      vertexShader: "#include <begin_vertex>\n#include <project_vertex>",
+      fragmentShader: "#include <normal_fragment_begin>\n#include <opaque_fragment>",
+    };
+    const material = (water as Mesh).material as MeshStandardMaterial;
+    material.onBeforeCompile(
+      shader as unknown as Parameters<MeshStandardMaterial["onBeforeCompile"]>[0],
+      null as unknown as WebGLRenderer,
+    );
+    return (uniforms["uLamp"]?.value as Vector4[]).filter((lamp) => lamp.w > 0).length;
+  }
+
+  /** Whether the map's credit is showing, which is the second caption drawn over the frame. */
+  function creditingTheMap(): boolean {
+    const captions = gl.frames.filter((f) => f.scene.name === "overlay").at(-1)?.scene.children;
+    return captions?.[1]?.visible ?? false;
+  }
+
+  /** A night with one flashing buoy in it, which is what a rhythm and a streak need. */
+  function withABuoy(): Scenario {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "night",
+      waves: { significantHeightMetres: 2, derivation: "measured" },
+    };
+    subject.marks = [
+      { id: "no-1", kind: "buoy", at: ORIGIN, heightMetres: 3, light: { character: "Fl G 4s" } },
+    ];
+    return subject;
+  }
+
+  /**
+   * **The rest of the eight, which the first version of this suite left uncovered.**
+   *
+   * Four of them were checked - the camera, the hulls' curvature, the chart's furniture, the
+   * lamp audience - and the other four were not, so they could go back to reading
+   * `view.kind === "bridge"` and every test would still pass. They are the ones that would
+   * break most quietly: the lighting a chart is lifted by, the rhythm a mark keeps, the
+   * streak a lamp lays, and which ground the credit names.
+   */
+  it("takes the world's lighting, as a bridge does and a chart does not", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const lifted = ambientNow();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const dark = ambientNow();
+    replay.setView(ALOFT);
+
+    expect(lifted, "a chart is lit for reading").toBeGreaterThan(dark);
+    expect(ambientNow(), "the world is lit by the sky").toBe(dark);
+  });
+
+  /** A chart is not a moment, so nothing flashes over one. Over a place, a mark keeps time. */
+  it("lets the marks keep their rhythm, as they do from a bridge", () => {
+    const over = (view: ViewSelection): boolean[] => {
+      const replay = replayOf(withABuoy());
+      replay.setView(view);
+      return [0, 0.75, 2, 3, 3.9].map((offset) => {
+        replay.seek(replay.startSeconds + offset);
+        return lastFrame().scene.getObjectByName("lamp:no-1")?.visible ?? false;
+      });
+    };
+
+    expect(over({ kind: "chart" }), "a chart is not an instant").not.toContain(true);
+    expect(over(ALOFT), "the world is").toContain(true);
+  });
+
+  /** And a lamp lays a streak on real water, which a chart has none of. */
+  it("lets the lamps lay streaks, as they do from a bridge", () => {
+    const replay = replayOf(withABuoy());
+    replay.setView({ kind: "chart" });
+    expect(lampsOnTheWater(), "nothing reflects in a drawing").toBe(0);
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const fromBridge = lampsOnTheWater();
+    replay.setView(ALOFT);
+
+    expect(fromBridge, "a bridge sees them on the water").toBeGreaterThan(0);
+    expect(lampsOnTheWater(), "and so does an eye aloft").toBe(fromBridge);
+  });
+
+  /**
+   * **The credit names the ground this picture is showing.** The world stands over elevation
+   * tiles; printing the pale basemap's credit under a free eye would be a chart seen from an
+   * angle, which is a different claim about what is on screen.
+   */
+  it("credits the ground the world shows, not the chart's", () => {
+    const replay = replayOf();
+    gl.tiles[0]?.(new Texture());
+    replay.setView({ kind: "chart" });
+    expect(creditingTheMap(), "a chart names the basemap it drew").toBe(true);
+
+    replay.setView(ALOFT);
+    expect(creditingTheMap(), "the world is over the land tiles, not the map").toBe(false);
+  });
+
+  /**
+   * **Framing belongs to the chart alone**, and it is not only a camera decision:
+   * `frameOverhead` tells the basemap which ground to fetch, so running it for a viewpoint in
+   * the world sends the map after a rectangle nothing is drawing.
+   */
+  it("does not send the basemap after ground no chart is framing", () => {
+    const replay = replayOf();
+    replay.setView(ALOFT);
+    gl.tileUrls = [];
+    replay.seek(replay.startSeconds + 30);
+
+    expect(gl.tileUrls, "nothing is framing anything").toHaveLength(0);
+  });
+
+  /**
+   * **Aboard nobody, every ship is another ship.** `LampAudience` already had the three
+   * answers; what could not be built was an eye that carried no `Cast`, so `audienceFor` had
+   * nothing to compare. A free eye is an observer to all of them, and none of them hides her
+   * lamps from it the way a ship hides them from her own wheelhouse.
+   */
+  it("is nobody's own bridge, so no ship blanks her lamps for it", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "bridge", actorId: "A" });
+    const fromOwnBridge = lampsShowing(0);
+    replay.setView(ALOFT);
+    const fromAloft = lampsShowing(0);
+
+    expect(fromOwnBridge, "a watchkeeper sees none of her own").toBe(0);
+    expect(fromAloft, "an eye aboard nobody sees whichever face it").toBeGreaterThan(0);
   });
 });
 
@@ -892,7 +1132,7 @@ describe("what the frame says about itself", () => {
     await settleTiles();
 
     expect(captionsOf()[1]!.visible).toBe(true);
-    replay.setView({ kind: "overhead" });
+    replay.setView({ kind: "chart" });
     expect(captionsOf()[1]!.visible).toBe(false);
   });
 
@@ -1257,7 +1497,7 @@ describe("a mark's light in the picture", () => {
   }
 
   /** Whether the lamp was drawn, second by second through one period. */
-  function shown(subject: Scenario, view: "bridge" | "overhead" = "bridge"): boolean[] {
+  function shown(subject: Scenario, view: "bridge" | "chart" = "bridge"): boolean[] {
     const replay = replayOf(subject);
     if (view === "bridge") replay.setView({ kind: "bridge", actorId: "A" });
     return [0, 0.25, 0.75, 1.5, 2, 3, 4.5, 6, 8, 9.5].map((offset) => {
@@ -1285,7 +1525,7 @@ describe("a mark's light in the picture", () => {
    * judgement `setDiagramView` already makes about lighting and about the map.
    */
   it("does not blink in the plan view, nor burn in daylight", () => {
-    expect(shown(withLight("Fl(2) R 10s"), "overhead")).not.toContain(true);
+    expect(shown(withLight("Fl(2) R 10s"), "chart")).not.toContain(true);
     expect(shown(withLight("Fl(2) R 10s", { lightCondition: "day" }))).not.toContain(true);
   });
 

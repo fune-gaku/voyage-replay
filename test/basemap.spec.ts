@@ -379,9 +379,9 @@ describe("through the scene", () => {
     });
     const map = parts.scene.children.find((child) => child.name === "basemap")!;
 
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     expect(map.visible).toBe(true);
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     expect(map.visible).toBe(false);
   });
 });

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   frameOverheadCamera,
   makeBridgeCamera,
+  makeFreeCamera,
   makeOverheadCamera,
   placeBridgeCamera,
+  placeFreeCamera,
 } from "../src/render/cameras.js";
 
 describe("the overhead camera", () => {
@@ -74,5 +76,60 @@ describe("the bridge camera", () => {
     expect(camera.fov).toBeGreaterThanOrEqual(45);
     expect(camera.fov).toBeLessThanOrEqual(65);
     expect(camera.aspect).toBe(1.5);
+  });
+});
+
+/**
+ * **A camera the bridge camera must not become.** Widening `placeBridgeCamera` to take a
+ * depression angle would leave the bridge view one argument away from a camera move, and two
+ * of its properties are claims rather than conveniences: a wheelhouse faces where her bow
+ * points rather than where she is making good, and a watchkeeper at a window is looking at the
+ * horizon. So the free one is its own function, and these pin the difference.
+ */
+const ZERO = { headingDegreesTrue: 0, depressionDegrees: 0 };
+
+describe("the free camera", () => {
+  it("stands where it is put, at the height it is given", () => {
+    const camera = makeFreeCamera(1.5);
+    placeFreeCamera(camera, { east: 30, north: -40 }, ZERO, 200);
+
+    expect(camera.position.x).toBeCloseTo(30, 6);
+    expect(camera.position.z).toBeCloseTo(40, 6);
+    expect(camera.position.y).toBeCloseTo(200, 6);
+  });
+
+  it("turns onto a bearing the way the bridge camera does", () => {
+    const free = makeFreeCamera(1.5);
+    const bridge = makeBridgeCamera(1.5);
+    placeFreeCamera(
+      free,
+      { east: 0, north: 0 },
+      { headingDegreesTrue: 90, depressionDegrees: 0 },
+      14,
+    );
+    placeBridgeCamera(bridge, { east: 0, north: 0 }, 90, 14);
+
+    expect(free.rotation.y).toBeCloseTo(bridge.rotation.y, 9);
+  });
+
+  /** The one thing it can do that a bridge cannot: look down. */
+  it("tilts below the horizontal, which the bridge camera never does", () => {
+    const camera = makeFreeCamera(1.5);
+    placeFreeCamera(
+      camera,
+      { east: 0, north: 0 },
+      { headingDegreesTrue: 0, depressionDegrees: 30 },
+      200,
+    );
+
+    expect((camera.rotation.x * 180) / Math.PI).toBeCloseTo(-30, 9);
+    // Yaw about the world's up first, then pitch about the camera's own right. The other
+    // order tips the horizon over as soon as both are non-zero.
+    expect(camera.rotation.order).toBe("YXZ");
+  });
+
+  it("sees the same width of the world as a bridge does", () => {
+    expect(makeFreeCamera(1.5).fov).toBe(makeBridgeCamera(1.5).fov);
+    expect(makeFreeCamera(1.5).aspect).toBe(1.5);
   });
 });

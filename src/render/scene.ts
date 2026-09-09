@@ -43,6 +43,7 @@ import { buildBasemap, type Basemap, type Frame } from "./basemap.js";
 import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
 import { setLamps, type LitLamp } from "./lamps.js";
+import type { Picture } from "./view.js";
 import { buildSkyDome, setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
@@ -105,7 +106,7 @@ export interface SceneParts {
    * track line - which this renderer already knew, and hid. The grid is the concession that
    * makes a CHART's scale readable; it has no business in the night.
    */
-  setDiagramView(on: boolean): void;
+  setDiagramView(picture: Picture): void;
   /**
    * Where the watchkeeper is standing and which way her bow points, or null for the plan
    * view and for a bridge whose own track has run out.
@@ -489,8 +490,11 @@ function viewControls(
       // the part of the picture somebody is looking at rather than at the origin.
       centreSeaOn(parts, frame.centre);
     },
-    setDiagramView: (on: boolean): void => {
-      setDiagram(scene, parts, lights.setDiagram, on);
+    setDiagramView: (picture: Picture): void => {
+      // **The picture, not which camera is up.** This is one of the eight decisions that used
+      // to be read off `view.kind === "overhead"`, which had no answer for a viewpoint that
+      // was neither of the two that existed. Issue #63.
+      setDiagram(scene, parts, lights.setDiagram, picture === "chart");
     },
     setEye: (eye: LocalPosition | null, headingDegreesTrue: number): void => {
       standAt(parts, eye, headingDegreesTrue);

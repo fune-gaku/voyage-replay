@@ -12,7 +12,7 @@
  */
 
 import { formatClock } from "../core/time.js";
-import type { ViewSelection } from "../render/player.js";
+import type { ViewSelection } from "../render/view.js";
 
 /** How many positions the scrub bar has between the start and the end of the tracks. */
 const SCRUB_STEPS = 1000;
@@ -148,10 +148,10 @@ function wireViews({ replay, views, scale, recentre, canvas }: TransportParts): 
       // Both belong to the plan view. Left live from a wheelhouse they are controls that
       // change nothing on screen, which reads as ones that are broken - and a canvas
       // offering to be dragged when dragging it does nothing is the same promise.
-      const plan = view.kind === "overhead";
-      scale.disabled = !plan;
-      recentre.disabled = !plan;
-      canvas.style.cursor = plan ? "grab" : "";
+      const chart = view.kind === "chart";
+      scale.disabled = !chart;
+      recentre.disabled = !chart;
+      canvas.style.cursor = chart ? "grab" : "";
       for (const entry of buttons) {
         entry.button.setAttribute("aria-pressed", String(entry.view === view));
       }
@@ -160,7 +160,7 @@ function wireViews({ replay, views, scale, recentre, canvas }: TransportParts): 
     buttons.push({ button, view });
   };
 
-  add("Overhead", { kind: "overhead" });
+  add("Chart", { kind: "chart" });
   for (const id of replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
   buttons[0]?.button.setAttribute("aria-pressed", "true");
   canvas.style.cursor = "grab";

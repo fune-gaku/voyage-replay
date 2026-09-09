@@ -339,11 +339,11 @@ describe("a scene that knows where in the world it is", () => {
     const parts = buildScene({ lightCondition: "night" }, 5000, ground());
     const land = parts.scene.getObjectByName("terrain");
 
-    parts.setDiagramView(true);
+    parts.setDiagramView("chart");
     parts.setEye(null, 0);
     expect(land?.visible).toBe(false);
 
-    parts.setDiagramView(false);
+    parts.setDiagramView("world");
     parts.setEye({ east: 0, north: 0 }, 90);
     expect(land?.visible).toBe(true);
   });
