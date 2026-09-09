@@ -1085,6 +1085,126 @@ export function surfaceAt(
 const FOLLOWS = { gain: 1, lagRadians: 0 };
 
 /**
+ * How far the water at a point has been carried SIDEWAYS, which is what sharpens a crest.
+ *
+ * **A sum of sinusoids is symmetric and no gravity wave is.** Real crests are sharp and real
+ * troughs are long and flat, because the water moves horizontally as well as vertically and
+ * that motion bunches it at the crest. The trochoidal (Gerstner) wave is not an embellishment
+ * of the linear one: it is an exact solution of the Euler equations for irrotational flow in
+ * deep water, and its horizontal part comes out of the same amplitudes and wavenumbers.
+ *
+ * **The sign is checkable rather than a matter of taste.** The divergence of this field is
+ * `-a k sin(phase)`, which is negative at a crest - water converging on it, which is the
+ * sharpening. Flip it and crests flatten while troughs deepen, which is a sea upside down and
+ * looks very nearly as plausible.
+ *
+ * **No choppiness factor.** The surface folds over itself once the summed steepness passes
+ * one, and measured over this project's own components it is 0.86 whatever the significant
+ * height - the seas are self-similar, since the period is assumed from the height. A factor
+ * below one would be hedging against something measured not to happen.
+ *
+ * Nothing floating is carried by this. A moored buoy answers to its mooring, not to the
+ * water's orbital motion; what it needs is the height of the drawn surface where it actually
+ * sits, which is `parameterUnder`.
+ */
+export function displacementAt(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+): { eastMetres: number; northMetres: number } {
+  let east = 0;
+  let north = 0;
+  for (const wave of components) {
+    const towardsEast = Math.sin(wave.directionRadians);
+    const towardsNorth = Math.cos(wave.directionRadians);
+    const along =
+      wave.wavenumberPerMetre * (at.eastMetres * towardsEast + at.northMetres * towardsNorth);
+    const phase = along - wave.angularFrequencyPerSecond * secondsFromStart + wave.phaseRadians;
+    const carried = wave.amplitudeMetres * Math.cos(phase);
+    east += carried * towardsEast;
+    north += carried * towardsNorth;
+  }
+  return { eastMetres: east, northMetres: north };
+}
+
+/**
+ * How many times the search below folds back on itself.
+ *
+ * It is a fixed point, `p = at - D(p)`, and it converges as fast as the displacement's own
+ * gradient is small. The worst case is the summed steepness, 0.86, which would need dozens;
+ * the ordinary case is the rms slope, 0.105, which needs two. Three is the ordinary case with
+ * a margin, and the worst case is every component crest at one point, which is not a sea.
+ */
+const INVERSION_STEPS = 3;
+
+/**
+ * Which point of the undisplaced sea ends up under this position.
+ *
+ * **Anything floating needs this and nothing else does.** The waves are a function of a
+ * parameter, and once the surface is carried sideways that parameter is no longer where the
+ * water ended up - so a buoy asked for "the height here" would be given the height of water
+ * up to a metre away. That is #34 and #36 a third time: a buoy riding a sea the picture does
+ * not draw is a buoy hovering.
+ *
+ * `drawnFraction` is how much of the displacement the picture actually applied, which falls
+ * to nothing at range as the mesh gives out. Inverting the full displacement where only a
+ * tenth was drawn would be as wrong as not inverting at all.
+ */
+export function parameterUnder(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+  drawnFraction: number,
+): { eastMetres: number; northMetres: number } {
+  let point = at;
+  for (let step = 0; step < INVERSION_STEPS; step += 1) {
+    const carried = displacementAt(components, point, secondsFromStart);
+    point = {
+      eastMetres: at.eastMetres - drawnFraction * carried.eastMetres,
+      northMetres: at.northMetres - drawnFraction * carried.northMetres,
+    };
+  }
+  return point;
+}
+
+/**
+ * The surface's normal, once it is a parametric surface rather than a height field.
+ *
+ * **The height gradient stops being the answer the moment the water moves sideways.** A
+ * height field's normal is `(-dh/dx, 1, -dh/dz)`; a parametric one's is the cross product of
+ * its two tangents, and the tangents carry the horizontal displacement's own derivatives.
+ * Keeping the old expression leaves shading that is subtly wrong everywhere and plainly
+ * wrong at a sharp crest - which is the one place the displacement exists to improve.
+ *
+ * `spread` is that displacement's gradient: how much the eastward carry changes eastward and
+ * northward, and the northward carry northward. The mixed term is one number rather than two
+ * because it has to be - the field is a gradient, so its Jacobian is symmetric.
+ *
+ * **With no spread this is exactly the old expression**, which is what `test/seaway.spec.ts`
+ * holds it to. `render/waves.ts` writes the same thing in the scene's axes, where north is
+ * -z, and the two stay in step by eye since no test can compile GLSL.
+ */
+export function surfaceNormal(
+  slope: { east: number; north: number },
+  spread: { eastEast: number; eastNorth: number; northNorth: number },
+): { east: number; up: number; north: number } {
+  // The tangent along the eastward parameter, and the one along the northward parameter.
+  const eastwardE = 1 + spread.eastEast;
+  const eastwardUp = slope.east;
+  const eastwardN = spread.eastNorth;
+  const northwardE = spread.eastNorth;
+  const northwardUp = slope.north;
+  const northwardN = 1 + spread.northNorth;
+
+  // Northward crossed with eastward, in that order, so the normal comes out upwards.
+  const east = northwardUp * eastwardN - northwardN * eastwardUp;
+  const up = northwardN * eastwardE - northwardE * eastwardN;
+  const north = northwardE * eastwardUp - northwardUp * eastwardE;
+  const length = Math.hypot(east, up, north) || 1;
+  return { east: east / length, up: up / length, north: north / length };
+}
+
+/**
  * Beaufort, in knots. WMO's table, and the ranges are the point of it.
  *
  * A force is a class, not a figure - 5 is 17 to 21 knots - so it is kept as one, for the

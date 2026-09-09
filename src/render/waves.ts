@@ -479,6 +479,15 @@ uniform float uWaveTime;
 uniform float uWaveScale;
 uniform float uPixelAngle;
 varying vec3 vWaveWorld;
+/**
+ * Where this piece of water STARTED, which is what the waves are a function of.
+ *
+ * Once the surface is carried sideways, the position a fragment ends up at is no longer the
+ * parameter - so a fragment shader reading vWaveWorld.xz for its phases would take the slope
+ * of water up to a metre from the water it is shading. Geometry from one surface and shading
+ * from another, at exactly the range this was added to improve. See issue #69.
+ */
+varying vec2 vWaveParam;
 `;
 
 /**
@@ -535,18 +544,30 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 // The MEAN surface, and only the horizontal part of it is used from here: the phases below
 // and the ones in the fragment stage read .xz, which no vertical displacement touches. The
 // height is put back at DRAWN_SURFACE below, once everything that moves it has run.
+vWaveParam = vWaveWorld.xz;
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   float spacing = away < ${DISC.innerMetres.toFixed(1)} ? ${DISC.innerMetres.toFixed(1)} : away * ${DISC.growth.toFixed(6)};
   float height = 0.0;
+  // **Sideways as well as up, which is what makes a crest a crest.** A sum of sinusoids is
+  // symmetric and no gravity wave is; the trochoidal solution carries the water horizontally
+  // and that motion bunches it at the crest. Same amplitudes, same wavenumbers, and the same
+  // per-component fade - a wave too short for the mesh to lift is too short for it to carry.
+  vec2 carried = vec2( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
-    float wavelength = 6.2831853 / length( w.xy );
+    float length2 = length( w.xy );
+    float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( ${SAMPLES_PER_WAVE}.0 * spacing ) );
-    height += carries * w.z * sin( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    float phase = dot( w.xy, vWaveParam ) - w.w * uWaveTime + uWavePhase[ i ];
+    height += carries * w.z * sin( phase );
+    // The empty slots have no wavenumber at all, and normalising that is a NaN which would
+    // take the whole sum with it - amplitude zero does not save a multiplication by NaN.
+    carried += carries * w.z * cos( phase ) * ( w.xy / max( length2, 1e-9 ) );
   }
   transformed.y += fade * height;
+  transformed.xz += fade * carried;
 }
 `;
 
@@ -587,6 +608,11 @@ const NORMALS = `
   float fade = uWaveScale * ${FADE(SLOPE_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   vec2 slope = vec2( 0.0 );
+  // **The horizontal displacement's own gradient**, which the shading needs the moment the
+  // water moves sideways: the surface is parametric now, so its normal is the cross product
+  // of two tangents rather than the height's gradient. (dDx/dx, dDx/dz, dDz/dz) - and the
+  // mixed term is one number because the field is a gradient, so its Jacobian is symmetric.
+  vec3 spread = vec3( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
     // **Each wave fades at its own range, not all of them at one.** A metre-long wave is
@@ -595,13 +621,19 @@ const NORMALS = `
     // fade for the lot either keeps the short ones until they crawl or drops the long ones
     // while they still carry the picture; this drops each where its own wavelength falls
     // below the few pixels a sinusoid needs to read as one.
-    float wavelength = 6.2831853 / length( w.xy );
+    float length2 = length( w.xy );
+    float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( away * uPixelAngle + 1e-6 ) );
-    slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    // **The parameter, not where this fragment ended up.** Past the displacement the two are
+    // a metre apart, and taking the phase at the wrong one shades water that is not here.
+    float phase = dot( w.xy, vWaveParam ) - w.w * uWaveTime + uWavePhase[ i ];
+    slope += carries * w.xy * w.z * cos( phase );
+    spread -= ( carries * w.z * sin( phase ) / max( length2, 1e-9 ) )
+      * vec3( w.x * w.x, w.x * w.y, w.y * w.y );
     // **What this fragment's normals actually carry**, which is less than the sea has wherever
     // the band or the range has taken components out. The reflection gives the difference back
     // to the body, so the lane keeps its measured width instead of narrowing with distance.
-    float steep = carries * w.z * length( w.xy );
+    float steep = carries * w.z * length2;
     gCarriedSlope += 0.5 * steep * steep;
   }
   // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
@@ -611,7 +643,12 @@ const NORMALS = `
   // **Kept for the foam**, which goes on the steepest water. The same slope the shading is
   // made of, so the whitecaps are on the crests the picture actually drew.
   gSlopeSquared = dot( slope, slope );
-  vec3 world = normalize( vec3( -slope.x, 1.0, -slope.y ) );
+  // The two tangents, then their cross product - z crossed with x, in that order, so the
+  // normal comes out upwards. With no sideways carry it is exactly ( -slope.x, 1, -slope.y ),
+  // which is what surfaceNormal in core/seaway.ts is held to.
+  vec3 alongX = vec3( 1.0 + spread.x, slope.x, spread.y );
+  vec3 alongZ = vec3( spread.y, slope.y, 1.0 + spread.z );
+  vec3 world = normalize( cross( alongZ, alongX ) );
   gWorldNormal = normalize( mix( vec3( 0.0, 1.0, 0.0 ), world, fade ) );
   vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
