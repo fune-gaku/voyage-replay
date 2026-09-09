@@ -23,6 +23,23 @@ function lampPosition(
   return { x: attribute.getX(0), y: attribute.getY(0), z: attribute.getZ(0) };
 }
 
+/**
+ * **The lamp's own point is a declared screen colour, and the water it lights is not.**
+ * Everything else in a world picture goes through the tone curve at a condition's exposure;
+ * a lamp put through it is white at night and black in the day - measured on the four
+ * colours, the night exposure of 200 renders red (255,251,251), green (249,255,250), white
+ * (255,255,254) and yellow (255,254,251), which no reader can tell apart. The colour is the
+ * light's identity, so it is the picture's job to keep it. Found reviewing #74; the case for
+ * carrying the lamps' own ratios in the point is issue #78.
+ */
+describe("what the lamps are drawn at", () => {
+  it("keeps the lamps off the tone curve, so their colours survive the exposure", () => {
+    for (const lamp of lamps()) {
+      expect((lamp.material as { toneMapped: boolean }).toneMapped).toBe(false);
+    }
+  });
+});
+
 describe("buildNavigationLights", () => {
   it("draws one lamp and one sector for every light the rules require", () => {
     for (const vessel of [COASTER, BIG_SHIP]) {
