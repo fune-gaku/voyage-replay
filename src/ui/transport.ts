@@ -13,7 +13,7 @@
 
 import type { LocalPosition } from "../core/geodesy.js";
 import { formatClock } from "../core/time.js";
-import { clampElevation, type ViewSelection } from "../render/view.js";
+import { clampElevation, clampRange, type ViewSelection } from "../render/view.js";
 
 /** How many positions the scrub bar has between the start and the end of the tracks. */
 const SCRUB_STEPS = 1000;
@@ -54,8 +54,6 @@ interface Viewpoint {
  * that getting to the other side is one drag rather than four.
  */
 const ORBIT_DEGREES_PER_PIXEL = 0.3;
-const ORBIT_NEAREST_METRES = 50;
-const ORBIT_FURTHEST_METRES = 1_000_000;
 
 /**
  * Where the sea view opens, the first time it is asked for.
@@ -293,10 +291,6 @@ function opened(parts: TransportParts, orbit: Orbit): Orbit {
 function orbitView(orbit: Orbit): ViewSelection {
   const { centre, ...rest } = orbit;
   return { kind: "orbit", ...rest, centre: centre ?? { east: 0, north: 0 } };
-}
-
-function clampRange(metres: number): number {
-  return Math.min(Math.max(metres, ORBIT_NEAREST_METRES), ORBIT_FURTHEST_METRES);
 }
 
 /**

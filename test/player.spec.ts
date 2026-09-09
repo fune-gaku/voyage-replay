@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
 import { toLatLon } from "../src/core/geodesy.js";
+import { dropMetres } from "../src/core/horizon.js";
 import { prepareActor, sampleAt } from "../src/core/track.js";
 import type { Actor, Scenario, TrackPoint } from "../src/core/types.js";
 import {
@@ -1614,7 +1615,12 @@ describe("an orbit round the action", () => {
     // Bearing 000 from the action, so due north of it - and world z runs south.
     expect(eye.position.x, "east").toBeCloseTo(centre.east, 3);
     expect(-eye.position.z, "north").toBeCloseTo(centre.north + away, 3);
-    expect((eye.rotation.x * 180) / Math.PI, "looking down at it").toBeCloseTo(-45, 3);
+    // A shade past 45: a world picture sinks everything by how far the surface has fallen
+    // away from the eye, so the centre AS DRAWN is below the flat-plane one. See `orbitEye`.
+    const aim =
+      (Math.atan2(2_000 * Math.sin(Math.PI / 4) + dropMetres(away), away) * 180) / Math.PI;
+    expect(aim).toBeGreaterThan(45);
+    expect((eye.rotation.x * 180) / Math.PI, "looking down at it").toBeCloseTo(-aim, 3);
   });
 
   /** It is a place, so the earth bends away from it as it does from a wheelhouse. */

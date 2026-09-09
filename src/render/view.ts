@@ -15,6 +15,7 @@
  * must not import the player to be told what it is drawing.
  */
 
+import { dropMetres } from "../core/horizon.js";
 import type { LocalPosition } from "../core/geodesy.js";
 
 /**
@@ -106,6 +107,30 @@ export const ORBIT_ELEVATION = { minimumDegrees: 0.5, maximumDegrees: 89.9 };
 /** Never nearer the surface than this, however close in the orbit is pulled. */
 export const ORBIT_FLOOR_METRES = 2;
 
+/**
+ * How far the world is drawn from the eye.
+ *
+ * Both perspective cameras take their far plane from this, and the land is fetched out to
+ * 46 km (`render/terrain.ts`), so the number says where the picture stops rather than being
+ * chosen once per camera.
+ */
+export const WORLD_DRAWN_METRES = 80_000;
+
+/**
+ * How far off an orbit may stand, and how close in it may come.
+ *
+ * **The far end is not a taste.** Whatever is being watched sits `distanceMetres` from the
+ * eye, so an orbit standing beyond `WORLD_DRAWN_METRES` puts it outside the far plane and
+ * draws nothing at all. The chart's own scale runs to a thousand kilometres and the sea view
+ * opens at whatever the chart was showing, so the wide end of that menu handed the range a
+ * figure twelve times past the point where the picture goes empty - found reviewing #72.
+ *
+ * Half of it rather than all of it, so there is drawn world BEHIND what is being watched
+ * instead of the clip plane immediately behind it: forty kilometres, just inside the
+ * forty-six the land reaches. Half is the choice; being under one is not.
+ */
+export const ORBIT_RANGE = { nearestMetres: 50, furthestMetres: WORLD_DRAWN_METRES / 2 };
+
 /** Which of the two pictures a viewpoint draws. */
 export function pictureOf(view: ViewSelection): Picture {
   return view.kind === "chart" ? "chart" : "world";
@@ -131,6 +156,12 @@ export interface OrbitEye {
  * **The camera is aimed from where the eye ENDED UP.** Push the range in far enough and the
  * floor lifts the eye above the angle asked for; keeping the asked-for depression would then
  * point it under the thing it is orbiting, which is the one job an orbit has.
+ *
+ * **And it allows for the bulge.** A world picture sinks everything by how far the surface
+ * has fallen away from the eye (`render/curvature.ts`), so the centre AS DRAWN is
+ * `dropMetres(range)` lower than the flat-plane centre it was built from - 171 m at fifty
+ * kilometres, a fifth of a degree. Aiming at the flat one leaves the chosen place below the
+ * middle of the frame, which is the one thing an orbit is asked for. Found reviewing #72.
  */
 export function orbitEye(view: Extract<ViewSelection, { kind: "orbit" }>): OrbitEye {
   const centre = view.centre;
@@ -138,11 +169,10 @@ export function orbitEye(view: Extract<ViewSelection, { kind: "orbit" }>): Orbit
   const azimuth = ((view.azimuthDegrees % 360) + 360) % 360;
   const bearing = (azimuth * Math.PI) / 180;
 
-  const range = Math.max(view.distanceMetres, 0) * Math.cos((elevation * Math.PI) / 180);
-  const height = Math.max(
-    Math.max(view.distanceMetres, 0) * Math.sin((elevation * Math.PI) / 180),
-    ORBIT_FLOOR_METRES,
-  );
+  const distance = clampRange(view.distanceMetres);
+
+  const range = distance * Math.cos((elevation * Math.PI) / 180);
+  const height = Math.max(distance * Math.sin((elevation * Math.PI) / 180), ORBIT_FLOOR_METRES);
 
   return {
     at: {
@@ -152,11 +182,15 @@ export function orbitEye(view: Extract<ViewSelection, { kind: "orbit" }>): Orbit
     // Standing on that bearing FROM the centre means looking back down the reciprocal.
     headingDegreesTrue: (azimuth + 180) % 360,
     heightMetres: height,
-    depressionDegrees: (Math.atan2(height, range) * 180) / Math.PI,
+    depressionDegrees: (Math.atan2(height + dropMetres(range), range) * 180) / Math.PI,
   };
 }
 
 /** The one statement of the limits, for the control and for the resolver alike. */
+export function clampRange(metres: number): number {
+  return Math.min(Math.max(metres, ORBIT_RANGE.nearestMetres), ORBIT_RANGE.furthestMetres);
+}
+
 export function clampElevation(degrees: number): number {
   return Math.min(
     Math.max(degrees, ORBIT_ELEVATION.minimumDegrees),

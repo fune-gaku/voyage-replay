@@ -19,6 +19,7 @@
 import { OrthographicCamera, PerspectiveCamera } from "three";
 
 import { headingToRotationY, toWorld } from "./coords.js";
+import { WORLD_DRAWN_METRES } from "./view.js";
 import type { LocalPosition } from "../core/geodesy.js";
 
 export function makeOverheadCamera(): OrthographicCamera {
@@ -60,7 +61,7 @@ export function makeBridgeCamera(aspect: number): PerspectiveCamera {
   // 55 degrees is close to what a person takes in without turning their head, and near
   // enough to a bridge window that distances read correctly. A wider lens makes the other
   // ship look further away than she was, which is exactly the wrong error to introduce.
-  const camera = new PerspectiveCamera(55, aspect, 1, 80000);
+  const camera = new PerspectiveCamera(55, aspect, 1, WORLD_DRAWN_METRES);
   camera.up.set(0, 1, 0);
   return camera;
 }
@@ -99,7 +100,7 @@ export function placeBridgeCamera(
  * helicopter.
  */
 export function makeFreeCamera(aspect: number): PerspectiveCamera {
-  const camera = new PerspectiveCamera(55, aspect, 1, 80000);
+  const camera = new PerspectiveCamera(55, aspect, 1, WORLD_DRAWN_METRES);
   camera.up.set(0, 1, 0);
   return camera;
 }

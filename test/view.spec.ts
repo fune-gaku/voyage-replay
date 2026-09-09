@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import { dropMetres } from "../src/core/horizon.js";
 import {
   clampElevation,
+  clampRange,
   orbitEye,
   pictureOf,
   ORBIT_ELEVATION,
   ORBIT_FLOOR_METRES,
+  ORBIT_RANGE,
+  WORLD_DRAWN_METRES,
   type ViewSelection,
 } from "../src/render/view.js";
 
@@ -120,8 +124,49 @@ describe("where an orbit puts the eye", () => {
     expect(eye.depressionDegrees).toBeGreaterThan(asked);
     const range = Math.hypot(eye.at.east - CENTRE.east, eye.at.north - CENTRE.north);
     expect(Math.tan((eye.depressionDegrees * Math.PI) / 180)).toBeCloseTo(
-      ORBIT_FLOOR_METRES / range,
+      (ORBIT_FLOOR_METRES + dropMetres(range)) / range,
       6,
     );
+  });
+
+  /**
+   * A world picture sinks everything by how far the surface has fallen away from the eye,
+   * so the centre as drawn is lower than the flat-plane centre the orbit was built from.
+   * Aiming at the flat one leaves the chosen place below the middle of the frame - which is
+   * the one thing an orbit is asked for. Found reviewing #72.
+   */
+  it("aims below the flat-plane centre, by the drop over the range", () => {
+    const range = 40_000;
+    const eye = orbitEye(orbit(0, 0.5, range / Math.cos((0.5 * Math.PI) / 180)));
+    const flat = (Math.atan2(eye.heightMetres, range) * 180) / Math.PI;
+
+    expect(eye.depressionDegrees).toBeGreaterThan(flat);
+    expect(Math.tan((eye.depressionDegrees * Math.PI) / 180)).toBeCloseTo(
+      (eye.heightMetres + dropMetres(range)) / range,
+      6,
+    );
+    // 40 km of sea has fallen 109 m away, which is a quarter of a degree of aim.
+    expect(eye.depressionDegrees - flat).toBeGreaterThan(0.1);
+  });
+
+  /**
+   * The far end is not a taste: what is being watched sits at `distanceMetres` from the eye,
+   * so an orbit standing beyond the far plane draws nothing at all. The chart's scale menu
+   * runs to a thousand kilometres and the sea view opens at whatever the chart was showing.
+   */
+  it("clamps the range to the same ends the control clamps to", () => {
+    expect(clampRange(1_000_000)).toBe(ORBIT_RANGE.furthestMetres);
+    expect(clampRange(1)).toBe(ORBIT_RANGE.nearestMetres);
+    expect(clampRange(4_000)).toBe(4_000);
+
+    expect(ORBIT_RANGE.furthestMetres).toBeLessThan(WORLD_DRAWN_METRES);
+    const far = orbitEye(orbit(0, 45, 1_000_000));
+    const held = orbitEye(orbit(0, 45, ORBIT_RANGE.furthestMetres));
+    expect(far.at).toEqual(held.at);
+    expect(far.heightMetres).toBe(held.heightMetres);
+    expect(
+      Math.hypot(far.at.east - CENTRE.east, far.at.north - CENTRE.north, far.heightMetres),
+      "and what it watches is inside the far plane",
+    ).toBeLessThan(WORLD_DRAWN_METRES);
   });
 });
