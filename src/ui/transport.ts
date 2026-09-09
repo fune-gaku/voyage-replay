@@ -104,6 +104,7 @@ export interface TransportPlayback {
   lookAtPixels(dxPixels: number, dyPixels: number): LocalPosition;
   setView(view: ViewSelection): void;
   setSpeed(multiplier: number): void;
+  setExposureStops(stops: number): void;
   setScale(extentMetres: number | null): void;
   panByPixels(dxPixels: number, dyPixels: number): void;
   recentre(): void;
@@ -125,6 +126,9 @@ export interface TransportParts {
   scale: HTMLSelectElement;
   /** Hands the plan view back to following the ships after it has been dragged. */
   recentre: HTMLButtonElement;
+  /** Stops from the exposure the condition draws at, and the group that carries it. */
+  exposure: HTMLSelectElement;
+  exposureControl: HTMLElement;
   /**
    * The scale, which belongs to the chart alone, so it can leave the bar when the chart
    * does. **Recentre is not in it**: standing off a fixed place is exactly when a stated way
@@ -163,6 +167,7 @@ export function wireTransport(parts: TransportParts): Transport {
 
   wireViews(parts, viewpoint);
   wireSpeed(parts);
+  wireExposure(parts);
   wireScale(parts, viewpoint);
   wireDrag(parts, viewpoint);
   wirePlayPause(parts, paint, startFollowing);
@@ -243,8 +248,14 @@ function wireViews(parts: TransportParts, viewpoint: Viewpoint): void {
   add("Sea", { kind: "orbit", ...ORBIT_OPENING, centre: { east: 0, north: 0 }, distanceMetres: 0 });
   for (const id of parts.replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
 
-  buttons[0]?.button.setAttribute("aria-pressed", "true");
-  parts.canvas.style.cursor = "grab";
+  // **Entered rather than dressed by hand.** The bar's state at startup is the same question
+  // as its state after a press, and answering it twice is how a control ends up on screen in
+  // a view that has no use for it - which is what the exposure did.
+  const first = buttons[0];
+  if (first) {
+    first.button.setAttribute("aria-pressed", "true");
+    enter(parts, viewpoint, first.view);
+  }
 }
 
 /** Take up a viewpoint: tell the replay, and leave the bar carrying what that view can use. */
@@ -261,6 +272,7 @@ function enter(parts: TransportParts, viewpoint: Viewpoint, view: ViewSelection)
   }
 
   parts.chartControls.hidden = view.kind !== "chart";
+  parts.exposureControl.hidden = view.kind === "chart";
   // Recentre stays up in the sea view: standing off a fixed place is exactly when a stated
   // way back to the ships is wanted. Only a bridge has nothing to recentre.
   parts.recentre.hidden = view.kind === "bridge";
@@ -319,6 +331,25 @@ function rangeBy(parts: TransportParts, viewpoint: Viewpoint, factor: number): v
     distanceMetres: clampRange(viewpoint.orbit.distanceMetres * factor),
   };
   parts.replay.setView(orbitView(viewpoint.orbit));
+}
+
+/**
+ * How far off the exposure the condition draws at.
+ *
+ * **On the bar because a fixed exposure cannot hold a sunlit sea and the sun's own path at
+ * once.** The glitter's peak is about nineteen times a clear sky, so a frame facing the sun
+ * is a white sheet at any exposure that shows the water elsewhere (#71). What must not
+ * happen is a picture quietly circulating at a brightness the file did not ask for, so the
+ * canvas carries a caption of its own for as long as this is not zero - the requirement #56
+ * put on every control of this kind.
+ *
+ * **Not over a chart**, which is a drawing and has no exposure to move.
+ */
+function wireExposure({ replay, exposure }: TransportParts): void {
+  exposure.addEventListener("change", () => {
+    replay.setExposureStops(Number(exposure.value));
+  });
+  replay.setExposureStops(Number(exposure.value));
 }
 
 function wireSpeed({ replay, speed }: TransportParts): void {

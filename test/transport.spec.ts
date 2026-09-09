@@ -98,6 +98,7 @@ function wheel(deltaY: number): { deltaY: number; prevented: boolean; preventDef
 function playback(overrides: Partial<TransportPlayback> = {}): TransportPlayback & {
   seeks: number[];
   speeds: number[];
+  stops: number[];
   scales: (number | null)[];
   pans: [number, number][];
   recentres: number;
@@ -121,12 +122,14 @@ function playback(overrides: Partial<TransportPlayback> = {}): TransportPlayback
     actorIds: ["A", "B"],
     seeks: [] as number[],
     speeds: [] as number[],
+    stops: [] as number[],
     scales: [] as (number | null)[],
     pans: [] as [number, number][],
     recentres: 0,
     views: [] as ViewSelection[],
     setView: (view: ViewSelection) => state.views.push(view),
     setSpeed: (multiplier: number) => state.speeds.push(multiplier),
+    setExposureStops: (stops: number) => state.stops.push(stops),
     setScale: (extentMetres: number | null) => state.scales.push(extentMetres),
     panByPixels: (dx: number, dy: number) => state.pans.push([dx, dy]),
     recentre: () => {
@@ -178,6 +181,8 @@ function wire(replay = playback()): {
       | "speed"
       | "scale"
       | "recentre"
+      | "exposure"
+      | "exposureControl"
       | "chartControls"
       | "views",
       Fake
@@ -193,6 +198,8 @@ function wire(replay = playback()): {
     scrub: fake(),
     speed: fake("20"),
     scale: fake("auto", SCALES),
+    exposure: fake("0"),
+    exposureControl: fake(),
     views: fake(),
   };
   const parts = { replay, timeZone: "UTC", ...elements } as unknown as TransportParts;
@@ -704,6 +711,39 @@ describe("the sea view", () => {
     fire(sea, "click");
 
     expect(replay.views.at(-1)).toMatchObject({ distanceMetres: 10_000 });
+  });
+});
+
+/**
+ * **A fixed exposure cannot hold a sunlit sea and the sun's own path at once.** The glitter's
+ * peak is about nineteen times a clear sky, so a frame facing the sun is a white sheet at any
+ * exposure that shows the water elsewhere (#71). The reader may move it - and the picture
+ * says so for as long as it is moved, which is the requirement #56 puts on controls of this
+ * kind, because a build of this page is meant to travel.
+ */
+describe("the exposure", () => {
+  it("starts at the one the condition draws at", () => {
+    const { replay } = wire();
+    expect(replay.stops).toEqual([0]);
+  });
+
+  it("moves in stops when it is changed", () => {
+    const { replay, parts } = wire();
+    parts.exposure.value = "-3";
+    fire(parts.exposure, "change");
+    expect(replay.stops.at(-1)).toBe(-3);
+  });
+
+  /** A chart is a drawing. It has no exposure, so it is not offered one. */
+  it("leaves the bar over a chart and comes back in the world", () => {
+    const { parts } = wire();
+    const [chart, sea] = parts.views.appended;
+
+    expect(parts.exposureControl.hidden, "no exposure over a drawing").toBe(true);
+    fire(sea!, "click");
+    expect(parts.exposureControl.hidden).toBe(false);
+    fire(chart!, "click");
+    expect(parts.exposureControl.hidden).toBe(true);
   });
 });
 

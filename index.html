@@ -210,6 +210,26 @@
               <option value="1000000">Scale: 1000 km</option>
             </select>
           </span>
+          <!--
+            How far off the exposure this condition draws at. Present only where there IS an
+            exposure - a chart is a drawing and does not have one - and the picture carries a
+            caption of its own for as long as this is not zero.
+          -->
+          <label class="group" id="exposureControl">
+            <select
+              id="exposure"
+              title="Exposure, in photographic stops from the figure this light condition draws at. A frame taken away from it says so in its own corner."
+              aria-label="Exposure"
+            >
+              <option value="2">Exposure +2</option>
+              <option value="1">Exposure +1</option>
+              <option value="0" selected>Exposure: as drawn</option>
+              <option value="-1">Exposure -1</option>
+              <option value="-2">Exposure -2</option>
+              <option value="-3">Exposure -3</option>
+              <option value="-4">Exposure -4</option>
+            </select>
+          </label>
           <button
             id="recentre"
             title="Back to the ships: the chart follows them again, and the sea view is stood over them as they are now"

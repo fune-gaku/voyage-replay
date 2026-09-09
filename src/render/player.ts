@@ -190,6 +190,12 @@ interface Eye {
   depressionDegrees?: number;
 }
 
+/** What the corner of the frame says while the exposure is not the condition's own. */
+function stopsWord(stops: number): string {
+  const many = Math.abs(stops) === 1 ? "stop" : "stops";
+  return `Exposure ${stops > 0 ? "+" : "-"}${Math.abs(stops)} ${many} from this condition's own`;
+}
+
 /** Which way an eye that is not on a bridge looks. Level unless it was given a depression. */
 function facingOf(eye: Eye): { headingDegreesTrue: number; depressionDegrees: number } {
   return { headingDegreesTrue: eye.heading, depressionDegrees: eye.depressionDegrees ?? 0 };
@@ -281,6 +287,8 @@ export class Replay {
   private readonly overlay: Overlay;
   private readonly clock: Caption;
   private readonly credit: Caption;
+  /** Says what has been done TO the frame, which the other two never do. See `stops`. */
+  private readonly exposureNote: Caption;
   private readonly timeZone: string;
   /**
    * Whether the scene is the night, asked of `scene.ts` rather than of the scenario again.
@@ -323,6 +331,17 @@ export class Replay {
   /** Where it is actually looking, chosen or worked out. A drag starts from here. */
   private planCentre: LocalPosition = { east: 0, north: 0 };
   private currentSeconds: number;
+  /**
+   * How far the reader has moved the exposure from the one this condition draws at, in
+   * photographic stops - each one a doubling.
+   *
+   * **Zero is not a default that can be argued with; it is the condition's own figure.** A
+   * fixed exposure is what lets two frames of one scenario be compared, and it is also why
+   * a view that faces the sun is a white sheet: the glitter's peak is nineteen times a clear
+   * sky and no single mapping holds both (#71). So the reader may move it, and the picture
+   * carries a caption saying by how much for as long as it is moved.
+   */
+  private stops = 0;
   private playing = false;
   private speed = 20;
   private lastFrameMs: number | null = null;
@@ -337,6 +356,7 @@ export class Replay {
     this.overlay = buildOverlay();
     this.clock = this.overlay.caption("top-right", "figures");
     this.credit = this.overlay.caption("bottom-right", "text");
+    this.exposureNote = this.overlay.caption("top-left", "text");
     this.timeZone = scenario.meta.timeZone;
     this.night = isNight(scenario.environment?.lightCondition);
     this.stage = buildStage(scenario, this.tileArrivals());
@@ -413,6 +433,12 @@ export class Replay {
 
   setSpeed(multiplier: number): void {
     this.speed = multiplier;
+  }
+
+  /** Move the exposure off the one the condition draws at, in stops. Zero puts it back. */
+  setExposureStops(stops: number): void {
+    this.stops = stops;
+    this.update();
   }
 
   /**
@@ -579,9 +605,14 @@ export class Replay {
    * picture is drawn and nothing afterwards.
    */
   private expose(picture: Picture): void {
-    const exposure = this.stage.sceneParts.exposureFor(picture);
-    this.renderer.toneMapping = exposure === null ? NoToneMapping : NeutralToneMapping;
-    this.renderer.toneMappingExposure = exposure ?? 1;
+    const measured = this.stage.sceneParts.exposureFor(picture);
+    this.renderer.toneMapping = measured === null ? NoToneMapping : NeutralToneMapping;
+    this.renderer.toneMappingExposure = measured === null ? 1 : measured * 2 ** this.stops;
+    // **A frame taken at an exposure the condition did not choose says so, in the picture.**
+    // The recording is `canvas.captureStream()`, so anything outside it is not in the film -
+    // and this is exactly the kind of change that must not be able to travel without its
+    // caption. Issue #56's requirement, arriving through #71.
+    this.exposureNote.set(measured === null || this.stops === 0 ? "" : stopsWord(this.stops));
   }
 
   /** Place every ship at the current instant and draw one frame. */

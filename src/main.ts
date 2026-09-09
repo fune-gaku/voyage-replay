@@ -87,6 +87,8 @@ function wireControls(replay: Replay, meta: ScenarioMeta): void {
     speed: must("#speed", HTMLSelectElement),
     scale: must("#scale", HTMLSelectElement),
     recentre: must("#recentre", HTMLButtonElement),
+    exposure: must("#exposure", HTMLSelectElement),
+    exposureControl: must("#exposureControl", HTMLElement),
     chartControls: must("#chartControls", HTMLElement),
     views: must("#views", HTMLElement),
     timeZone: meta.timeZone,
