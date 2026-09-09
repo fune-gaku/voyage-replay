@@ -24,6 +24,9 @@ import {
   seawayOf,
   SPREADING_EXPONENT,
   surfaceAt,
+  displacementAt,
+  parameterUnder,
+  surfaceNormal,
   waveComponents,
   whitecapFraction,
   whitecapsFrom,
@@ -1180,5 +1183,134 @@ describe("how much of the sea is under whitecaps", () => {
   it("has no answer where the file states neither a wind nor a sea", () => {
     expect(whitecapsFrom(undefined)).toBeNull();
     expect(whitecapsFrom({ lightCondition: "day" })).toBeNull();
+  });
+});
+
+/**
+ * **A sum of sinusoids is symmetric and no gravity wave is.** Crests are sharp and troughs
+ * are long and flat, because the water moves horizontally as well as vertically and that
+ * motion bunches it at the crest. Issue #69.
+ */
+describe("the water carried sideways", () => {
+  /** One wave running due east, so everything is on one axis and readable. */
+  function eastward(amplitude: number, wavelength: number): ReturnType<typeof waveComponents> {
+    const k = (2 * Math.PI) / wavelength;
+    return [
+      {
+        amplitudeMetres: amplitude,
+        wavenumberPerMetre: k,
+        angularFrequencyPerSecond: Math.sqrt(9.80665 * k),
+        directionRadians: Math.PI / 2,
+        phaseRadians: 0,
+      },
+    ];
+  }
+
+  /**
+   * **The sign is checkable rather than a matter of taste.** Water has to converge ON a
+   * crest: the divergence of the displacement is negative there. Flip it and crests flatten
+   * while troughs deepen, which is a sea upside down and looks nearly as plausible.
+   */
+  it("carries the water towards a crest and not away from it", () => {
+    const wave = eastward(1, 100);
+    // The crest of `a sin(kx)` is at a quarter wavelength.
+    const crest = 25;
+    const step = 1;
+    const behind = displacementAt(wave, { eastMetres: crest - step, northMetres: 0 }, 0);
+    const beyond = displacementAt(wave, { eastMetres: crest + step, northMetres: 0 }, 0);
+
+    expect(behind.eastMetres, "water behind the crest moves towards it").toBeGreaterThan(0);
+    expect(beyond.eastMetres, "water beyond it moves back towards it").toBeLessThan(0);
+  });
+
+  it("carries it along the wave's own direction and not across it", () => {
+    const carried = displacementAt(eastward(1, 100), { eastMetres: 0, northMetres: 0 }, 0);
+    expect(carried.northMetres).toBeCloseTo(0, 9);
+    expect(Math.abs(carried.eastMetres)).toBeGreaterThan(0.5);
+  });
+
+  /**
+   * The surface folds over itself once the summed steepness passes one, which is why nothing
+   * here is scaled down by a chosen factor. Measured over this project's own components it is
+   * 0.86 whatever the significant height, the seas being self-similar.
+   */
+  it("stays under the steepness at which the surface would fold over", () => {
+    for (const hs of [1, 3, 6]) {
+      const summed = waveComponents(seawayOf(hs)).reduce(
+        (total, w) => total + w.amplitudeMetres * w.wavenumberPerMetre,
+        0,
+      );
+      expect(summed, `${hs} m`).toBeLessThan(1);
+      expect(summed, `${hs} m`).toBeGreaterThan(0.5);
+    }
+  });
+
+  /**
+   * Anything floating needs the parameter that ENDS UP under it, or it rides water up to a
+   * metre from where it sits - #34 and #36 a third time.
+   */
+  it("finds the water that ends up under a place", () => {
+    const wave = eastward(1, 100);
+    const here = { eastMetres: 12, northMetres: 0 };
+    const parameter = parameterUnder(wave, here, 0, 1);
+    const carried = displacementAt(wave, parameter, 0);
+
+    expect(parameter.eastMetres + carried.eastMetres, "lands where it was asked").toBeCloseTo(
+      here.eastMetres,
+      3,
+    );
+    expect(parameter.eastMetres, "and is not simply the place itself").not.toBeCloseTo(12, 2);
+  });
+
+  it("leaves the parameter alone where the picture drew no displacement", () => {
+    const here = { eastMetres: 12, northMetres: -7 };
+    expect(parameterUnder(eastward(1, 100), here, 0, 0)).toEqual(here);
+  });
+});
+
+/**
+ * **The height gradient stops being the normal the moment the water moves sideways.** The
+ * surface is parametric, so its normal is the cross product of two tangents - and keeping the
+ * old expression leaves shading plainly wrong at a sharp crest, which is the one place the
+ * displacement exists to improve.
+ */
+describe("the normal of a surface that moves sideways", () => {
+  const NONE = { eastEast: 0, eastNorth: 0, northNorth: 0 };
+
+  it("is the height field's own normal where nothing is carried sideways", () => {
+    const slope = { east: 0.3, north: -0.2 };
+    const normal = surfaceNormal(slope, NONE);
+    const length = Math.hypot(-slope.east, 1, -slope.north);
+
+    expect(normal.east).toBeCloseTo(-slope.east / length, 12);
+    expect(normal.up).toBeCloseTo(1 / length, 12);
+    expect(normal.north).toBeCloseTo(-slope.north / length, 12);
+  });
+
+  it("points up on flat water", () => {
+    expect(surfaceNormal({ east: 0, north: 0 }, NONE)).toEqual({ east: 0, up: 1, north: 0 });
+  });
+
+  it("keeps pointing up, whatever is carried where", () => {
+    const normal = surfaceNormal(
+      { east: 0.4, north: 0.25 },
+      { eastEast: -0.6, eastNorth: 0.2, northNorth: -0.3 },
+    );
+    expect(normal.up).toBeGreaterThan(0);
+    expect(Math.hypot(normal.east, normal.up, normal.north)).toBeCloseTo(1, 12);
+  });
+
+  /**
+   * Where the water converges - the crest - the surface is steeper than the height gradient
+   * alone says, because the same rise is packed into less ground. That steepening IS the
+   * sharpened crest, and a normal that ignored it would shade a crest as though it were the
+   * rounded one the sinusoids describe.
+   */
+  it("leans further over where the water is bunched up", () => {
+    const slope = { east: 0.3, north: 0 };
+    const gentle = surfaceNormal(slope, NONE);
+    const bunched = surfaceNormal(slope, { eastEast: -0.5, eastNorth: 0, northNorth: 0 });
+
+    expect(Math.abs(bunched.east)).toBeGreaterThan(Math.abs(gentle.east));
   });
 });

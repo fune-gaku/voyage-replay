@@ -31,6 +31,7 @@ import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
   whitecapsFrom,
+  parameterUnder,
   surfaceAt,
   waveComponents,
   type Riding,
@@ -644,15 +645,21 @@ function drawnSurface(
   const eye = parts.curvature.uEye.value;
   const away = Math.hypot(position.east - eye.x, -position.north - eye.z);
   const fade = parts.waves.uWaveScale.value * displacedFraction(away);
+  const drawn = asDrawn(parts.sea, away);
+  // **Which water ends up here, not which water started here.** The surface is carried
+  // sideways as well as up (#69), so the parameter the waves are a function of is no longer
+  // the position the water arrives at - and a buoy asked for the height at its own position
+  // would be given the height of water up to a metre away. That is #34 and #36 a third time.
+  const parameter = parameterUnder(
+    drawn,
+    { eastMetres: position.east, northMetres: position.north },
+    secondsFromStart,
+    fade,
+  );
   // The body's answer goes inside the sum, where each component still has its own frequency;
   // the fade goes outside it, because that is about the water being drawn flat at range and
   // not about anything floating on it.
-  const point = surfaceAt(
-    asDrawn(parts.sea, away),
-    { eastMetres: position.east, northMetres: position.north },
-    secondsFromStart,
-    riding,
-  );
+  const point = surfaceAt(drawn, parameter, secondsFromStart, riding);
   return {
     heightMetres: point.heightMetres * fade,
     slopeEast: point.slopeEast * fade,

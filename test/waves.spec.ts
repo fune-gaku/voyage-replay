@@ -353,7 +353,8 @@ describe("dropping each component where its own wavelength runs out", () => {
 
     for (const stage of [shader.vertexShader, shader.fragmentShader]) {
       // The component's own wavelength, and the amplitude multiplied by what it earns.
-      expect(stage).toMatch(/float wavelength = 6\.2831853 \/ length\( w\.xy \);/);
+      expect(stage).toMatch(/float length2 = length\( w\.xy \);/);
+      expect(stage).toMatch(/float wavelength = 6\.2831853 \/ length2;/);
       expect(stage).toMatch(/float carries = smoothstep\(/);
       expect(stage).toMatch(/carries \* w\./);
     }
