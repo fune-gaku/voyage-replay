@@ -740,6 +740,9 @@ ${LAMPS_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
 float gSlopeSquared = 0.0;
+// The same variance as gCarriedSlope without the ripples, which is the surface the foam's
+// level was fitted to. See where it is taken.
+float gBreakingSlope = 0.0;
 uniform vec3 uFoam;
 ${RIPPLE_GLSL}
 ${FOAM_GLSL}
@@ -889,6 +892,15 @@ const NORMALS = `
   // is what #37 already puts into the reflected body's lobe; the four octaves this can hold
   // take their share of it here and hand it straight back, so the total is unchanged.
   gCarriedSlope *= fade * fade;
+  // **And the variance the foam is judged against, taken here for the same reason.**
+  // rippleSlope hands its own variance back into gCarriedSlope - which is right for the
+  // reflection, where the question is how much roughness the surface is now drawing - but a
+  // whitecap is a gravity wave breaking. Judging the gravity slope above against a variance
+  // the ripples had raised compares two different surfaces: near to, where the missing
+  // roughness is largest, the ripples carry several times the gravity variance and the
+  // level rises with the square root of that, so the foam Monahan's coverage was fitted to
+  // vanishes from the foreground while the horizon keeps it. Found reviewing #75.
+  gBreakingSlope = gCarriedSlope;
   slope += rippleSlope( vWaveParam, max( uSeaSlope - gCarriedSlope, 0.0 ), away, uPixelAngle );
   // The two tangents, then their cross product - z crossed with x, in that order, so the
   // normal comes out upwards. With no sideways carry it is exactly ( -slope.x, 1, -slope.y ),
@@ -957,12 +969,12 @@ const REFLECTION = `
   // **The union over a whitecap's life**, which is what its coverage was fitted against:
   // the strongest claim any instant makes, faded by how long ago it made it. Taken as a
   // maximum, because two breakings of one piece of water are one patch of foam.
-  float breaking = foamAt( gSlopeSquared, gCarriedSlope, uFoam.y );
+  float breaking = foamAt( gSlopeSquared, gBreakingSlope, uFoam.y );
   for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
     float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
     vec2 was = steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle );
     float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
-    breaking = max( breaking, foamAt( dot( was, was ), gCarriedSlope, uFoam.y ) * left );
+    breaking = max( breaking, foamAt( dot( was, was ), gBreakingSlope, uFoam.y ) * left );
   }
   float foam = uWaveScale * mix( uFoam.x, breaking, resolved );
   // **The same light, off a surface of the foam's own albedo**, which is what dividing the

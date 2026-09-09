@@ -670,6 +670,33 @@ describe("how much of the sea comes out foam", () => {
  * centimetre ripples at one to eleven. Issue #70.
  */
 describe("the texture below the drawn band", () => {
+  /**
+   * **A whitecap is a gravity wave breaking, so the level it is judged against has to be the
+   * gravity waves'.** `rippleSlope` hands its own variance back into `gCarriedSlope`, which
+   * is right for the reflection - the question there is how much roughness the surface is
+   * drawing now - and wrong for the foam, whose level `foamThreshold` fitted to the
+   * spectrum's own components. Near to, where the missing roughness is largest, the ripples
+   * carry several times the gravity variance and the level rises with its square root, so
+   * the foam vanishes from the foreground while the horizon keeps the flat fraction: one sea
+   * with two sea states in it, by range. Found reviewing #75; the numerator was already
+   * being taken before the ripples for exactly this reason, and only half the pair was.
+   */
+  it("judges a whitecap against the waves it breaks from, not the texture over them", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    const taken = shader.fragmentShader.indexOf("gBreakingSlope = gCarriedSlope");
+    const ripples = shader.fragmentShader.indexOf("slope += rippleSlope(");
+    expect(taken, "the variance is taken").toBeGreaterThan(0);
+    expect(taken, "before the ripples are added to it").toBeLessThan(ripples);
+
+    expect(shader.fragmentShader).toContain("foamAt( gSlopeSquared, gBreakingSlope, uFoam.y )");
+    expect(shader.fragmentShader).not.toContain("foamAt( gSlopeSquared, gCarriedSlope");
+    // And the whitecap's own history is judged against the same surface as the instant.
+    expect(shader.fragmentShader).not.toContain("dot( was, was ), gCarriedSlope");
+  });
+
   it("starts where the spectrum's shortest wave ends", () => {
     const components = waveComponents(seawayOf(2));
     const lengths = components.map((c) => (2 * Math.PI) / c.wavenumberPerMetre);
