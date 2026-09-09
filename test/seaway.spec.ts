@@ -305,6 +305,71 @@ describe("a sea broken into sinusoids, for something that has to draw it", () =>
     }
   });
 
+  /**
+   * **The band has to be populated, not merely declared.** Placing components by energy
+   * alone put ONE below a wavelength of 23 m on a 3 m sea - the tail holds half the slope
+   * and almost none of the height, so equal shares of the energy never go there - and one
+   * sinusoid of one wavelength travelling in one direction is not chop, it is corrugated
+   * iron. That is what the picture showed from a low viewpoint. Issue #50.
+   */
+  it("puts components in every octave of the band, not only where the energy is", () => {
+    const lengths = waveComponents(seawayOf(3)).map((c) => (2 * Math.PI) / c.wavenumberPerMetre);
+    const octaves = [
+      [1.7, 4],
+      [4, 8],
+      [8, 16],
+      [16, 32],
+      [32, 64],
+    ];
+    for (const [from, to] of octaves) {
+      const inside = lengths.filter((l) => l >= (from ?? 0) && l < (to ?? 0));
+      expect(inside.length, `${from}-${to} m`).toBeGreaterThanOrEqual(2);
+    }
+    expect(Math.min(...lengths), "and it reaches the bottom of the band").toBeLessThan(3);
+  });
+
+  /**
+   * **The strongest check there is on where the components sit**, because the two sides are
+   * computed by different routes: the drawn slope is summed over the components, and the
+   * band's is a ratio of spectral moments integrated over the same range. Equal-energy
+   * placement fell ten per cent short of it at Hs 3 and overshot at Hs 2 - one frequency
+   * standing for a bin over which `k^2` varies by a large factor is a poor estimator, in
+   * whichever direction the sample happens to land.
+   */
+  it("draws a sea whose slope is the band's, not one flattened by where the samples fell", () => {
+    for (const hs of [1, 2, 3, 6]) {
+      const seaway = seawayOf(hs);
+      const drawn = Math.sqrt(
+        waveComponents(seaway).reduce(
+          (total, c) => total + (c.amplitudeMetres * c.wavenumberPerMetre) ** 2 / 2,
+          0,
+        ),
+      );
+      const band = seaway.rmsWavenumberPerMetre * seaway.surfaceStdDevMetres;
+      expect(drawn / band, `${hs} m`).toBeGreaterThan(0.95);
+      expect(drawn / band, `${hs} m`).toBeLessThan(1.05);
+    }
+  });
+
+  /**
+   * **Both ends of the same rule.** No component may be so small that it costs a sine per
+   * vertex and draws nothing - the lowest bin used to produce one on every sea, sampled
+   * uniformly inside a range starting where a JONSWAP spectrum holds nothing at all - and
+   * none may be so large that it beats audibly against its neighbour, which is what spacing
+   * components geometrically across the band does.
+   */
+  it("wastes no component at one end and lets none dominate at the other", () => {
+    for (const hs of [1, 3, 6]) {
+      const seaway = seawayOf(hs);
+      const components = waveComponents(seaway);
+      const shares = components.map(
+        (c) => c.amplitudeMetres ** 2 / 2 / seaway.surfaceStdDevMetres ** 2,
+      );
+      expect(Math.min(...shares), `${hs} m`).toBeGreaterThan(0);
+      expect(Math.max(...shares), `${hs} m`).toBeLessThan(0.1);
+    }
+  });
+
   it("obeys the deep-water relation, so each component's speed follows its length", () => {
     for (const component of waveComponents(seawayOf(3))) {
       const gravity = component.angularFrequencyPerSecond ** 2 / component.wavenumberPerMetre;

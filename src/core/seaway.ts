@@ -67,10 +67,12 @@ const PEAK_ENHANCEMENT = 3.3;
  * the waves stop being drawable rather than where the slope comes right - and what is missing
  * is named on the page instead of being quietly integrated for.
  *
- * **The DRAWN slope is lower again**, 5.4 degrees against the band's 6.0: equal-energy bins
- * carry each bin's height variance exactly and its slope variance only approximately, since
- * one frequency has to stand for a bin over which `k^2` varies. More components narrow that;
- * nothing removes it.
+ * **The DRAWN slope used to be lower again** - 5.4 degrees against the band's 6.0 - because
+ * equal-energy bins carry each bin's height variance exactly and its slope variance only
+ * approximately: one frequency has to stand for a bin over which `k^2` varies, and the widest
+ * bin was the whole tail. Placing the components by slope as well as by energy closes it:
+ * 6.0 degrees drawn against 5.95 in the band, on the same sea. See
+ * `SLOPE_SHARE_OF_COMPONENTS` and issue #50.
  *
  * Frequency moments do not diverge, so the zero-crossing period is not affected.
  */
@@ -792,76 +794,146 @@ export function waveComponents(
     Array.from({ length: DRAWN_COMPONENTS }, (_, i) => spreadAngle((i + 0.5) / DRAWN_COMPONENTS)),
     random,
   );
-  const drawn = frequencyBins(peak).map((bin, index) => ({
-    ...bin,
+  const curve = placementCurve(peak);
+  const drawn = Array.from({ length: DRAWN_COMPONENTS }, (_, index) => ({
+    // Stratified: one sample in each equal share of the placement measure, taken at random
+    // WITHIN its share. Even shares would put the frequencies on a grid, which is the loop
+    // above; one sample per share is what keeps them spread over the whole band anyway.
+    ...frequencyAt(curve, (index + random()) / DRAWN_COMPONENTS),
     directionRadians: travelling + (angles[index] ?? 0),
     phaseRadians: random() * 2 * Math.PI,
-    sampled: bin.from + (bin.to - bin.from) * random(),
   }));
 
   return normalised(drawn, seaway.surfaceStdDevMetres, peak);
 }
 
 /**
- * Bins of EQUAL ENERGY, not of equal width.
+ * **How much of the component budget is spent resolving the sea's SLOPE rather than its
+ * height**, and why a picture needs both.
  *
- * The obvious version spaces them geometrically across the band and is badly wrong: the
- * band runs from a sixth of the peak frequency to nearly three times it, almost all of the
- * variance sits within a factor of two of the peak, and evenly spread components spend most
- * of themselves on frequencies that carry nothing. Measured on a 3 m sea, that left four
- * components holding 79 per cent of the variance and the first four holding none at all -
- * a sea that is four sine waves, whose two largest beat against each other on a 258-second
+ * Placing components by energy alone is the standard way to sample a spectrum and it is
+ * right about the water's shape: the alternative - spacing them geometrically across the
+ * band - leaves four components holding 79 per cent of the variance and the first four
+ * holding none at all, a sea of four sine waves whose two largest beat on a 258-second
  * cycle. It reads as a pulse, which no sea has.
  *
- * Cutting the spectrum into equal shares instead puts every component where there is
- * something to carry, so they come out at much the same amplitude and the sum reads as a
- * continuum. It is also the standard way to sample a spectrum, for this reason.
+ * **It is wrong about the water's texture, and by an order of magnitude.** Energy is where
+ * the swell is; slope is where the chop is, and slope density `k^2 S` falls as `1/omega`,
+ * so every octave of the tail carries the same slope and none of them carry any energy.
+ * Placing by energy alone therefore puts ONE component below a wavelength of 23 m on a 3 m
+ * sea - carrying half the slope by itself - and one sinusoid of one wavelength travelling
+ * in one direction is not chop, it is corrugated iron. That is what the picture showed.
+ * Issue #50.
+ *
+ * So the components are placed by a blend of the two, each normalised to unit total first
+ * so the fraction means what it says. A half is not a tuning: it is the statement that the
+ * two jobs are worth the same, the shape of the swell and the texture on it. Measured on
+ * the 3 m reference sea it puts about four components in each octave from 1.7 m up while
+ * leaving nineteen around the peak, and no component holds more than five per cent of the
+ * variance - well clear of the beating the equal-energy split was introduced to stop.
  */
-function frequencyBins(peak: number): { from: number; to: number }[] {
+export const SLOPE_SHARE_OF_COMPONENTS = 0.5;
+
+/** How finely the placement measure is tabulated before it is inverted. */
+const PLACEMENT_STEPS = 4000;
+
+/**
+ * The curve the components are placed along: what measure to spread them by, tabulated.
+ *
+ * `density` is the blend, `cumulative` its integral from the bottom of the band. The
+ * frequencies are stepped geometrically for the reason `moment` gives - the band spans two
+ * decades and the peak is a few per cent of it wide.
+ */
+interface Placement {
+  frequencies: number[];
+  density: number[];
+  cumulative: number[];
+}
+
+function placementCurve(peak: number): Placement {
+  const frequencies = bandFrequencies(peak);
+  const heights = frequencies.map((w) => density(w, peak));
+  // k = w^2/g in deep water, so a slope density is the height density times w^4/g^2.
+  const slopes = frequencies.map(
+    (w, i) => ((heights[i] ?? 0) * w ** 4) / GRAVITY_METRES_PER_SECOND_SQUARED ** 2,
+  );
+
+  const height = unitTotal(frequencies, heights);
+  const slope = unitTotal(frequencies, slopes);
+  const blend = height.map(
+    (share, i) =>
+      (1 - SLOPE_SHARE_OF_COMPONENTS) * share + SLOPE_SHARE_OF_COMPONENTS * (slope[i] ?? 0),
+  );
+  return { frequencies, density: blend, cumulative: runningIntegral(frequencies, blend) };
+}
+
+/** The band, stepped geometrically. The same one the truncated moments are taken over. */
+function bandFrequencies(peak: number): number[] {
   const lowest = peak / 6;
-  const highest = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
-  const steps = 4000;
-  const ratio = (highest / lowest) ** (1 / steps);
+  // From peak/6 to peak/cutoff, so the span is 6/cutoff - fifty, on this cutoff.
+  const ratio = (6 / TAIL_CUTOFF_FRACTION_OF_PEAK) ** (1 / PLACEMENT_STEPS);
+  return Array.from({ length: PLACEMENT_STEPS + 1 }, (_, i) => lowest * ratio ** i);
+}
 
-  const cumulative: { w: number; energy: number }[] = [{ w: lowest, energy: 0 }];
-  let running = 0;
-  let w = lowest;
-  for (let i = 0; i < steps; i += 1) {
-    const next = w * ratio;
-    running += density(w, peak) * (next - w);
-    cumulative.push({ w: next, energy: running });
-    w = next;
+/** The same densities, scaled so that each integrates to one over the band. */
+function unitTotal(frequencies: number[], values: number[]): number[] {
+  const total = runningIntegral(frequencies, values).at(-1) ?? 0;
+  return values.map((value) => value / total);
+}
+
+function runningIntegral(frequencies: number[], values: number[]): number[] {
+  const out = [0];
+  for (let i = 0; i < frequencies.length - 1; i += 1) {
+    out.push(
+      (out[i] ?? 0) + (values[i] ?? 0) * ((frequencies[i + 1] ?? 0) - (frequencies[i] ?? 0)),
+    );
   }
+  return out;
+}
 
-  const share = running / DRAWN_COMPONENTS;
-  const edges = [lowest];
+/**
+ * The frequency at a given fraction of the placement measure, and how dense the measure is
+ * there.
+ *
+ * **Both, from one search.** The density at the sampled point is what turns the sample back
+ * into an amplitude: a component stands for however much of the SPECTRUM its share of the
+ * PLACEMENT covers, which is `S(w) / placement(w)`. Looking it up separately would be a
+ * second answer to the same question.
+ *
+ * The comparison is strictly greater rather than "or equal", which is what keeps the density
+ * off zero: the bottom of a JONSWAP band underflows to nothing outright - `exp(-1620)` - so a
+ * search that could stop on the first step would divide by it.
+ */
+function frequencyAt(curve: Placement, fraction: number): { sampled: number; placed: number } {
+  const target = (curve.cumulative.at(-1) ?? 0) * fraction;
   let at = 0;
-  for (let i = 1; i <= DRAWN_COMPONENTS; i += 1) {
-    while (at < cumulative.length - 1 && (cumulative[at]?.energy ?? 0) < share * i) at += 1;
-    edges.push(cumulative[at]?.w ?? highest);
-  }
-  return Array.from({ length: DRAWN_COMPONENTS }, (_, i) => ({
-    from: edges[i] ?? lowest,
-    to: edges[i + 1] ?? highest,
-  }));
+  while (at < curve.cumulative.length - 1 && (curve.cumulative[at] ?? 0) <= target) at += 1;
+  return { sampled: curve.frequencies[at] ?? 0, placed: curve.density[at - 1] ?? 0 };
 }
 
 interface Drawn {
-  from: number;
-  to: number;
   sampled: number;
+  placed: number;
   directionRadians: number;
   phaseRadians: number;
 }
 
 /**
  * Amplitudes from the spectrum, then scaled so the whole sum has the variance the
- * significant height demands. The scaling is what keeps a truncated band honest: the
- * components left out carried some variance, and without it the drawn sea would be flatter
- * than the sea the panels are reasoning about.
+ * significant height demands.
+ *
+ * **`S / placement` is the whole of what makes the blend safe.** A component's share of the
+ * variance has to be what the spectrum says it is, whatever measure decided where to put it;
+ * weighting by the spectrum alone would hand the tail's components the peak's amplitudes and
+ * draw a sea several times too steep. Written this way the height variance is exactly right
+ * for any blend, and the placement only decides how finely each part of the band is resolved.
+ *
+ * The scaling to sigma is what keeps a truncated band honest besides: the components left
+ * out carried some variance, and without it the drawn sea would be flatter than the sea the
+ * panels are reasoning about.
  */
 function normalised(drawn: Drawn[], sigma: number, peak: number): WaveComponent[] {
-  const energies = drawn.map((c) => density(c.sampled, peak) * (c.to - c.from));
+  const energies = drawn.map((c) => density(c.sampled, peak) / c.placed);
   const total = energies.reduce((sum, e) => sum + e, 0);
   return drawn.map((c, i) => {
     const share = (energies[i] ?? 0) / total;
