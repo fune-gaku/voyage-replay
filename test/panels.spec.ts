@@ -1317,7 +1317,8 @@ describe("the band the sea is drawn from", () => {
 
   /**
    * **The row is the components the renderer draws, not the band they were cut from.** Each
-   * is sampled from inside its own equal-energy bin, so the bins' ends are not the sea's:
+   * is sampled from inside its own bin of the placement measure, so the bins' ends are not
+   * the sea's:
    * the lowest reaches a sixth of the peak frequency, which is four kilometres of wavelength
    * on a 3 m sea. Printing an edge would be the page describing a wave the picture has not
    * got - the failure this project keeps meeting, in its smallest form.

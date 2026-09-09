@@ -1080,7 +1080,8 @@ function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number 
  * water: it decides how steep the surface is and how often it crosses a sight line.
  *
  * **Measured off the components themselves rather than off the band's edges.** Each is
- * sampled from somewhere inside its own equal-energy bin, so the band's ends are not the
+ * sampled from somewhere inside its own bin of the placement measure - half energy, half
+ * slope density, see `SLOPE_SHARE_OF_COMPONENTS` - so the band's ends are not the
  * drawn sea's ends: the bins reach from a sixth of the peak frequency to eight times it,
  * while the waves that come out of them for a 3 m sea run from 1.9 m to 174 m. Printing the
  * edge would be the page describing a sea the picture does not have.

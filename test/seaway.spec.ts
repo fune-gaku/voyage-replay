@@ -26,6 +26,7 @@ import {
   surfaceAt,
   displacementAt,
   parameterUnder,
+  type WaveComponent,
   surfaceNormal,
   waveComponents,
   whitecapFraction,
@@ -1262,6 +1263,48 @@ describe("the water carried sideways", () => {
     expect(parameter.eastMetres, "and is not simply the place itself").not.toBeCloseTo(12, 2);
   });
 
+  /**
+   * **On the sea that is drawn, not on one wave.** The test above uses a single component of
+   * `ak` 0.063, where the iteration converges at once; the drawn sea is forty components
+   * summing to 0.86, and the bound alone would allow three folds to leave most of the error.
+   * What it actually leaves is measured here, at the sea states this tool has to draw, and it
+   * is the height under a floating mark that matters rather than the residual itself. Found
+   * reviewing #73.
+   */
+  it("closes on the water that arrives, over the whole drawn sea", () => {
+    for (const significantHeightMetres of [1, 3, 6, 9, 14]) {
+      const components = waveComponents(seawayOf(significantHeightMetres));
+      let worstResidual = 0;
+      let worstHeight = 0;
+
+      for (let east = 0; east < 20; east += 1) {
+        for (let north = 0; north < 20; north += 1) {
+          const at = { eastMetres: east * 3.3, northMetres: north * 2.9 };
+          const seconds = 3.7 + ((east * 20 + north) % 7) * 1.3;
+          const found = parameterUnder(components, at, seconds, 1);
+          const carried = displacementAt(components, found, seconds);
+          worstResidual = Math.max(
+            worstResidual,
+            Math.hypot(
+              found.eastMetres + carried.eastMetres - at.eastMetres,
+              found.northMetres + carried.northMetres - at.northMetres,
+            ),
+          );
+          worstHeight = Math.max(
+            worstHeight,
+            Math.abs(
+              surfaceAt(components, found, seconds).heightMetres -
+                surfaceAt(components, settled(components, at, seconds), seconds).heightMetres,
+            ),
+          );
+        }
+      }
+
+      expect(worstResidual, `${significantHeightMetres} m`).toBeLessThan(0.06);
+      expect(worstHeight, `${significantHeightMetres} m`).toBeLessThan(0.01);
+    }
+  });
+
   it("leaves the parameter alone where the picture drew no displacement", () => {
     const here = { eastMetres: 12, northMetres: -7 };
     expect(parameterUnder(eastward(1, 100), here, 0, 0)).toEqual(here);
@@ -1314,3 +1357,20 @@ describe("the normal of a surface that moves sideways", () => {
     expect(Math.abs(bunched.east)).toBeGreaterThan(Math.abs(gentle.east));
   });
 });
+
+/** The fixed point run until it stops moving, which is what three folds are measured against. */
+function settled(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+): { eastMetres: number; northMetres: number } {
+  let point = at;
+  for (let step = 0; step < 200; step += 1) {
+    const carried = displacementAt(components, point, secondsFromStart);
+    point = {
+      eastMetres: at.eastMetres - carried.eastMetres,
+      northMetres: at.northMetres - carried.northMetres,
+    };
+  }
+  return point;
+}
