@@ -30,6 +30,7 @@ import { lightingAt, measuredSlopeVariance, type Lit } from "../core/illuminatio
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
+  whitecapsFrom,
   surfaceAt,
   waveComponents,
   type Riding,
@@ -50,6 +51,7 @@ import {
   applyWaves,
   displacedFraction,
   drawable,
+  foamThreshold,
   makeWaveUniforms,
   meshCarries,
   setWaves,
@@ -209,6 +211,7 @@ const NIGHT = {
   water: 0x0a121d,
   land: 0x03050a,
   ambient: 0.28,
+  foam: 0.05,
   bodyLobe: 1,
   streak: 1,
   lampPool: 0.03,
@@ -220,6 +223,7 @@ const DAY = {
   water: 0x1d4360,
   land: 0x6b7a5e,
   ambient: 0.55,
+  foam: 0.88,
   bodyLobe: 0.6,
   streak: 1,
   lampPool: 0.03,
@@ -257,6 +261,13 @@ const DAY = {
  *
  * A full moon still clips at its very centre, which is what a full moon's glitter does to an
  * eye and to a camera. What must not happen is the clipping spreading over the water.
+ *
+ * **`foam` is the newest of them and the least defensible, which is why it is written down.**
+ * A whitecap's luminance is Koepke's albedo times the light falling on it, and there is no
+ * irradiance here to multiply: the two lights were set against a hand-picked water colour and
+ * the sky is a screen value. Computed from them as they stand, foam comes out four times
+ * darker than the sea and draws as dark streaks along the crests. So the amount of foam is
+ * measured, where it lands is chosen, and how bright it is is declared - and the page says so.
  */
 
 /**
@@ -403,6 +414,11 @@ function addWater(
   applyWaves(material, waves);
   const components = drawnSea(sea);
   setWaves(waves, components);
+  // **How much foam, from the wind - and only that.** Where it lands is `render/waves.ts`'s
+  // choice; the amount is Monahan's measured relation, and a sea nothing states gets none
+  // rather than a guess. The rough end, so it matches the sea the same water is drawn at.
+  const foam = whitecapsFrom(environment)?.mostFraction ?? 0;
+  waves.uFoam.value.set(foam, foamThreshold(components, foam), palette.foam);
 
   // The sky goes in with the water because it IS the same sky: one set of uniforms, so the
   // two cannot come to describe different ones - which would show first at the waterline,

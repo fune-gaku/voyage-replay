@@ -25,6 +25,8 @@ import {
   SPREADING_EXPONENT,
   surfaceAt,
   waveComponents,
+  whitecapFraction,
+  whitecapsFrom,
 } from "../src/core/seaway.js";
 
 /**
@@ -1119,5 +1121,64 @@ describe("the wind's bounds, held to the schema's like the sea's", () => {
     for (const value of Object.values(estimate?.rough ?? {})) {
       expect(Number.isFinite(value)).toBe(true);
     }
+  });
+});
+
+/**
+ * Monahan and O'Muircheartaigh (1980), the fit ocean-colour work still uses. Held against
+ * published counts at the winds this project meets rather than against a second writing of
+ * the same power law, which would agree with the implementation however wrong it was.
+ */
+describe("how much of the sea is under whitecaps", () => {
+  it("follows the measured relation, which is a steep power of the wind", () => {
+    const at = (knots: number): number => whitecapFraction(knots * 0.514444);
+
+    expect(at(10) * 100).toBeCloseTo(0.1, 1);
+    expect(at(18) * 100).toBeCloseTo(0.76, 1);
+    expect(at(25) * 100).toBeCloseTo(2.33, 1);
+    expect(at(34) * 100).toBeCloseTo(6.64, 1);
+  });
+
+  it("gives a calm none, and never more sea than there is", () => {
+    expect(whitecapFraction(0)).toBe(0);
+    expect(whitecapFraction(-5)).toBe(0);
+    expect(whitecapFraction(500)).toBe(1);
+  });
+
+  it("takes a stated speed as one figure", () => {
+    const foam = whitecapsFrom({ wind: { speedKnots: 18, derivation: "measured" } });
+    expect(foam?.from).toBe("speed");
+    expect(foam?.leastFraction).toBe(foam?.mostFraction);
+    expect((foam?.mostFraction ?? 0) * 100).toBeCloseTo(0.76, 1);
+  });
+
+  /** A force is a class, so the coverage is a range - and force 12 has no top. */
+  it("takes a stated force as the class it is", () => {
+    const foam = whitecapsFrom({ wind: { beaufortForce: 7, derivation: "measured" } });
+    expect(foam?.from).toBe("force");
+    expect(foam?.leastFraction).toBeLessThan(foam?.mostFraction ?? 0);
+    expect(foam?.mostIsOpen).toBe(false);
+
+    expect(whitecapsFrom({ wind: { beaufortForce: 12, derivation: "measured" } })?.mostIsOpen).toBe(
+      true,
+    );
+  });
+
+  /**
+   * A report states a sea far more often than it states a wind, and the wind that would have
+   * raised it is already what the glitter path's width is taken from. It is derived, and the
+   * page has to say so rather than reporting a wind nobody wrote down.
+   */
+  it("falls back to the wind that would have raised the sea, and says that is what it did", () => {
+    const foam = whitecapsFrom({
+      waves: { significantHeightMetres: 3, derivation: "inferred" },
+    });
+    expect(foam?.from).toBe("sea");
+    expect((foam?.mostFraction ?? 0) * 100).toBeGreaterThan(1);
+  });
+
+  it("has no answer where the file states neither a wind nor a sea", () => {
+    expect(whitecapsFrom(undefined)).toBeNull();
+    expect(whitecapsFrom({ lightCondition: "day" })).toBeNull();
   });
 });

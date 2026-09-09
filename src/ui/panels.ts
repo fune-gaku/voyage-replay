@@ -33,7 +33,7 @@ import { lightingAt } from "../core/illumination.js";
 import { lightsForVessel } from "../actors/vessel/lights.js";
 import { SHADER_LAMPS } from "../render/lamps.js";
 import { isNight } from "../render/scene.js";
-import { drawable } from "../render/waves.js";
+import { drawable, FOAM_REFLECTANCE } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   coxMunkSlopeVariance,
@@ -43,6 +43,7 @@ import {
   waveComponents,
   windRaisingMetresPerSecond,
   type SeaEstimate,
+  whitecapsFrom,
   type WaveComponent,
   type WindEstimate,
 } from "../core/seaway.js";
@@ -54,7 +55,7 @@ import {
   type PreparedTrack,
   type SampledState,
 } from "../core/track.js";
-import type { Actor, Mark, MarkPattern, Scenario, Vessel } from "../core/types.js";
+import type { Actor, Environment, Mark, MarkPattern, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -991,8 +992,54 @@ function seaSection(scenario: Scenario): string {
     ["Coming from", directionRow(sea)],
     ["Derivation", sea.derivation],
     ["Waves drawn", bandRow(drawn, sea.rough.significantHeightMetres > 0)],
+    ["Whitecaps", whitecapRow(scenario.environment)],
   ];
-  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
+  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn), foamNote()]);
+}
+
+/** How much of the surface is drawn under foam, and out of which figure that came. */
+function whitecapRow(environment: Environment | undefined): string {
+  const foam = whitecapsFrom(environment);
+  if (!foam) return "not drawn - nothing states a wind or a sea";
+
+  const most = `${(foam.mostFraction * 100).toFixed(2)}%`;
+  const span =
+    foam.leastFraction === foam.mostFraction
+      ? most
+      : `${(foam.leastFraction * 100).toFixed(2)}-${most}${foam.mostIsOpen ? " or more" : ""}`;
+  return `${span} of the surface, ${FOAM_SOURCE[foam.from]}`;
+}
+
+/**
+ * Deliberately not worded "from the stated wind": that is the period row's phrase for a
+ * period DERIVED from a wind, and a page where the two read alike lets a test that holds the
+ * period honest pass on the strength of a sentence about foam.
+ */
+const FOAM_SOURCE: Record<NonNullable<ReturnType<typeof whitecapsFrom>>["from"], string> = {
+  speed: "out of the wind speed the file gives",
+  force: "out of the Beaufort force the file gives, which is a class",
+  sea: "out of the wind that would have raised this sea - none is stated",
+};
+
+/**
+ * **The amount of foam is measured and where it lands is not**, which is the same division
+ * the glitter path makes and has to be said for the same reason.
+ *
+ * A reader can check the coverage against Monahan; nothing lets them check the pattern, and
+ * the pattern is what they will actually look at.
+ */
+function foamNote(): string {
+  return (
+    "How much of the sea is under whitecaps comes from the wind by Monahan and " +
+    "O'Muircheartaigh's measured relation. WHERE they land does not: a sea drawn as a sum of " +
+    "sinusoids never breaks, and this surface could not reach the slope at which water does " +
+    "in any case, so the foam is put on the steepest of what was drawn - at whatever level " +
+    "leaves that much of it above. Nor is how bright they draw: a whitecap's luminance is its " +
+    `albedo - Koepke's effective ${FOAM_REFLECTANCE} - times the light falling on it, and this ` +
+    "renderer has no irradiance to multiply by, so the figure it draws at is one more of the " +
+    "declared ones. Read the amount off this page; do not read the pattern or the brightness " +
+    "off the picture."
+  );
 }
 
 /**

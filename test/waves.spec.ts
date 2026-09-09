@@ -11,6 +11,8 @@ import { DISC } from "../src/render/water.js";
 import {
   applyWaves,
   displacedFraction,
+  foamAt,
+  foamThreshold,
   makeWaveUniforms,
   drawable,
   meshCarries,
@@ -482,5 +484,100 @@ describe("the sea a floating mark is given", () => {
     expect(carried(20).slope).toBeGreaterThan(0.4);
     expect(carried(20).slope).toBeLessThan(0.7);
     expect(carried(250).slope).toBeLessThan(carried(250).height);
+  });
+});
+
+/**
+ * **The one thing about the foam that can be checked rather than argued.** The coverage is
+ * Monahan's measured relation and the placement is this tool's choice, so the question the
+ * choice has to answer is whether it actually puts that much of the surface under foam -
+ * and the Rayleigh step assumes a slope field that is the same in every direction, which a
+ * sea spread about one bearing is not.
+ *
+ * Run over a real sea's own components on a grid, and count.
+ */
+describe("how much of the sea comes out foam", () => {
+  /** The drawn slope at one point of the surface, from the components themselves. */
+  function slopeSquaredAt(components: WaveComponent[], x: number, y: number): number {
+    let east = 0;
+    let north = 0;
+    for (const wave of components) {
+      const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
+      const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
+      const along = Math.cos(kx * x + ky * y + wave.phaseRadians) * wave.amplitudeMetres;
+      east += kx * along;
+      north += ky * along;
+    }
+    return east * east + north * north;
+  }
+
+  /**
+   * The mean of the foam field over a patch of sea, measured on ground the threshold was
+   * not fitted on - a different grid, offset and differently spaced - so this is a check on
+   * the level rather than a second reading of the fit.
+   */
+  function coverageOf(components: WaveComponent[], wanted: number): number {
+    const variance = components.reduce(
+      (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+    const deviations = foamThreshold(components, wanted);
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < 300; i += 1) {
+      for (let j = 0; j < 300; j += 1) {
+        total += foamAt(
+          slopeSquaredAt(components, 811 + i * 4.3, 517 + j * 5.1),
+          variance,
+          deviations,
+        );
+        count += 1;
+      }
+    }
+    return total / count;
+  }
+
+  it("puts as much of the surface under foam as the wind says", () => {
+    const components = waveComponents(seawayOf(3));
+    // 18, 25 and 34 knots by Monahan's relation.
+    for (const wanted of [0.0076, 0.023, 0.066]) {
+      const drawn = coverageOf(components, wanted);
+      expect(drawn, `${wanted}`).toBeGreaterThan(wanted * 0.75);
+      expect(drawn, `${wanted}`).toBeLessThan(wanted * 1.35);
+    }
+  });
+
+  /**
+   * The analytic level this replaced. A Gaussian slope field of variance V has a Rayleigh
+   * magnitude, so `sqrt(-V ln W)` is the level that leaves W above it - on a sea that is the
+   * same in every direction. A real one is spread about one bearing, and the same level then
+   * passes two and a half times the foam.
+   */
+  it("does not take the level a circular sea would have", () => {
+    const components = waveComponents(seawayOf(3));
+    const wanted = 0.0076;
+    const circular = Math.sqrt(-Math.log(wanted));
+
+    expect(foamThreshold(components, wanted)).toBeGreaterThan(circular * 1.1);
+  });
+
+  it("draws none at all where nothing states a wind or a sea", () => {
+    expect(foamThreshold(waveComponents(seawayOf(3)), 0)).toBe(0);
+    expect(foamAt(1, 0.01, 0)).toBe(0);
+  });
+
+  /**
+   * The far surface carries fewer components than the near one, so a threshold taken from
+   * the whole sea would put foam in the foreground only - and a horizon of flat water under
+   * a foreground of whitecaps is a picture of two different winds.
+   */
+  it("keeps the coverage where the surface is drawn smoother", () => {
+    const components = waveComponents(seawayOf(3));
+    const carried = components.reduce(
+      (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+    const steep = carried * 4;
+    expect(foamAt(steep, carried, 2.5)).toBeCloseTo(foamAt(steep / 9, carried / 9, 2.5), 12);
   });
 });
