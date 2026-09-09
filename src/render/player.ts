@@ -12,6 +12,7 @@ import {
   Vector3,
   WebGLRenderer,
   type Camera,
+  type MeshStandardMaterial,
   type OrthographicCamera,
 } from "three";
 
@@ -122,6 +123,17 @@ interface Cast {
   group: Group;
   /** Holds the hull and the lamps, offset from the reported position to the hull's centre. */
   onHull: Group;
+  /**
+   * Her hull's material and the two colours it takes.
+   *
+   * **A chart is a drawing and the world is a place**, which is the split #63 made and the
+   * one `setDiagramView` already applies to the lighting, the map's tint and the grid. The
+   * chart wants the identity colour as authored, legible the way an investigator's chart is;
+   * the world wants an albedo, since a red of 0.68 linear is more than any paint returns and
+   * clips in sunlight (#60). One colour cannot be both, and choosing either everywhere loses
+   * something real - a washed-out hull in the sun, or a dark smudge on the chart.
+   */
+  painted: { material: MeshStandardMaterial; chart: Color; world: Color };
   lights: NavigationLightGroup;
   /** Her track on the water, split at wherever she has got to. */
   line: TrackLine;
@@ -630,6 +642,10 @@ export class Replay {
 
     this.stage.diagram.visible = picture === "chart";
     this.stage.sceneParts.setDiagramView(picture);
+    for (const member of this.stage.cast) {
+      const { material, chart, world } = member.painted;
+      material.color.copy(picture === "chart" ? chart : world);
+    }
     this.expose(picture);
     this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
     // Every frame, because the sky is the one part of the environment that moves: the
@@ -1124,7 +1140,7 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
   // The track line keeps the identity colour as authored - it is a line on a drawing, not a
   // surface with light falling on it - while the hull takes it as something that could
   // reflect. See `BRIGHTEST_PAINT`.
-  const hull = buildHull(vessel, hullAlbedo(colour).getHex());
+  const hull = buildHull(vessel, colour);
   const lights = buildNavigationLights(vessel, hull.eyeHeightMetres * 0.4);
 
   // The track reports the GPS antenna; a hull is drawn about its own centre. Everything
@@ -1144,6 +1160,7 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     vessel,
     group,
     onHull,
+    painted: { material: hull.painted, chart: new Color(colour), world: hullAlbedo(colour) },
     lights,
     line: buildTrackLine(track, colour),
     hullOffset: offsetMetres(

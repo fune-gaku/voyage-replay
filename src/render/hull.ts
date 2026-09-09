@@ -39,6 +39,8 @@ const BRIDGE_FRACTION_AFT = 0.32;
 
 export interface HullParts {
   group: Group;
+  /** Her hull's own material, so what colour it is can follow the picture. See `buildHull`. */
+  painted: MeshStandardMaterial;
   /** Height above the waterline of the bridge windows, in metres. */
   eyeHeightMetres: number;
   /** Distance forward of the hull centre where the bridge sits, in metres. Negative is aft. */
@@ -103,11 +105,22 @@ export function buildHull(vessel: Vessel, colour: ColorRepresentation): HullPart
   const bridge = bridgeOffsetOf(vessel);
 
   const group = new Group();
-  group.add(hullMesh(vessel, freeboard, colour));
+  const painted = hullMesh(vessel, freeboard, colour);
+  group.add(painted);
   group.add(bridgeMesh(vessel, freeboard, bridgeHeight, bridge.metres));
 
   return {
     group,
+    /**
+     * The hull's own material, so what colour it is can follow the PICTURE.
+     *
+     * A chart wants the identity colour as it was authored - the red and blue an
+     * investigator's chart tells two ships apart with, chosen to be legible on white paper.
+     * The world wants something that could reflect light, since a red of 0.68 linear is more
+     * than any paint returns and clips in sunlight. Two answers to one question is what
+     * `setDiagramView` already gives for the lighting, the map's tint and the grid.
+     */
+    painted: painted.material as MeshStandardMaterial,
     eyeHeightMetres: heights.eyeMetres,
     bridgeOffsetForwardMetres: bridge.metres,
     bridgeFromOffsets: bridge.fromOffsets,
