@@ -29,7 +29,7 @@ import { Vector2, Vector3, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
 import { LAMPS_GLSL, makeLampUniforms, type LampUniforms } from "./lamps.js";
-import { makeSkyUniforms, SKY_GLSL, type SkyUniforms } from "./sky.js";
+import { makeSkyUniforms, SHADOW_GLSL, SKY_GLSL, type SkyUniforms } from "./sky.js";
 import { DISC } from "./water.js";
 
 /**
@@ -650,6 +650,7 @@ varying vec2 vWaveParam;
 const FRAGMENT_DECLARATIONS = `${DECLARATIONS}
 uniform vec3 uEye;
 ${SKY_GLSL}
+${SHADOW_GLSL}
 ${LAMPS_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
@@ -848,6 +849,12 @@ const REFLECTION = `
   vec3 lit;
   vec3 handed = skyTowards( back, gCarriedSlope )
     + lampsTowards( back, vWaveWorld, gWorldNormal, gCarriedSlope, lit );
+  // **Crests hide troughs, and near the horizon they hide most of them.** Without it the far
+  // sea returns the whole sky right up to the waterline and melts into it - the one thing an
+  // eye that has been to sea reads as wrong before anything else. Smith's term, off the SEA's
+  // own slope rather than the drawn surface's: real crests do the hiding, including the ones
+  // this band cannot draw, which is the argument lobeWidth already makes about the width.
+  handed *= shadowing( abs( look.y ), uSeaSlope );
   outgoingLight = mix( outgoingLight, handed, sky );
   // **And the water the lamps light, which is not a reflection and takes no Fresnel.** A
   // reflection is only where the geometry lines up; light landing on the sea is there from

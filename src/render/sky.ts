@@ -183,6 +183,75 @@ export function lobeWidth(
 }
 
 /**
+ * **How much of a rough surface an eye at this angle can actually see**, which near the
+ * horizon is not much of it.
+ *
+ * Crests hide troughs. Looking down at water it does not matter - every part of the surface
+ * is in view - but a line of sight that grazes the sea passes over crest after crest, and
+ * most of what is behind each is hidden by it. Without the term the far sea returns the whole
+ * sky right up to the waterline and melts into it, which is the one thing an eye that has
+ * been to sea reads as wrong before anything else.
+ *
+ * Smith's (1967) geometric attenuation for a Gaussian surface, which is the same function a
+ * microfacet BRDF calls its shadowing term and is standard in ocean optics. It needs the
+ * SEA's slope, not the drawn surface's: real crests do the hiding, including the ones this
+ * band cannot draw - the same argument `lobeWidth` makes about the width of a reflection.
+ *
+ * Measured on the wind that raises a 2 m sea: nothing at all above ten degrees, 0.74 at five,
+ * 0.24 at one. So it is a band along the horizon and nowhere else, which is where the fault
+ * was.
+ *
+ * **What it takes away is not put back.** A hidden trough is not black - it sees other water,
+ * which sees the sky - and accounting for that needs a multiple-scattering term this does not
+ * have. Single scattering is the usual first answer and it errs towards a darker horizon.
+ */
+export function shadowing(viewFromVerticalRadians: number, seaSlopeVariance: number): number {
+  if (seaSlopeVariance <= 0) return 1;
+  const sine = Math.sin(viewFromVerticalRadians);
+  if (sine <= 0) return 1;
+  // Smith's variable: the cotangent of the view angle over the per-axis rms slope, root two.
+  const v = Math.cos(viewFromVerticalRadians) / sine / Math.sqrt(2 * (seaSlopeVariance / 2));
+  if (v > SHADOW_UNHIDDEN) return 1;
+  const lambda = 0.5 * (Math.exp(-v * v) / (v * Math.sqrt(Math.PI)) - erfc(v));
+  return 1 / (1 + Math.max(lambda, 0));
+}
+
+/** Past this the function is one to a part in ten thousand, and the exponential underflows. */
+const SHADOW_UNHIDDEN = 4;
+
+/** Abramowitz and Stegun 7.1.26, good to 1.5e-7 - which is far better than the input. */
+function erfc(x: number): number {
+  const t = 1 / (1 + 0.3275911 * x);
+  const series =
+    0.254829592 * t -
+    0.284496736 * t ** 2 +
+    1.421413741 * t ** 3 -
+    1.453152027 * t ** 4 +
+    1.061405429 * t ** 5;
+  return series * Math.exp(-x * x);
+}
+
+/** The same, for the fragment shader. Kept beside it so the two are edited together. */
+export const SHADOW_GLSL = `
+float erfcApprox( float x ) {
+  float t = 1.0 / ( 1.0 + 0.3275911 * x );
+  float series = t * ( 0.254829592 + t * ( -0.284496736 + t * ( 1.421413741
+    + t * ( -1.453152027 + t * 1.061405429 ) ) ) );
+  return series * exp( -x * x );
+}
+
+float shadowing( float cosFromVertical, float seaSlope ) {
+  if ( seaSlope <= 0.0 ) return 1.0;
+  float sine = sqrt( max( 1.0 - cosFromVertical * cosFromVertical, 0.0 ) );
+  if ( sine <= 0.0 ) return 1.0;
+  float v = cosFromVertical / sine / sqrt( seaSlope );
+  if ( v > ${SHADOW_UNHIDDEN}.0 ) return 1.0;
+  float lambda = 0.5 * ( exp( -v * v ) / ( v * 1.7724539 ) - erfcApprox( v ) );
+  return 1.0 / ( 1.0 + max( lambda, 0.0 ) );
+}
+`;
+
+/**
  * The narrowest a reflection is drawn, whatever it is a reflection of.
  *
  * A hundredth of a radian is half a degree - about a pixel at the widths this renders at -
