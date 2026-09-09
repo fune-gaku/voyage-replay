@@ -682,24 +682,58 @@ describe("the texture below the drawn band", () => {
    * being taken before the ripples for exactly this reason, and only half the pair was.
    */
   /**
-   * **A whitecap's history has to be measured on the sea the picture is drawing now.**
-   * `steepnessAt` drops each component at its own range, as the shading loop does, but not
-   * the whole surface's fade to flat - so through the fade's transition the past was
-   * measured on a fuller sea than the level it was compared against, and claimed foam that
-   * was not breaking. Found reviewing #75.
+   * **A whitecap's history has to be measured on the sea the picture is drawing now.** The
+   * shading loop drops each component at its own range as it accumulates the past, but not
+   * the whole surface's fade to flat - so through the fade's transition the past would be
+   * measured on a fuller sea than the level it is compared against, and claim foam that was
+   * not breaking. Found reviewing #75.
    */
   it("fades a whitecap's history with the surface it was breaking on", () => {
     const material = new MeshStandardMaterial();
     applyWaves(material, makeWaveUniforms());
     const shader = compile(material);
 
-    expect(shader.fragmentShader).toContain(
-      "steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle ) * gSlopeFade",
-    );
+    expect(shader.fragmentShader).toContain("vec2 was = gWas[ i - 1 ] * gSlopeFade");
     const set = shader.fragmentShader.indexOf("gSlopeFade = fade");
     const used = shader.fragmentShader.indexOf("* gSlopeFade");
     expect(set, "set where the present is faded").toBeGreaterThan(0);
     expect(set, "before the foam reads it").toBeLessThan(used);
+  });
+
+  /**
+   * **The past is the same sum at a different phase**, so it is accumulated beside the
+   * present rather than by walking the components again: `phase(t - age)` is
+   * `phase(t) + omega * age`, and the wavelength, the band limit and the dot product do not
+   * move. Two more cosines a component in place of two more passes over all of them, which
+   * was half the frame. Issue #79.
+   */
+  it("takes a whitecap's history from the loop that is already there", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      "gWas[ h ] += carries * w.xy * w.z * cos( phase + w.w * age )",
+    );
+    expect(shader.fragmentShader, "and the second pass is gone").not.toContain("steepnessAt");
+  });
+
+  /**
+   * A chart draws no sea: `uWaveScale` is zero there and every term multiplies out to
+   * nothing - after the whole sum has been evaluated to find that out. Measured, a chart
+   * went from 67 ms a frame to 41. And the array is filled in order with the rest zeroed,
+   * so a spectrum of 23 components was costing 40. Issue #79.
+   */
+  it("does not evaluate a sea where none is drawn", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain("if ( uWaveScale > 0.0 ) {");
+    expect(shader.fragmentShader).toContain("if ( w.z <= 0.0 ) break;");
+    expect(shader.vertexShader).toContain("if ( w.z <= 0.0 ) break;");
+    // And no foam is weighed where the level it would be weighed against is nothing.
+    expect(shader.fragmentShader).toContain("if ( uFoam.y > 0.0 ) {");
   });
 
   /**

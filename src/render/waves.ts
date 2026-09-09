@@ -648,24 +648,6 @@ vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
 
 /** The same rules, for the fragment shader. Kept beside them so they are edited together. */
 const FOAM_GLSL = `
-/**
- * How steep this water was, this many seconds ago.
- *
- * The spectrum only - a whitecap is a gravity wave breaking - and without the Jacobian or the
- * carried variance, which do not change with time. Two of these on top of the loop that
- * shades the surface is what a whitecap's life costs.
- */
-vec2 steepnessAt( vec2 at, float when, float away, float pixel ) {
-  vec2 slope = vec2( 0.0 );
-  for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
-    vec4 w = uWave[ i ];
-    float wavelength = 6.2831853 / length( w.xy );
-    float carries = smoothstep( 0.0, 1.0, wavelength / ( away * pixel + 1e-6 ) );
-    slope += carries * w.xy * w.z * cos( dot( w.xy, at ) - w.w * when + uWavePhase[ i ] );
-  }
-  return slope;
-}
-
 float foamAt( float slopeSquared, float carried, float deviations ) {
   if ( deviations <= 0.0 || carried <= 0.0 ) return 0.0;
   float threshold = deviations * sqrt( carried );
@@ -754,8 +736,15 @@ float gSlopeSquared = 0.0;
 // level was fitted to. See where it is taken.
 float gBreakingSlope = 0.0;
 // How much of the sea this fragment is drawing at all, kept so that a whitecap's history is
-// judged on the same surface as its present. See the foam block.
-float gSlopeFade = 1.0;
+// judged on the same surface as its present. See the foam block. Zero until the shading
+// loop says otherwise, which is what a picture with no sea in it draws.
+float gSlopeFade = 0.0;
+// **What this water was doing, at each instant a whitecap's life reaches back over.**
+// Accumulated in the shading loop rather than by walking the components again: the only
+// thing that differs between the instants is the phase, and phase( t - age ) is
+// phase( t ) + omega * age. Everything else - the wavelength, the band limit, the dot
+// product - is the same work, and it was being done three times. Issue #79.
+vec2 gWas[ ${FOAM_HISTORY} ];
 uniform vec3 uFoam;
 ${RIPPLE_GLSL}
 ${FOAM_GLSL}
@@ -812,6 +801,8 @@ vWaveParam = vWaveWorld.xz;
   vec2 carried = vec2( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
+    // The first empty slot is the end of the sea; see the shading loop.
+    if ( w.z <= 0.0 ) break;
     float length2 = length( w.xy );
     float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( ${SAMPLES_PER_WAVE}.0 * spacing ) );
@@ -859,7 +850,10 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
  */
 const NORMALS = `
 #include <normal_fragment_begin>
-{
+// **Nothing below is worth running where no sea is drawn.** A chart sets uWaveScale to zero
+// and every term here multiplies out to nothing - after 132 sinusoids a pixel have been
+// evaluated to find that out. Measured, a chart went from 67 ms a frame to 41. Issue #79.
+if ( uWaveScale > 0.0 ) {
   float fade = uWaveScale * ${FADE(SLOPE_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   vec2 slope = vec2( 0.0 );
@@ -868,8 +862,13 @@ const NORMALS = `
   // of two tangents rather than the height's gradient. (dDx/dx, dDx/dz, dDz/dz) - and the
   // mixed term is one number because the field is a gradient, so its Jacobian is symmetric.
   vec3 spread = vec3( 0.0 );
+  for ( int h = 0; h < ${FOAM_HISTORY}; h ++ ) gWas[ h ] = vec2( 0.0 );
+
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
+    // **The array is filled in order and the rest is zeroed**, so the first empty slot is
+    // the end of the sea: a file whose spectrum keeps 23 components was paying for 40.
+    if ( w.z <= 0.0 ) break;
     // **Each wave fades at its own range, not all of them at one.** A metre-long wave is
     // below a pixel by a few hundred metres and shimmers rather than shows, while the
     // hundred-metre swell under it is still the shape of the sea at ten kilometres. One
@@ -890,6 +889,12 @@ const NORMALS = `
     // to the body, so the lane keeps its measured width instead of narrowing with distance.
     float steep = carries * w.z * length2;
     gCarriedSlope += 0.5 * steep * steep;
+    // **And what this component was doing, over a whitecap's life.** Same component, same
+    // band limit, same dot product - only the phase moves, by omega times the age.
+    for ( int h = 0; h < ${FOAM_HISTORY}; h ++ ) {
+      float age = float( h + 1 ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
+      gWas[ h ] += carries * w.xy * w.z * cos( phase + w.w * age );
+    }
   }
   // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
   // the sky is a function of a world direction - so the reflection stage below would have to
@@ -983,17 +988,24 @@ const REFLECTION = `
   // **The union over a whitecap's life**, which is what its coverage was fitted against:
   // the strongest claim any instant makes, faded by how long ago it made it. Taken as a
   // maximum, because two breakings of one piece of water are one patch of foam.
-  float breaking = foamAt( gSlopeSquared, gBreakingSlope, uFoam.y );
-  for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
-    float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
-    // **The same fade as the present**, which steepnessAt does not apply: it drops each
-    // component at its own range, as the shading loop does, but not the whole surface's
-    // fade to flat. Left off, the past is measured on a sea the picture is no longer
-    // drawing while the level is measured on the faded one, so through the fade's own
-    // transition the history claims foam that is not breaking. Found reviewing #75.
-    vec2 was = steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle ) * gSlopeFade;
-    float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
-    breaking = max( breaking, foamAt( dot( was, was ), gBreakingSlope, uFoam.y ) * left );
+  //
+  // **Nothing here can pass where the level is zero**, which is a sea with no components
+  // drawn or no wind to break them: foamAt returns nothing for it, after the whole history
+  // has been weighed. Issue #79.
+  float breaking = 0.0;
+  if ( uFoam.y > 0.0 ) {
+    breaking = foamAt( gSlopeSquared, gBreakingSlope, uFoam.y );
+    for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
+      float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
+      // **The same fade as the present**, which the shading loop does not apply as it
+      // accumulates: it drops each component at its own range, but not the whole surface's
+      // fade to flat. Left off, the past is measured on a sea the picture is no longer
+      // drawing while the level is measured on the faded one, so through the fade's own
+      // transition the history claims foam that is not breaking. Found reviewing #75.
+      vec2 was = gWas[ i - 1 ] * gSlopeFade;
+      float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
+      breaking = max( breaking, foamAt( dot( was, was ), gBreakingSlope, uFoam.y ) * left );
+    }
   }
   float foam = uWaveScale * mix( uFoam.x, breaking, resolved );
   // **The same light, off a surface of the foam's own albedo**, which is what dividing the
