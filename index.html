@@ -78,11 +78,12 @@
         align-items: center;
       }
       /*
-        The `hidden` attribute is a UA rule, and the rule above is an author one, so without
-        this the chart's controls stay on the bar while the code says they have gone - the
-        picture and the page disagreeing about what is on screen, quietly.
+        The `hidden` attribute is a UA rule and the ones above are author rules, so without
+        this a control stays on the bar while the code says it has gone - the picture and the
+        page disagreeing about what is on screen, quietly. Everything in the bar, not only
+        the groups: the buttons have an author rule of their own.
       */
-      #controls .group[hidden] {
+      #controls [hidden] {
         display: none;
       }
       button,
@@ -170,9 +171,11 @@
             </select>
           </label>
           <!--
-            The chart's own controls, which leave the bar with the chart. What stays behind
-            is what playback needs whichever view is up: the views, play, the speed, the
-            clock and the bar.
+            The chart's own control, which leaves the bar with the chart. Recentre is NOT in
+            here: standing off a fixed place is when a stated way back to the ships is most
+            wanted, so it stays up in the sea view too and goes only on a bridge. What is
+            left whichever view is up is what playback needs - the views, play, the speed,
+            the clock and the bar.
           -->
           <span class="group" id="chartControls">
             <!--
@@ -206,13 +209,13 @@
               <option value="500000">Scale: 500 km</option>
               <option value="1000000">Scale: 1000 km</option>
             </select>
-            <button
-              id="recentre"
-              title="Plan view: follow the ships again after dragging the picture"
-            >
-              Recentre
-            </button>
           </span>
+          <button
+            id="recentre"
+            title="Back to the ships: the chart follows them again, and the sea view is stood over them as they are now"
+          >
+            Recentre
+          </button>
           <span id="clock">&mdash;</span>
           <input id="scrub" type="range" min="0" max="1000" value="0" />
           <button id="record">Record</button>

@@ -423,6 +423,40 @@ export class Replay {
     this.update();
   }
 
+  /**
+   * Where the action is, right now, for a viewpoint that wants to be told once.
+   *
+   * **Asked, not restated.** The sea view stands off a fixed place (#67), and the place it
+   * opens on is wherever the frame was already looking - so the control needs this answer,
+   * and there must go on being only one of it. A copy of the arithmetic in the controls is
+   * two answers to "where is the action", which is the failure this project keeps meeting.
+   */
+  get actionCentre(): LocalPosition {
+    return this.centreOfAction() ?? this.planCentre;
+  }
+
+  /**
+   * Take the ground under a point of the picture as the place to look at, and say which
+   * ground that was.
+   *
+   * In pixels from the CENTRE of the picture, for the reason `panByPixels` takes deltas: the
+   * caller has a pointer and this class has the projection. It answers with the position as
+   * well as moving the frame onto it, because the sea view has to be able to stand off the
+   * same spot the chart just centred on and must not work it out a second way.
+   */
+  lookAtPixels(dxPixels: number, dyPixels: number): LocalPosition {
+    const metresPerPixel = this.planExtent / Math.max(this.canvas.clientHeight, 1);
+    // Screen right is east and screen up is north: the overhead camera is north up.
+    const at = {
+      east: this.planCentre.east + dxPixels * metresPerPixel,
+      north: this.planCentre.north - dyPixels * metresPerPixel,
+    };
+    this.fixedCentre = at;
+    this.opening = null;
+    this.update();
+    return at;
+  }
+
   seek(epochSeconds: number): void {
     this.currentSeconds = Math.min(Math.max(epochSeconds, this.startSeconds), this.endSeconds);
     this.opening = null;
@@ -601,21 +635,21 @@ export class Replay {
   }
 
   /**
-   * An eye standing off the action at an angle and a range, aboard nobody.
+   * An eye standing off a chosen place at an angle and a range, aboard nobody.
    *
-   * **Round the same centre the chart frames on**, which is why this asks the player rather
-   * than working it out: `frameOverhead` is the chart's alone - it also settles which ground
-   * the basemap fetches - and a second answer to "where is the action" would let the picture
-   * turn about a point the frame does not agree with. Issue #65.
+   * **The place is the view's own and nothing here moves it.** It orbited whatever the chart
+   * was framing, which followed the ships - so a viewpoint set up to be read drifted while it
+   * was being read (#67). Where the action is is still worked out in one place, below;
+   * whoever opens this view asks for it once and holds what it was told.
    *
    * **Never null.** A bridge eye can be missing, because a ship's own track need not reach
    * this instant, and `activeCamera` falls back to the overhead camera when it is. That
    * fallback is a chart's camera: taken while the picture is still the world, it would draw a
    * curved earth in parallel projection, which is a picture nobody designed. An orbit always
-   * has somewhere to stand - the last centre, or the origin, if the cast has nothing to say.
+   * has somewhere to stand, because it was told where.
    */
   private orbitingEye(view: Extract<ViewSelection, { kind: "orbit" }>): Eye {
-    const eye = orbitEye(view, this.centreOfAction() ?? this.planCentre);
+    const eye = orbitEye(view);
     return {
       position: eye.at,
       heading: eye.headingDegreesTrue,

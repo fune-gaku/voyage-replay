@@ -19,6 +19,7 @@ interface Fake {
   setAttribute(name: string, value: string): void;
   append(child: Fake): void;
   setPointerCapture(pointerId: number): void;
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number };
 }
 
 function fake(value = "", options: string[] = []): Fake {
@@ -44,6 +45,11 @@ function fake(value = "", options: string[] = []): Fake {
     },
     setPointerCapture() {
       // The real one keeps a drag alive past the edge of the canvas; nothing here needs it.
+    },
+    // A canvas 400 by 200 with its top left at the origin, so a click at (200, 100) is dead
+    // centre and the arithmetic a click has to do is readable in the numbers.
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 400, height: 200 };
     },
   };
 }
@@ -96,9 +102,18 @@ function playback(overrides: Partial<TransportPlayback> = {}): TransportPlayback
   pans: [number, number][];
   recentres: number;
   views: ViewSelection[];
+  lookedAt: { east: number; north: number }[];
   playing: boolean;
 } {
   const state = {
+    /** Where the ships are, as the plan view's own framing would answer it. */
+    actionCentre: { east: 400, north: -250 },
+    lookAtPixels: (dx: number, dy: number) => {
+      const at = { east: 10 * dx, north: -10 * dy };
+      state.lookedAt.push(at);
+      return at;
+    },
+    lookedAt: [] as { east: number; north: number }[],
     startSeconds: 1_000,
     endSeconds: 1_600,
     timeSeconds: 1_000,
@@ -555,6 +570,7 @@ describe("the sea view", () => {
 
     expect(replay.views.at(-1)).toEqual({
       kind: "orbit",
+      centre: replay.actionCentre,
       azimuthDegrees: 180,
       elevationDegrees: 45,
       distanceMetres: 8_000,
@@ -601,6 +617,81 @@ describe("the sea view", () => {
     expect(event.prevented).toBe(true);
     expect(replay.views.at(-1)).toMatchObject({ distanceMetres: 10_000 });
     expect(replay.scales, "the chart's scale is untouched").toEqual([null]);
+  });
+
+  /**
+   * **The place is chosen on the chart and then held.** The sea view used to orbit whatever
+   * the frame was following, so it followed the ships - and a viewpoint that drifts while
+   * somebody is reading it changes the geometry under them without their touching anything.
+   * Issue #67.
+   */
+  it("stands off the place a click on the chart picked", () => {
+    const { replay, parts } = wire();
+    const { sea } = views(parts);
+
+    // 400 by 200, so this is 100 right and 50 below the middle.
+    fire(parts.canvas, "pointerdown", pointer(300, 150));
+    fire(parts.canvas, "pointerup", pointer(300, 150));
+    fire(sea, "click");
+
+    expect(replay.lookedAt.at(-1), "the ground under the point").toEqual({
+      east: 1_000,
+      north: -500,
+    });
+    expect(replay.views.at(-1)).toMatchObject({ centre: { east: 1_000, north: -500 } });
+  });
+
+  /** A drag is a pan, not a choice, or the chart could not be moved without picking a spot. */
+  it("does not take a drag across the chart for a click on it", () => {
+    const { replay, parts } = wire();
+
+    fire(parts.canvas, "pointerdown", pointer(300, 150));
+    fire(parts.canvas, "pointermove", pointer(340, 150));
+    fire(parts.canvas, "pointerup", pointer(340, 150));
+
+    expect(replay.lookedAt, "nothing was picked").toEqual([]);
+    expect(replay.pans.length, "and the chart was panned").toBeGreaterThan(0);
+  });
+
+  it("ignores a click on the picture from the sea view, where there is no chart to pick on", () => {
+    const { replay, parts } = wire();
+    fire(views(parts).sea, "click");
+
+    fire(parts.canvas, "pointerdown", pointer(300, 150));
+    fire(parts.canvas, "pointerup", pointer(300, 150));
+
+    expect(replay.lookedAt).toEqual([]);
+  });
+
+  /**
+   * The stated way back, and it is two things at once: the chart follows the ships again,
+   * and the sea view - which follows nothing - is stood over them as they are now.
+   */
+  it("comes back to the ships when asked, without starting to follow them", () => {
+    const { replay, parts } = wire();
+    const { sea } = views(parts);
+    fire(parts.canvas, "pointerdown", pointer(300, 150));
+    fire(parts.canvas, "pointerup", pointer(300, 150));
+    fire(sea, "click");
+
+    fire(parts.recentre, "click");
+
+    expect(replay.recentres).toBe(1);
+    expect(replay.views.at(-1)).toMatchObject({ centre: replay.actionCentre });
+  });
+
+  /** And it stays up out here, which is where a taken-over view most needs a way back. */
+  it("keeps Recentre on the bar in the sea view and takes it off on a bridge", () => {
+    const { parts } = wire();
+    const { chart, sea, bridge } = views(parts);
+
+    expect(parts.recentre.hidden).toBe(false);
+    fire(sea, "click");
+    expect(parts.recentre.hidden).toBe(false);
+    fire(bridge, "click");
+    expect(parts.recentre.hidden).toBe(true);
+    fire(chart, "click");
+    expect(parts.recentre.hidden).toBe(false);
   });
 
   it("keeps where it was left when the chart is glanced at and left again", () => {

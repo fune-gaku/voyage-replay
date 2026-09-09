@@ -16,7 +16,7 @@ function orbit(
   elevationDegrees: number,
   distanceMetres: number,
 ): Extract<ViewSelection, { kind: "orbit" }> {
-  return { kind: "orbit", azimuthDegrees, elevationDegrees, distanceMetres };
+  return { kind: "orbit", centre: CENTRE, azimuthDegrees, elevationDegrees, distanceMetres };
 }
 
 describe("which picture a viewpoint draws", () => {
@@ -34,7 +34,7 @@ describe("where an orbit puts the eye", () => {
    * entirely plausible until somebody reads a bearing off it.
    */
   it("stands on the bearing it was given and looks back along it", () => {
-    const eye = orbitEye(orbit(180, 0.5, 1_000), CENTRE);
+    const eye = orbitEye(orbit(180, 0.5, 1_000));
 
     expect(eye.at.north, "due south of the action").toBeLessThan(CENTRE.north);
     expect(eye.at.east).toBeCloseTo(CENTRE.east, 6);
@@ -42,7 +42,7 @@ describe("where an orbit puts the eye", () => {
   });
 
   it("takes a bearing east as east", () => {
-    const eye = orbitEye(orbit(90, 0.5, 1_000), CENTRE);
+    const eye = orbitEye(orbit(90, 0.5, 1_000));
 
     expect(eye.at.east).toBeGreaterThan(CENTRE.east);
     expect(eye.at.north).toBeCloseTo(CENTRE.north, 6);
@@ -51,16 +51,16 @@ describe("where an orbit puts the eye", () => {
 
   // The control adds degrees without bound as the pointer is dragged round and round.
   it("wraps a bearing that has been dragged past a turn", () => {
-    const wrapped = orbitEye(orbit(-90, 30, 2_000), CENTRE);
-    const plain = orbitEye(orbit(270, 30, 2_000), CENTRE);
+    const wrapped = orbitEye(orbit(-90, 30, 2_000));
+    const plain = orbitEye(orbit(270, 30, 2_000));
 
     expect(wrapped.at.east).toBeCloseTo(plain.at.east, 6);
     expect(wrapped.headingDegreesTrue).toBeCloseTo(plain.headingDegreesTrue, 6);
   });
 
   it("climbs with the elevation and closes with the range", () => {
-    const low = orbitEye(orbit(0, 10, 4_000), CENTRE);
-    const high = orbitEye(orbit(0, 60, 4_000), CENTRE);
+    const low = orbitEye(orbit(0, 10, 4_000));
+    const high = orbitEye(orbit(0, 60, 4_000));
 
     expect(high.heightMetres).toBeGreaterThan(low.heightMetres);
     expect(Math.hypot(high.at.east - CENTRE.east, high.at.north - CENTRE.north)).toBeLessThan(
@@ -74,7 +74,7 @@ describe("where an orbit puts the eye", () => {
    * it. At four kilometres that is seven metres off the vertical.
    */
   it("comes within a tenth of a degree of the zenith and stops", () => {
-    const eye = orbitEye(orbit(0, 90, 4_000), CENTRE);
+    const eye = orbitEye(orbit(0, 90, 4_000));
     const away = Math.hypot(eye.at.east - CENTRE.east, eye.at.north - CENTRE.north);
 
     expect(eye.depressionDegrees).toBeCloseTo(ORBIT_ELEVATION.maximumDegrees, 6);
@@ -87,7 +87,7 @@ describe("where an orbit puts the eye", () => {
    * has the surface and its own line of sight in one plane and there is no horizon.
    */
   it("keeps the eye out of the sea at the bottom of the range", () => {
-    const eye = orbitEye(orbit(0, 0, 4_000), CENTRE);
+    const eye = orbitEye(orbit(0, 0, 4_000));
     expect(eye.heightMetres).toBeGreaterThan(0);
     expect(eye.depressionDegrees).toBeGreaterThan(0);
   });
@@ -101,8 +101,8 @@ describe("where an orbit puts the eye", () => {
     expect(clampElevation(400)).toBe(ORBIT_ELEVATION.maximumDegrees);
     expect(clampElevation(30)).toBe(30);
 
-    expect(orbitEye(orbit(0, -40, 4_000), CENTRE).heightMetres).toBeCloseTo(
-      orbitEye(orbit(0, ORBIT_ELEVATION.minimumDegrees, 4_000), CENTRE).heightMetres,
+    expect(orbitEye(orbit(0, -40, 4_000)).heightMetres).toBeCloseTo(
+      orbitEye(orbit(0, ORBIT_ELEVATION.minimumDegrees, 4_000)).heightMetres,
       6,
     );
   });
@@ -114,7 +114,7 @@ describe("where an orbit puts the eye", () => {
    */
   it("aims from where the eye ended up when the floor has lifted it", () => {
     const asked = 1;
-    const eye = orbitEye(orbit(0, asked, 50), CENTRE);
+    const eye = orbitEye(orbit(0, asked, 50));
 
     expect(eye.heightMetres).toBe(ORBIT_FLOOR_METRES);
     expect(eye.depressionDegrees).toBeGreaterThan(asked);

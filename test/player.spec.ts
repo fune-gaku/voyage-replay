@@ -1228,6 +1228,7 @@ describe("the opening shot", () => {
     const replay = replayOf();
     replay.setView({
       kind: "orbit",
+      centre: { east: 0, north: 0 },
       azimuthDegrees: 0,
       elevationDegrees: 45,
       distanceMetres: 2_000,
@@ -1592,23 +1593,18 @@ describe("a mark's light in the picture", () => {
  * picture turn about a point the frame does not agree with. Issue #65.
  */
 describe("an orbit round the action", () => {
+  const CENTRE = { east: 300, north: -200 };
   const ALOFT = {
     kind: "orbit",
+    centre: CENTRE,
     azimuthDegrees: 0,
     elevationDegrees: 45,
     distanceMetres: 2_000,
   } as const;
 
-  /** Where the chart has its frame centred, read off the camera it framed. */
-  function chartCentre(replay: InstanceType<typeof Replay>): { east: number; north: number } {
-    replay.setView({ kind: "chart" });
-    const camera = lastFrame().camera as OrthographicCamera;
-    return { east: camera.position.x, north: -camera.position.z };
-  }
-
-  it("stands off the point the chart frames on, at the range and height asked for", () => {
+  it("stands off the place it was given, at the range and height asked for", () => {
     const replay = replayOf();
-    const centre = chartCentre(replay);
+    const centre = CENTRE;
 
     replay.setView(ALOFT);
     const eye = lastFrame().camera as PerspectiveCamera;
@@ -1633,11 +1629,12 @@ describe("an orbit round the action", () => {
   });
 
   /**
-   * The ships move and the eye stays with them, which is what makes this an orbit rather
-   * than a position: an eye that kept its metres would be left behind by an encounter that
-   * runs miles, and the whole point of standing off is to watch the geometry between them.
+   * **Nothing here moves the eye.** It orbited whatever the chart was framing, which follows
+   * the ships - so a viewpoint set up to be read drifted while it was being read, and the
+   * angle and range a reader had chosen were measured from somewhere that had moved. An
+   * investigator picks a place and stays there while the ships come past. Issue #67.
    */
-  it("keeps up with the action instead of holding still", () => {
+  it("holds still while the ships run", () => {
     const replay = replayOf();
     replay.setView(ALOFT);
     const before = (lastFrame().camera as PerspectiveCamera).position.clone();
@@ -1645,8 +1642,38 @@ describe("an orbit round the action", () => {
     replay.seek(replay.endSeconds);
     const after = (lastFrame().camera as PerspectiveCamera).position;
 
-    expect(after.distanceTo(before)).toBeGreaterThan(1);
-    expect(after.y, "and at the height it was left at").toBeCloseTo(before.y, 6);
+    expect(after.distanceTo(before)).toBeCloseTo(0, 6);
+  });
+
+  /**
+   * And the place it is told about is where the chart was looking, which is how the sea view
+   * opens on what the frame before it held - asked for once rather than followed.
+   */
+  it("can be told where the action is, once", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const framed = lastFrame().camera as OrthographicCamera;
+
+    expect(replay.actionCentre.east).toBeCloseTo(framed.position.x, 6);
+    expect(replay.actionCentre.north).toBeCloseTo(-framed.position.z, 6);
+  });
+
+  /**
+   * Clicking the chart is how the place is chosen, and the frame goes to it so the choice is
+   * visible. The ground it was has to come back, or the sea view would have to work out a
+   * second time which spot the chart had just centred on.
+   */
+  it("takes the ground under a point of the picture, and says which ground that was", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const before = replay.actionCentre;
+    const metresPerPixel = replay.planExtentMetres / 400;
+
+    const chosen = replay.lookAtPixels(100, -50);
+
+    expect(chosen.east).toBeCloseTo(before.east + 100 * metresPerPixel, 3);
+    expect(chosen.north).toBeCloseTo(before.north + 50 * metresPerPixel, 3);
+    expect(replay.actionCentre.east, "and the frame is on it").toBeCloseTo(chosen.east, 6);
   });
 
   /**

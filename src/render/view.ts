@@ -35,15 +35,14 @@ export type Picture = "chart" | "world";
  *
  * A chart has no eye at all - a drawing is not a place. A bridge puts one at a named ship's
  * wheelhouse. A free viewpoint puts one wherever it is told, aboard nobody, and it is the
- * reason the two above had to stop being a boolean. An orbit says where to stand relative to
- * whatever is happening, which is what a reader actually asks for.
+ * reason the two above had to stop being a boolean. An orbit names a place and stands off it
+ * at a bearing, an elevation and a range, which is what a reader actually asks for.
  *
- * **Two of these are relative and one is absolute.** A bridge names a ship and lets the player
- * work out where her wheelhouse has got to; an orbit names an angle and a range and lets the
- * player work out what it is round. `free` states the eye outright, which is what a test or a
- * caller with its own arithmetic wants and what a control on a page does not: the thing an
- * orbit is round is where the action is, and that is already worked out inside the player.
- * Restating it anywhere else is a second answer to one question. Issue #65.
+ * **Only the bridge is relative, and that is the point.** A bridge names a ship and lets the
+ * player work out where her wheelhouse has got to, because a watchkeeper's eye goes where the
+ * ship goes. Everything else is stated outright: an orbit was relative to the action once and
+ * followed the ships about while somebody was trying to read it (#67), which is the opposite
+ * of what a chosen viewpoint is for. Issues #65 and #67.
  */
 export type ViewSelection =
   | { kind: "chart" }
@@ -58,6 +57,20 @@ export type ViewSelection =
     }
   | {
       kind: "orbit";
+      /**
+       * The place being watched, and it does not move.
+       *
+       * **It was relative to the action, and that was wrong.** The centre the chart frames on
+       * follows the ships, so an eye stated against it followed them too - and a viewpoint
+       * that drifts while a reader is reading it changes the geometry under them without
+       * their touching anything. An investigator picks a place - a headland, a buoy the
+       * report keeps naming, where the tracks cross - and stays there while the ships come
+       * past. Issue #67.
+       *
+       * There is still ONE answer to where the action is, in `render/player.ts`; whatever
+       * opens this view asks for it once and holds what it was told.
+       */
+      centre: LocalPosition;
       /**
        * True bearing FROM what is being watched TO the eye - so the camera stands on this
        * bearing and looks back down it. Turning it walks the eye round the horizon.
@@ -107,7 +120,7 @@ export interface OrbitEye {
 }
 
 /**
- * Resolve an orbit against whatever it is round.
+ * Resolve an orbit into an eye.
  *
  * **The limits are applied here as well as wherever the control keeps its own state**, and
  * both come from the constants above. A control has to hold a clamped value or dragging past
@@ -119,10 +132,8 @@ export interface OrbitEye {
  * floor lifts the eye above the angle asked for; keeping the asked-for depression would then
  * point it under the thing it is orbiting, which is the one job an orbit has.
  */
-export function orbitEye(
-  view: Extract<ViewSelection, { kind: "orbit" }>,
-  centre: LocalPosition,
-): OrbitEye {
+export function orbitEye(view: Extract<ViewSelection, { kind: "orbit" }>): OrbitEye {
+  const centre = view.centre;
   const elevation = clampElevation(view.elevationDegrees);
   const azimuth = ((view.azimuthDegrees % 360) + 360) % 360;
   const bearing = (azimuth * Math.PI) / 180;
