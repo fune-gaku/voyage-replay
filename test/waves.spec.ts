@@ -11,6 +11,7 @@ import { DISC } from "../src/render/water.js";
 import {
   applyWaves,
   displacedFraction,
+  drawnFoam,
   foamAt,
   foamThreshold,
   makeWaveUniforms,
@@ -580,5 +581,24 @@ describe("how much of the sea comes out foam", () => {
     );
     const steep = carried * 4;
     expect(foamAt(steep, carried, 2.5)).toBeCloseTo(foamAt(steep / 9, carried / 9, 2.5), 12);
+  });
+
+  /**
+   * **Whitecaps are waves breaking, so there have to be waves.** The shader spends the
+   * coverage on the drawn slopes where a fragment resolves them and as a flat fraction where
+   * it does not; with nothing drawn the first is zero and the second is not, so the same
+   * water would be glass in the foreground and foam at the horizon. A file stating a wind
+   * and no sea reaches exactly that. Found reviewing #73.
+   */
+  it("carries none where there is no drawn sea to break", () => {
+    const wind = 0.0433;
+
+    expect(drawnFoam([], wind)).toEqual({ coverage: 0, standardDeviations: 0 });
+
+    const components = waveComponents(seawayOf(3));
+    const drawn = drawnFoam(components, wind);
+    expect(drawn.coverage).toBe(wind);
+    expect(drawn.standardDeviations).toBe(foamThreshold(components, wind));
+    expect(drawn.standardDeviations).toBeGreaterThan(0);
   });
 });
