@@ -1283,6 +1283,66 @@ export function periodFromWindSeconds(speedKnots: number): number {
  * the wind could raise is worth a reader's attention.
  */
 /**
+ * The fraction of the surface under whitecaps at this wind.
+ *
+ * Monahan and O'Muircheartaigh (1980), `W = 3.84e-6 U^3.41` with `U` the wind at 10 m -
+ * the fit ocean-colour work still uses, from photographic counts. The power is the whole
+ * character of it: 10 knots covers a thousandth of the sea, 18 knots most of a per cent, 34
+ * knots six and a half.
+ *
+ * **This is the one part of a whitecap that is measured.** Where the foam lands is not: a
+ * linear sea is a sum of sinusoids and never breaks, and the drawn surface could not reach
+ * the slope at which water actually does - 6 degrees rms against a real sea's 14.2, the rest
+ * being in ripples the band cannot hold. So the picture takes the AMOUNT from here and the
+ * PLACEMENT from the steepest of what it drew, which is the same division the glitter path
+ * already makes. See `render/waves.ts`, and issue #66.
+ */
+export function whitecapFraction(windSpeedMetresPerSecond: number): number {
+  return Math.min(3.84e-6 * Math.max(windSpeedMetresPerSecond, 0) ** 3.41, 1);
+}
+
+/**
+ * How much foam a scenario's sea carries, and which figure the wind for it came out of.
+ *
+ * Three sources, in the order everything else in this module uses: a stated speed is one
+ * number, a stated force is a class and so is the coverage, and a file with neither falls
+ * back to the wind that would have raised the sea it does state - which is derived and has
+ * to be said to be, never reported as a wind. A file with none of the three has no answer
+ * and gets null rather than a calm.
+ */
+export interface Whitecaps {
+  leastFraction: number;
+  mostFraction: number;
+  /** Where `mostFraction` is a floor rather than a bound, the wind's class being open. */
+  mostIsOpen: boolean;
+  from: "speed" | "force" | "sea";
+}
+
+export function whitecapsFrom(environment: Environment | undefined): Whitecaps | null {
+  const wind = windFrom(environment);
+  if (wind && wind.source !== "direction-only") {
+    return {
+      leastFraction: whitecapFraction(wind.slowestKnots * METRES_PER_SECOND_PER_KNOT),
+      mostFraction: whitecapFraction(wind.fastestKnots * METRES_PER_SECOND_PER_KNOT),
+      mostIsOpen: wind.fastestIsOpen,
+      from: wind.source === "speed" ? "speed" : "force",
+    };
+  }
+
+  const sea = seawayFrom(environment);
+  if (!sea) return null;
+  const ends = [sea.calm, sea.rough].map((seaway) =>
+    whitecapFraction(windRaisingMetresPerSecond(seaway.significantHeightMetres)),
+  );
+  return {
+    leastFraction: ends[0] ?? 0,
+    mostFraction: ends[1] ?? 0,
+    mostIsOpen: sea.roughEndIsOpen,
+    from: "sea",
+  };
+}
+
+/**
  * Cox and Munk's mean square slope for a clean sea under this wind: `0.003 + 0.00512 U`.
  *
  * Measured from sun glitter photographed off Maui in 1951-52 (Cox and Munk, *Journal of the
