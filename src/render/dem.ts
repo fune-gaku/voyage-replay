@@ -34,11 +34,26 @@ const SIGN_WRAP = 0x1000000;
 const UNIT_METRES = 0.01;
 
 /**
- * What a no-data pixel becomes. Just below the water rather than exactly on it, so the sea
- * inside a coastal tile and the water surface are not coplanar and no shoreline in the
- * scene z-fights along its whole length.
+ * **What a no-data pixel becomes: nothing, and it has to be nothing rather than a height.**
+ *
+ * It used to be a metre below the water, chosen so that "the sea inside a coastal tile and
+ * the water surface are not coplanar and no shoreline z-fights along its whole length". The
+ * separation was stated in metres and what decides the question is depth-buffer resolution,
+ * which depends on RANGE: with a near plane at a metre and a far one at eighty kilometres,
+ * a metre of separation is far below what the buffer can tell apart twenty kilometres out.
+ *
+ * From a wheelhouse it never showed - a 11 m eye has the whole thing below its horizon or
+ * behind the first ridge. From the sea view standing three kilometres up (#65, #67) the
+ * coastal tiles' sea sheets fight the water over the whole Suo-nada, and the Inland Sea is
+ * drawn as a chequerboard of olive blocks scattered across open water. Measured by pushing
+ * this to -60 m: every block vanished and one real island was left. Issue #68.
+ *
+ * No metre figure fixes it, so the sea is not drawn: `NaN` here, and `terrain.ts` leaves out
+ * every quad that has one. **Inland no-data becomes a hole rather than a pit**, which is the
+ * honest form of "the source does not say" - and the failure `docs/domain-notes.md` warns
+ * about, reading no-data as sea, is what this stops rather than what it does.
  */
-export const SEA_METRES = -1;
+export const NO_HEIGHT = NaN;
 
 /** Fetch and decode one tile, or null where the server has none - which means sea. */
 export async function loadHeightGrid(url: string, size: number): Promise<LoadedTile | null> {
@@ -76,7 +91,7 @@ function readPixels(bitmap: ImageBitmap, width: number): Uint8ClampedArray {
  */
 export function thin(pixels: Uint8ClampedArray, width: number, size: number): HeightGrid {
   const metres = new Float32Array(size * size);
-  let highestMetres = SEA_METRES;
+  let highestMetres = 0;
 
   for (let row = 0; row < size; row += 1) {
     const y = Math.round((row * (width - 1)) / (size - 1));
@@ -84,6 +99,7 @@ export function thin(pixels: Uint8ClampedArray, width: number, size: number): He
       const x = Math.round((column * (width - 1)) / (size - 1));
       const height = heightAt(pixels, (y * width + x) * 4);
       metres[row * size + column] = height;
+      // NaN fails every comparison, which is what is wanted: no-data raises nothing.
       if (height > highestMetres) highestMetres = height;
     }
   }
@@ -97,6 +113,6 @@ export function heightAt(pixels: Uint8ClampedArray, index: number): number {
   const g = pixels[index + 1] ?? 0;
   const b = pixels[index + 2] ?? 0;
   const value = (r << 16) | (g << 8) | b;
-  if (value === NO_DATA) return SEA_METRES;
+  if (value === NO_DATA) return NO_HEIGHT;
   return (value < NO_DATA ? value : value - SIGN_WRAP) * UNIT_METRES;
 }
