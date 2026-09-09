@@ -1131,9 +1131,16 @@ export function displacementAt(
  * How many times the search below folds back on itself.
  *
  * It is a fixed point, `p = at - D(p)`, and it converges as fast as the displacement's own
- * gradient is small. The worst case is the summed steepness, 0.86, which would need dozens;
- * the ordinary case is the rms slope, 0.105, which needs two. Three is the ordinary case with
- * a margin, and the worst case is every component crest at one point, which is not a sea.
+ * gradient is small. The bound is the summed steepness - 0.86 on every sea this spectrum
+ * draws, and reached only where every component crests at one point, which is not a sea. The
+ * ordinary case is the rms slope, 0.105, which needs two.
+ *
+ * **Three, measured rather than argued.** Over the forty components actually drawn, on 1600
+ * points of open water at each of five sea states from 1 m to 14 m, three folds leave at
+ * worst 5 cm between where the water arrives and where it was asked for, and 7 mm of height
+ * under whatever floats there - beside a buoy's metre of freeboard. A bound of 0.86 says
+ * three folds could leave 64 per cent of the error, and saying so is a statement about a sea
+ * nobody draws; `test/seaway.spec.ts` holds the measurement instead. Found reviewing #73.
  */
 const INVERSION_STEPS = 3;
 

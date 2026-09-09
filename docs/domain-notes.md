@@ -489,16 +489,18 @@ on it. But the two disagree by construction, and what floats has to be given the
 
 | From the eye | Height variance the mesh carries | Slope variance | rms slope |
 |---:|---:|---:|---:|
-| 20 m | 99.9% | 51% | 3.8° |
-| 100 m | 91% | 29% | 2.9° |
-| 250 m | 42% | 8% | 1.5° |
-| 600 m | 3% | 0.5% | 0.4° |
+| 20 m | 99.5% | 60% | 4.7° |
+| 100 m | 89% | 23% | 2.9° |
+| 250 m | 42% | 6% | 1.5° |
+| 600 m | 3% | 0.4% | 0.4° |
 
-**Nearly all of the height and half of the slope**, and that split is the spectrum's own: the
-components are equal-energy, so each carries the same height variance and the short ones carry
-almost all of the slope. So a buoy alongside heaves to essentially the whole sea and leans to
-about two thirds of its steepness, and one at 250 m — where the range fade has not yet begun —
-rides less than half of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
+**Nearly all of the height and three fifths of the slope**, and that split is the placement's:
+half the components are spread by height density and half by slope density
+(`SLOPE_SHARE_OF_COMPONENTS`), so the short waves — which carry nearly all of the slope and
+almost none of the height — are numerous enough that the mesh alongside still has vertices for
+several of them. So a buoy alongside heaves to essentially the whole sea and leans to about
+four fifths of its steepness, and one at 250 m — where the range fade has not yet begun —
+rides a quarter of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
 `render/waves.ts` because nothing in Node can compile a shader to ask it. Handing her the
 undrawn spectrum instead is #34's hovering buoy arriving by a second route.
 
