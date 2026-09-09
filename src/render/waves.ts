@@ -182,6 +182,15 @@ export interface WaveUniforms {
    */
   uFoam: { value: Vector3 };
   /**
+   * The ripples below the drawn band: the shortest wavelength the spectrum reaches, and how
+   * many octaves of slope lie between it and where this stops pretending.
+   *
+   * **The one thing in this picture that is not in the sea it was given**, and it is here on
+   * the same terms as the whitecaps: the AMOUNT is Cox and Munk's measured slope minus what
+   * the band carries, and where it goes is this file's choice. See `RIPPLE_GLSL`.
+   */
+  uRipple: { value: Vector2 };
+  /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
    * Set from the frame, because a constant would make the drawn band depend on the window -
@@ -443,6 +452,123 @@ function meanFoam(normalised: number[], standardDeviations: number): number {
   return total / normalised.length;
 }
 
+/**
+ * How many octaves of ripple are drawn, and where the pretending stops.
+ *
+ * **Four, because that is what a pixel can hold.** The longest is half the shortest wave the
+ * spectrum reaches - 0.57 m on a 2 m sea - and the shortest an eighth of that, 0.07 m, which
+ * ten metres from the eye is eight pixels across. Below that they are under a pixel at any
+ * useful range and belong in the lobe rather than on the surface, which is where they go.
+ *
+ * **A centimetre is where this stops.** Cox and Munk measured a real sea's whole slope,
+ * capillary ripples included, and a gravity relation has no business generating those - so
+ * the missing variance is spread over the octaves between the drawn band and a centimetre,
+ * about seven of them, and these four take their four shares. The rest stays in the width of
+ * the reflected body, which is what #37 put it in.
+ */
+const RIPPLE_OCTAVES = 4;
+
+/**
+ * How many bearings each octave is spread over.
+ *
+ * **One is a plaid.** Four octaves of one direction each carry more slope than the whole
+ * drawn spectrum - a real sea's slope IS mostly in its short waves - and four sinusoids
+ * carrying that much draw a regular cross-hatch, which is a worse lie than the smooth surface
+ * it replaced. Three bearings an octave, stepped by an angle that closes on nothing, is
+ * twelve components: enough that the eye stops finding the weave.
+ */
+const RIPPLE_BEARINGS = 3;
+const RIPPLE_FLOOR_METRES = 0.01;
+
+/**
+ * How the missing slope is shared out: over the octaves between the shortest wave the
+ * spectrum reaches and a centimetre.
+ *
+ * A slope density falling as one over omega puts the same variance in every octave, which is
+ * the whole reason the tail of a sea matters to its shading at all - so an octave's share is
+ * simply the missing variance over the count. About seven of them on a 2 m sea; the four the
+ * shading can hold take four of the shares and the rest stays in the lobe.
+ *
+ * **Zero where there is no sea drawn**, which the shader takes as "no ripples": a file that
+ * states no sea has no measured slope to be short of.
+ */
+export function rippleOctaves(shortestDrawnMetres: number): number {
+  if (shortestDrawnMetres <= RIPPLE_FLOOR_METRES) return 0;
+  return Math.log2(shortestDrawnMetres / RIPPLE_FLOOR_METRES);
+}
+
+/** The shortest wave a drawn sea reaches, which is where the ripples start. */
+export function shortestDrawnMetres(components: WaveComponent[]): number {
+  if (components.length === 0) return 0;
+  return Math.min(...components.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre));
+}
+
+/**
+ * The texture below the drawn band: **the only thing in this picture that is not in the sea
+ * the file describes.**
+ *
+ * Measured, the shortest wave the spectrum reaches is 1.14 m on a 2 m sea, which ten metres
+ * from the eye is 128 pixels across - so the water in front of a watchkeeper has no feature
+ * finer than that, where a real one carries centimetre ripples at one to eleven pixels. That
+ * gap is why near water reads as a moulded surface however right the spectrum is, and no
+ * amount of spectrum fixes it: the waves are outside the band, the mesh could not carry them,
+ * and JONSWAP does not describe them.
+ *
+ * So it is put in on the terms the whitecaps and the glitter lobe already use, which is the
+ * pattern this project has twice: **the amount is measured and the placement is chosen, and
+ * the page says which is which.** The amount is Cox and Munk's slope less what the band
+ * carries - the same difference #37 already computes - shared equally per octave, which is
+ * what a slope density falling as one over omega means.
+ *
+ * **And what it spends it hands back.** Every octave adds its own variance to
+ * `gCarriedSlope`, so the body's lobe narrows by exactly what the surface took up. Without
+ * that the picture would draw a sea rougher than Cox and Munk measured while the page printed
+ * their figure - the same water described twice, differently, which is the fault this whole
+ * project is arranged against.
+ *
+ * They are in the shading only. The mesh cannot carry a wave of half a metre past a few
+ * metres from the eye, and nothing floats on them: at these amplitudes - millimetres - a buoy
+ * riding them would be answering to noise.
+ */
+const RIPPLE_GLSL = `
+uniform vec2 uRipple;
+
+vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
+  if ( missing <= 0.0 || uRipple.x <= 0.0 || uRipple.y <= 0.0 ) return vec2( 0.0 );
+  vec2 slope = vec2( 0.0 );
+  float perOctave = missing / uRipple.y;
+
+  for ( int i = 0; i < ${RIPPLE_OCTAVES}; i ++ ) {
+    float octave = float( i );
+    // Half the shortest wave the spectrum reaches, then halving.
+    float wavelength = uRipple.x * 0.5 * pow( 0.5, octave );
+    // **Stricter than the spectrum's own fade.** These are the shortest things in the frame
+    // and the ones with nothing under them to hide their aliasing, so they are asked for
+    // three times the pixels a drawn wave needs before they are drawn at all.
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( 3.0 * away * pixel + 1e-6 ) );
+    if ( carries <= 0.0 ) continue;
+
+    float k = 6.2831853 / wavelength;
+    float share = perOctave * carries / ${RIPPLE_BEARINGS}.0;
+    // Slope amplitude from the variance each carries: var = (a k)^2 / 2.
+    float steep = sqrt( 2.0 * share );
+
+    for ( int j = 0; j < ${RIPPLE_BEARINGS}; j ++ ) {
+      // **Spread wide on purpose.** Short waves answer to the local wind and to every wave
+      // they ride over, so they are far less directional than the swell underneath them.
+      float bearing = octave * 1.9 + float( j ) * 2.399963 + 0.7;
+      vec2 unit = vec2( sin( bearing ), cos( bearing ) );
+      float phase = k * dot( unit, at ) - sqrt( 9.80665 * k ) * uWaveTime
+        + octave * 2.3 + float( j ) * 1.7;
+      slope += unit * steep * cos( phase );
+    }
+    // **Handed back**, so the lobe narrows by what the surface took up.
+    gCarriedSlope += perOctave * carries;
+  }
+  return slope;
+}
+`;
+
 /** The same rule, for the fragment shader. Kept beside it so the two are edited together. */
 const FOAM_GLSL = `
 float foamAt( float slopeSquared, float carried, float deviations ) {
@@ -464,6 +590,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWaveScale: { value: 0 },
     uPixelAngle: { value: pixelAngle(55, 1080) },
     uFoam: { value: new Vector3() },
+    uRipple: { value: new Vector2() },
     sky: makeSkyUniforms(),
     lamps: makeLampUniforms(),
   };
@@ -528,6 +655,7 @@ vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
 float gSlopeSquared = 0.0;
 uniform vec3 uFoam;
+${RIPPLE_GLSL}
 ${FOAM_GLSL}
 `;
 
@@ -665,6 +793,12 @@ const NORMALS = `
   // the sky is a function of a world direction - so the reflection stage below would have to
   // undo the rotation to ask it anything. Mixed by the same fade, so the two agree about how
   // much of this sea is drawn where.
+  // **What the band cannot reach, as pattern rather than only as width.** The missing slope
+  // is what #37 already puts into the reflected body's lobe; the four octaves this can hold
+  // take their share of it here and hand it straight back, so the total is unchanged.
+  gCarriedSlope *= fade * fade;
+  slope += rippleSlope( vWaveParam, max( uSeaSlope - gCarriedSlope, 0.0 ), away, uPixelAngle );
+
   // **Kept for the foam**, which goes on the steepest water. The same slope the shading is
   // made of, so the whitecaps are on the crests the picture actually drew.
   gSlopeSquared = dot( slope, slope );
@@ -678,7 +812,8 @@ const NORMALS = `
   vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
   // The whole surface fades to flat past a few kilometres as well, and slope goes with it.
-  gCarriedSlope *= fade * fade;
+  // gCarriedSlope was faded before the ripples, which are added at their own range and must
+  // not be faded twice.
   gSlopeSquared *= fade * fade;
 }
 `;
@@ -755,6 +890,7 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uWaveScale"] = uniforms.uWaveScale;
     shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
     shader.uniforms["uFoam"] = uniforms.uFoam;
+    shader.uniforms["uRipple"] = uniforms.uRipple;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
     shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", DRAWN_SURFACE);

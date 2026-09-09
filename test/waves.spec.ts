@@ -18,7 +18,9 @@ import {
   drawable,
   meshCarries,
   pixelAngle,
+  rippleOctaves,
   setWaves,
+  shortestDrawnMetres,
   SHADER_COMPONENTS,
 } from "../src/render/waves.js";
 
@@ -600,5 +602,59 @@ describe("how much of the sea comes out foam", () => {
     expect(drawn.coverage).toBe(wind);
     expect(drawn.standardDeviations).toBe(foamThreshold(components, wind));
     expect(drawn.standardDeviations).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * **The one thing drawn here that the file's sea does not contain.** Measured, the shortest
+ * wave the spectrum reaches is 1.14 m on a 2 m sea, which ten metres from the eye is 128
+ * pixels across - so the near water had no feature finer than that, where a real one carries
+ * centimetre ripples at one to eleven. Issue #70.
+ */
+describe("the texture below the drawn band", () => {
+  it("starts where the spectrum's shortest wave ends", () => {
+    const components = waveComponents(seawayOf(2));
+    const lengths = components.map((c) => (2 * Math.PI) / c.wavenumberPerMetre);
+
+    expect(shortestDrawnMetres(components)).toBeCloseTo(Math.min(...lengths), 9);
+  });
+
+  /**
+   * A slope density falling as one over omega puts the same variance in every octave, so an
+   * octave's share is the missing variance over the count of them - and the count runs from
+   * the band's short end to a centimetre, below which a gravity relation has no business
+   * generating anything.
+   */
+  it("shares the missing slope over the octaves between the band and a centimetre", () => {
+    // 1.28 m is seven doublings above 0.01 m.
+    expect(rippleOctaves(1.28)).toBeCloseTo(7, 9);
+    expect(rippleOctaves(0.16)).toBeCloseTo(4, 9);
+  });
+
+  /**
+   * A file that states no sea has no measured slope to fall short of, and a band that is
+   * already at the floor has no octaves under it. Both must draw nothing rather than divide
+   * by nothing.
+   */
+  it("draws none where there is no band under which to draw it", () => {
+    expect(shortestDrawnMetres([])).toBe(0);
+    expect(rippleOctaves(0)).toBe(0);
+    expect(rippleOctaves(0.01)).toBe(0);
+  });
+
+  /**
+   * **What it spends it hands back.** Every octave adds its own variance to the carried
+   * slope, so the width of whatever is mirrored narrows by exactly what the surface took up.
+   * Without it the picture would draw a sea rougher than Cox and Munk measured while the page
+   * printed their figure - one water described twice, differently.
+   */
+  it("gives back to the lobe what it takes for the surface", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries;");
+    // And it is asked for the missing slope, not for the sea's whole slope.
+    expect(shader.fragmentShader).toContain("max( uSeaSlope - gCarriedSlope, 0.0 )");
   });
 });
