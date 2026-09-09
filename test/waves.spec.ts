@@ -13,6 +13,7 @@ import {
   displacedFraction,
   drawnFoam,
   foamAt,
+  foamOver,
   foamThreshold,
   makeWaveUniforms,
   drawable,
@@ -501,16 +502,16 @@ describe("the sea a floating mark is given", () => {
  * Run over a real sea's own components on a grid, and count.
  */
 describe("how much of the sea comes out foam", () => {
-  /** The drawn slope at one point of the surface, from the components themselves. */
-  function slopeSquaredAt(components: WaveComponent[], x: number, y: number): number {
+  /** The drawn slope at one point of the surface and one instant, from the components. */
+  function slopeSquaredAt(components: WaveComponent[], x: number, y: number, when = 0): number {
     let east = 0;
     let north = 0;
     for (const wave of components) {
       const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
       const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
-      const along = Math.cos(kx * x + ky * y + wave.phaseRadians) * wave.amplitudeMetres;
-      east += kx * along;
-      north += ky * along;
+      const phase = kx * x + ky * y - wave.angularFrequencyPerSecond * when + wave.phaseRadians;
+      east += kx * Math.cos(phase) * wave.amplitudeMetres;
+      north += ky * Math.cos(phase) * wave.amplitudeMetres;
     }
     return east * east + north * north;
   }
@@ -528,13 +529,14 @@ describe("how much of the sea comes out foam", () => {
     const deviations = foamThreshold(components, wanted);
     let total = 0;
     let count = 0;
-    for (let i = 0; i < 300; i += 1) {
-      for (let j = 0; j < 300; j += 1) {
-        total += foamAt(
-          slopeSquaredAt(components, 811 + i * 4.3, 517 + j * 5.1),
-          variance,
-          deviations,
-        );
+    for (let i = 0; i < 160; i += 1) {
+      for (let j = 0; j < 160; j += 1) {
+        const east = 811 + i * 4.3;
+        const north = 517 + j * 5.1;
+        // The same union over a whitecap's life the shader takes: foam lingers, so what is
+        // under it now is what has been steep at any instant within that life.
+        const overTime = [0, -2, -4].map((when) => slopeSquaredAt(components, east, north, when));
+        total += foamOver(overTime, variance, deviations);
         count += 1;
       }
     }
@@ -563,6 +565,62 @@ describe("how much of the sea comes out foam", () => {
     const circular = Math.sqrt(-Math.log(wanted));
 
     expect(foamThreshold(components, wanted)).toBeGreaterThan(circular * 1.1);
+  });
+
+  /**
+   * **Foam has to last.** A threshold on this instant's steepness gives a whitecap no life -
+   * it appears where a crest is steep and vanishes when the crest passes, so the sea blinks
+   * rather than breaks. Monahan's coverage counts decaying foam as well as breaking water,
+   * which is what makes this necessary rather than decorative.
+   */
+  it("leaves foam where the water was steep a moment ago", () => {
+    const carried = 0.01;
+    const steep = carried * 9;
+    const level = 2;
+
+    // Steep now: full foam. Steep only a while back: less, but not nothing.
+    expect(foamOver([steep, 0, 0], carried, level)).toBeCloseTo(foamAt(steep, carried, level), 12);
+    const lingering = foamOver([0, steep, 0], carried, level);
+    expect(lingering).toBeGreaterThan(0);
+    expect(lingering).toBeLessThan(foamAt(steep, carried, level));
+  });
+
+  /** Two breakings of one piece of water are one patch of foam, not two. */
+  it("takes the strongest instant rather than adding them up", () => {
+    const carried = 0.01;
+    const steep = carried * 9;
+    expect(foamOver([steep, steep, steep], carried, 2)).toBeLessThanOrEqual(1);
+    expect(foamOver([steep, steep, steep], carried, 2)).toBeCloseTo(
+      foamOver([steep, 0, 0], carried, 2),
+      12,
+    );
+  });
+
+  /**
+   * And what lingers is inside the coverage rather than on top of it: the level is fitted
+   * against the same union, so persistence does not quietly put more foam on the sea than
+   * Monahan allows while the page goes on printing his figure.
+   */
+  it("asks more of the water now that foam lasts", () => {
+    const components = waveComponents(seawayOf(3));
+    const level = foamThreshold(components, 0.0076);
+    const variance = components.reduce(
+      (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+    // Whatever is under foam at any one instant is less than the coverage, because the rest
+    // of the coverage is water that broke earlier and has not finished fading.
+    let instant = 0;
+    for (let i = 0; i < 120; i += 1) {
+      for (let j = 0; j < 120; j += 1) {
+        instant += foamAt(
+          slopeSquaredAt(components, 811 + i * 4.3, 517 + j * 5.1),
+          variance,
+          level,
+        );
+      }
+    }
+    expect(instant / (120 * 120)).toBeLessThan(0.0076);
   });
 
   it("draws none at all where nothing states a wind or a sea", () => {

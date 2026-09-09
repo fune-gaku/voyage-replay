@@ -286,15 +286,39 @@ const FOAM_PATCH_METRES = 8;
 const FOAM_EDGE = 0.25;
 
 /**
+ * **How long a whitecap lasts, and why it has to last at all.**
+ *
+ * A threshold on the steepness of this instant gives foam no life: it appears where a crest
+ * is steep and vanishes when the crest passes, so a sea blinks rather than breaks. A real
+ * whitecap breaks, then lies there decaying while the wave runs out from under it - which is
+ * most of what tells an eye that the water is breaking rather than merely bright.
+ *
+ * Seconds is the published order for the decaying stage, and Monahan's coverage counts it -
+ * his W is the fraction under active AND decaying foam together, which is what makes this
+ * necessary rather than optional: drawing only the instant of breaking draws less foam than
+ * the relation says there is. Four seconds is the figure chosen inside that order.
+ *
+ * **And the coverage is re-fitted to it.** Foam that lingers covers more water than foam
+ * that blinks, so the level is found against the same union over time that the shader takes -
+ * otherwise persistence would quietly put more foam on the sea than Monahan allows, while the
+ * page went on printing his figure.
+ */
+const FOAM_LIFE_SECONDS = 4;
+
+/** How many instants back the shader looks. Three in all, counting now. */
+const FOAM_HISTORY = 2;
+
+/**
  * How finely the drawn slope field is sampled when the level is looked for, and how far the
  * search goes.
  *
- * A hundred and ninety-two squared is thirty-seven thousand points, so a coverage of half a
- * per cent is found off about two hundred of them - enough that the level is not noise, and
- * cheap enough to run once when the water is built. Six standard deviations is past anything
- * a sum of forty sinusoids reaches.
+ * A hundred and forty-four squared is twenty-one thousand points, and each is evaluated at
+ * every instant of a whitecap's life - so a coverage of half a per cent is found off about a
+ * hundred and fifty of them, which is enough that the level is not noise and cheap enough to
+ * run once when the water is built. Six standard deviations is past anything a sum of forty
+ * sinusoids reaches.
  */
-const FOAM_SAMPLES = 192;
+const FOAM_SAMPLES = 144;
 const FOAM_WIDEST_THRESHOLD = 6;
 const FOAM_BISECTIONS = 30;
 
@@ -330,6 +354,33 @@ export function foamAt(
     threshold * (1 + FOAM_EDGE),
     Math.sqrt(Math.max(slopeSquared, 0)),
   );
+}
+
+/**
+ * What is under foam now, given how steep this water has been over the whitecap's life.
+ *
+ * The strongest claim any instant makes, faded by how long ago it made it: a crest that broke
+ * three seconds back has left something, and one breaking now has left the most. Taken as a
+ * maximum rather than a sum, because two breakings of the same water are one patch of foam
+ * and not two.
+ *
+ * `steepness` is indexed from now backwards, one entry per instant the shader looks at.
+ */
+export function foamOver(
+  steepness: number[],
+  carriedSlopeVariance: number,
+  standardDeviations: number,
+): number {
+  let most = 0;
+  for (let back = 0; back < steepness.length; back += 1) {
+    const age = (back / FOAM_HISTORY) * FOAM_LIFE_SECONDS;
+    const left = 1 - age / (FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / FOAM_HISTORY);
+    most = Math.max(
+      most,
+      foamAt(steepness[back] ?? 0, carriedSlopeVariance, standardDeviations) * left,
+    );
+  }
+  return most;
 }
 
 /** GLSL's own, so the copy below and the function above cannot come apart. */
@@ -408,48 +459,64 @@ export function foamThreshold(components: WaveComponent[], coverage: number): nu
  * The spacing is deliberately not a round number: a grid commensurate with a wavelength
  * samples the same phase over and over and reports a sea far smoother or steeper than it is.
  */
-function normalisedSlopes(components: WaveComponent[]): number[] {
+/**
+ * The squared slope at every sample and every instant, in units of the sea's own variance.
+ */
+function normalisedSlopes(components: WaveComponent[]): number[][] {
   const variance = components.reduce(
     (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
     0,
   );
   if (variance <= 0) return [];
 
-  const scale = 1 / Math.sqrt(variance);
-  const out: number[] = [];
+  // Squared, because that is what `foamAt` takes and what saves a root per sample.
+  const scale = 1 / variance;
+  const out: number[][] = [];
   for (let i = 0; i < FOAM_SAMPLES; i += 1) {
     for (let j = 0; j < FOAM_SAMPLES; j += 1) {
-      out.push(Math.sqrt(slopeSquaredAt(components, i * 2.9, j * 3.7)) * scale);
+      // **Every instant the shader looks at, at the same point.** Foam lingers, so what is
+      // under it now is what has been steep at any time within a whitecap's life - and the
+      // level has to be found against that union or persistence quietly adds coverage.
+      const overTime: number[] = [];
+      for (let back = 0; back <= FOAM_HISTORY; back += 1) {
+        const age = (back / FOAM_HISTORY) * FOAM_LIFE_SECONDS;
+        overTime.push(slopeSquaredAt(components, i * 2.9, j * 3.7, -age) * scale);
+      }
+      out.push(overTime);
     }
   }
   return out;
 }
 
-/** The drawn surface's slope at one point, from the components themselves. */
-function slopeSquaredAt(components: WaveComponent[], east: number, north: number): number {
+/** The drawn surface's squared slope at one point and instant, from the components. */
+function slopeSquaredAt(
+  components: WaveComponent[],
+  east: number,
+  north: number,
+  secondsFromStart: number,
+): number {
   let alongEast = 0;
   let alongNorth = 0;
   for (const wave of components) {
     const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
     const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
-    const height = Math.cos(kx * east + ky * north + wave.phaseRadians) * wave.amplitudeMetres;
+    const phase =
+      kx * east +
+      ky * north -
+      wave.angularFrequencyPerSecond * secondsFromStart +
+      wave.phaseRadians;
+    const height = Math.cos(phase) * wave.amplitudeMetres;
     alongEast += kx * height;
     alongNorth += ky * height;
   }
   return alongEast * alongEast + alongNorth * alongNorth;
 }
 
-/** What fraction of that patch comes out foam at this level. The smoothed edge included. */
-function meanFoam(normalised: number[], standardDeviations: number): number {
+/** What fraction of that patch comes out foam at this level, over a whitecap's whole life. */
+function meanFoam(overTime: number[][], standardDeviations: number): number {
   let total = 0;
-  for (const slope of normalised) {
-    total += smoothstep(
-      standardDeviations * (1 - FOAM_EDGE),
-      standardDeviations * (1 + FOAM_EDGE),
-      slope,
-    );
-  }
-  return total / normalised.length;
+  for (const steepness of overTime) total += foamOver(steepness, 1, standardDeviations);
+  return total / overTime.length;
 }
 
 /**
@@ -569,8 +636,26 @@ vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
 }
 `;
 
-/** The same rule, for the fragment shader. Kept beside it so the two are edited together. */
+/** The same rules, for the fragment shader. Kept beside them so they are edited together. */
 const FOAM_GLSL = `
+/**
+ * How steep this water was, this many seconds ago.
+ *
+ * The spectrum only - a whitecap is a gravity wave breaking - and without the Jacobian or the
+ * carried variance, which do not change with time. Two of these on top of the loop that
+ * shades the surface is what a whitecap's life costs.
+ */
+vec2 steepnessAt( vec2 at, float when, float away, float pixel ) {
+  vec2 slope = vec2( 0.0 );
+  for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
+    vec4 w = uWave[ i ];
+    float wavelength = 6.2831853 / length( w.xy );
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( away * pixel + 1e-6 ) );
+    slope += carries * w.xy * w.z * cos( dot( w.xy, at ) - w.w * when + uWavePhase[ i ] );
+  }
+  return slope;
+}
+
 float foamAt( float slopeSquared, float carried, float deviations ) {
   if ( deviations <= 0.0 || carried <= 0.0 ) return 0.0;
   float threshold = deviations * sqrt( carried );
@@ -794,15 +879,17 @@ const NORMALS = `
   // the sky is a function of a world direction - so the reflection stage below would have to
   // undo the rotation to ask it anything. Mixed by the same fade, so the two agree about how
   // much of this sea is drawn where.
+  // **Kept for the foam before the ripples are added**, and that order is the point: a
+  // whitecap is a gravity wave breaking, not a capillary ripple, and the level the coverage
+  // is fitted to is fitted to the spectrum's own components. Feeding it a slope the ripples
+  // had steepened would ask a question of one surface and answer it about another.
+  gSlopeSquared = dot( slope, slope );
+
   // **What the band cannot reach, as pattern rather than only as width.** The missing slope
   // is what #37 already puts into the reflected body's lobe; the four octaves this can hold
   // take their share of it here and hand it straight back, so the total is unchanged.
   gCarriedSlope *= fade * fade;
   slope += rippleSlope( vWaveParam, max( uSeaSlope - gCarriedSlope, 0.0 ), away, uPixelAngle );
-
-  // **Kept for the foam**, which goes on the steepest water. The same slope the shading is
-  // made of, so the whitecaps are on the crests the picture actually drew.
-  gSlopeSquared = dot( slope, slope );
   // The two tangents, then their cross product - z crossed with x, in that order, so the
   // normal comes out upwards. With no sideways carry it is exactly ( -slope.x, 1, -slope.y ),
   // which is what surfaceNormal in core/seaway.ts is held to.
@@ -867,7 +954,17 @@ const REFLECTION = `
   // the foam's own albedo, which is what dividing the diffuse term by the water's is.
   float away = distance( vWaveWorld.xz, uEye.xz );
   float resolved = smoothstep( 0.0, 1.0, ${FOAM_PATCH_METRES.toFixed(1)} / ( away * uPixelAngle + 1e-6 ) );
-  float foam = uWaveScale * mix( uFoam.x, foamAt( gSlopeSquared, gCarriedSlope, uFoam.y ), resolved );
+  // **The union over a whitecap's life**, which is what its coverage was fitted against:
+  // the strongest claim any instant makes, faded by how long ago it made it. Taken as a
+  // maximum, because two breakings of one piece of water are one patch of foam.
+  float breaking = foamAt( gSlopeSquared, gCarriedSlope, uFoam.y );
+  for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
+    float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
+    vec2 was = steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle );
+    float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
+    breaking = max( breaking, foamAt( dot( was, was ), gCarriedSlope, uFoam.y ) * left );
+  }
+  float foam = uWaveScale * mix( uFoam.x, breaking, resolved );
   // **The same light, off a surface of the foam's own albedo**, which is what dividing the
   // diffuse term by the water's colour and multiplying by this leaves. It was a declared
   // brightness while there was no irradiance to multiply (#66); there is one now (#60).
