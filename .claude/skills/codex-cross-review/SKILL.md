@@ -7,6 +7,30 @@ description: Codex（OpenAI）と Claude Code の二人でこのレポの変更�
 
 Codex に diff を読ませ、Claude が full context で評価し、双方が黙るまで反復する。
 
+## 費用について（先に読むこと）
+
+**この skill の費用は、書いてある1行が何を読ませるかで桁が変わる。** 実測（2026-09）:
+
+| 何を読ませるか | 1 反復あたり |
+|---|---:|
+| プロンプト本体 | 約 600 トークン |
+| `CLAUDE.md` + `docs/domain-notes.md` を丸ごと | **5〜6 万トークン** |
+| stacked PR で `origin/main...HEAD` を渡す | 自分の差分の **6.5 倍**（実測: 840 行 → 5448 行） |
+
+`codex exec` は反復ごとに新しいプロセスなので、**渡したものは毎回読み直される**。だから
+以下は守ること。守らないと 25〜30 万トークンが読むだけで消える。
+
+- **リポジトリの文書を丸ごと読ませない。** 下の観点 1〜9 が `CLAUDE.md` と
+  `docs/domain-notes.md` のチェックリストの蒸留版で、二重に渡す意味がない
+- **反復の状態は PR に置く。** 前回の指摘をプロンプトに貼り直さず、Codex に PR の
+  スレッドを読ませて「解決済みは再指摘しない」を判断させる
+- **diff は PR の base から取る。** `main` からではない
+- **テスト・lint・build を回させない。** それは CI の仕事で、Codex がやり直しても
+  同じ答えに時間を払うだけ
+
+MulmoTerminal の `.github/workflows/codex_review.yaml` が同じ verdict プロトコルを CI 側で
+実装していて、上の4つはそこから来ている。
+
 **このレポで探すべきものは、一般的な web の脆弱性ではない。** server も DB も多言語辞書も無く、
 出力は静的な HTML 1 枚。壊れ方は「もっともらしく見えて幾何が嘘」であって XSS ではない。
 観点を汎用のものに戻さないこと。
@@ -21,7 +45,9 @@ Codex に diff を読ませ、Claude が full context で評価し、双方が�
 1. `command -v codex`。無ければ `npm i -g @openai/codex` → `codex login`
 2. `command -v gh` と `gh auth status`（PR 対象のときのみ）
 3. `git status --short` が空。未コミットの変更があれば停止
-4. PR 対象なら `gh pr view <N> --json state,isDraft,headRefName` で OPEN かつ非 draft
+4. PR 対象なら `gh pr view <N> --json state,isDraft,headRefName,baseRefName` で OPEN かつ非 draft。
+   **`baseRefName` を控える**——diff はそこから取る（stacked PR で `main` から取ると、下に
+   積まれた PR の変更を全部読ませることになる）
 
 作業ファイルは `.codex-review/<N>/`（PR 無しなら `.codex-review/local/`）に置く。`.gitignore` 済み。
 
@@ -48,21 +74,31 @@ Codex への依頼と Claude 自身の読みの両方で、以下を必ず含め
    列見出しを信用せず値域で判定しているか
 9. 一般的な正しさ・エッジケース・テスト網羅（実事案に対する回帰があるか、合成データだけでないか）
 
-## ループ（最大 5 反復）
+## ループ（最大 2 反復）
+
+**5 ではなく 2。** 反復の状態を PR に置くようにしたので、1 周目で出た指摘は 2 周目の Codex
+が PR のスレッドから読む。それでも収束しないなら、往復を増やして解ける問題ではない。
 
 ### A. Codex に読ませる
 
 review 本文は**ファイルに書かせ**、stdout には verdict 行だけ出させる。
 `gh pr diff` は Codex の sandbox の network 制限で失敗するので、`git diff` を使わせること。
+**base は PR のもの**を使う——`main` からではない。
 
 ```bash
 set -o pipefail   # codex の失敗が tee の status に隠れないように
 LOG=.codex-review/<N>/iter-<k>.log
 REVIEW=.codex-review/<N>/iter-<k>-review.md
 
+BASE=$(gh pr view <N> --json baseRefName -q .baseRefName 2>/dev/null || echo main)
+git fetch -q origin "$BASE"
+
+# **自分のプロセスに締切を持たせる。** codex exec は遅くなるのではなく黙って止まることが
+# あり、そうなると上限まで待ち続ける。健全な review は 30 秒〜2 分。
+timeout --signal=TERM --kill-after=30s 300 \
 codex exec --sandbox workspace-write \
   "このリポジトリの変更をレビューしてください。
-   diff は \`git diff origin/main...HEAD\` で読み取ってください
+   diff は \`git diff origin/$BASE...HEAD\` で読み取ってください
    （\`gh pr diff\` は sandbox の network 制限で失敗します）。
 
    レビュー本文は $REVIEW に書いてください。
@@ -71,24 +107,37 @@ codex exec --sandbox workspace-write \
      指摘あり → 'CODEX VERDICT: CHANGES REQUESTED'
    同じ行を review ファイルの末尾にも入れてください。
 
+   **書く前に、この PR に既にあるものを読んでください。**
+     gh api repos/<owner>/<repo>/issues/<N>/comments --paginate
+   前の 'CODEX VERDICT: CHANGES REQUESTED' の各項目について、いまの diff を見て
+   解決済みなら**再指摘しないでください**。他のレビューが既に同じことを書いている
+   ものも繰り返さないでください。既存のスレッドに対して自分が足せる分だけ書きます。
+
+   **テスト・lint・build は実行しないでください。** それは CI の仕事で、同じものが
+   すべての PR で走ります。ここで走らせても答えは変わらず、時間だけかかります。
+   読んで判断してください。実行しないと決められない主張があるなら、そう書いてください。
+
    このツールは海難事故の航跡を 3D で再現します。壊れ方は
    『もっともらしく見えて幾何が嘘』です。重点観点:
    <上の 1〜9 をそのまま貼る>
 
-   CLAUDE.md と docs/domain-notes.md のチェックリストに照らしてください。
    修正は絶対にしないこと。本文のファイル書き出しと verdict のみ。" \
   2>&1 | tee "$LOG"
 ```
 
-review ファイルが書かれなかった場合の fallback。**生 LOG には Codex の tool trace が入り
-`$HOME` の絶対パスが混じるので、公開 PR に乗せる前に必ず伏せる。** `sed` は `$HOME` を
-regex として解釈してメタ文字を含むパスで置換漏れするので、Perl の `\Q...\E` を使う:
+**`CLAUDE.md` や `docs/domain-notes.md` を読ませないこと。** 上の観点 1〜9 がその蒸留版で、
+丸ごと渡すと 1 反復あたり 5〜6 万トークンになる。冒頭の「費用について」を参照。
+
+review ファイルが書かれなかった場合は、**そこで止めて人に見せる。** 生 LOG には Codex の
+tool trace（試行錯誤の全部）が入るので、これを review 本文として公開 PR に投稿すると、
+結論ではなく作業の過程を貼ることになる。`$HOME` を伏せても中身は残る。
 
 ```bash
 if [ ! -s "$REVIEW" ]; then
-  perl -pe 's/\Q$ENV{HOME}\E/~/g' "$LOG" > "$REVIEW"
+  echo "Codex が review 本文を書きませんでした。$LOG を人が読んでください。" >&2
+  exit 1
 fi
-VERDICT=$(grep -m1 -E '^CODEX VERDICT:' "$REVIEW" || grep -m1 -E '^CODEX VERDICT:' "$LOG")
+VERDICT=$(grep -m1 -E '^CODEX VERDICT:' "$REVIEW")
 ```
 
 PR 対象なら `gh pr comment <N> --body-file "$REVIEW"` で代理投稿する。
@@ -124,14 +173,15 @@ npm run check:config && npm run lint && npm run typecheck && npm test && npm run
 - `CHANGES REQUESTED` → 次の反復
 - verdict 行なし → `CHANGES REQUESTED` 扱い、protocol 違反として記録して再依頼
 
-**5 反復で強制終了**し、収束しなければ人間の判断に上げる。
+**2 反復で強制終了**し、収束しなければ人間の判断に上げる。往復を増やして解ける問題では
+ないうえ、1 反復ごとに diff 全体をもう一度読ませることになる。
 
 ## 反復ごとの報告
 
 チャットにその場で出す。GitHub を開かなくても追える状態を保つ。
 
 ```markdown
-### イテレーション <k> / 5
+### イテレーション <k> / 2
 
 **Codex verdict**: LGTM / CHANGES REQUESTED (<N> 件)
 
@@ -162,3 +212,8 @@ Claude は push も merge も勝手にしない。
 | Codex の COLREG 解釈を鵜呑みにする | 条文に当たる。灯火の弧は第21条、光達距離は第22条 |
 | 「もっともらしい」修正を受け入れる | 幾何の主張は `test/` に固定してから受け入れる |
 | Codex の指摘が汎用 web 脆弱性に寄る | 観点リストを毎回そのまま渡す。狭めない |
+| `CLAUDE.md` / `domain-notes` を読ませて 1 反復 5〜6 万トークン | 観点 1〜9 がその蒸留版。文書は渡さない |
+| stacked PR で `origin/main...HEAD` が下位 PR を全部含む | `gh pr view` の `baseRefName` から取る |
+| Codex が `npm test` を回して時間を払う | 実行しないよう明示する。CI が同じものを走らせる |
+| `codex exec` が遅くなるのではなく黙って止まる | `timeout 300` を掛け、止まったら人に上げる |
+| 生 LOG を review 本文として PR に投稿する | 本文が無ければ止める。trace は結論ではない |
