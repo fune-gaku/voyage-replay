@@ -1216,6 +1216,38 @@ describe("the opening shot", () => {
     expect(replay.planExtentMetres).toBeCloseTo(4000, 6);
   });
 
+  /**
+   * **The camera that flies in is the chart's**, so over a viewpoint in the world there is
+   * nothing to fly: the hold would stop the clock for three and a half seconds while the
+   * screen sat still. That does not read as a camera move. It reads as a Play button that
+   * does not work - and then as a Pause button that does not either, because every press
+   * from the top starts the hold again and the clock never leaves the first instant.
+   */
+  it("does not hold the clock over a viewpoint the camera cannot fly in to", () => {
+    vi.useFakeTimers();
+    const replay = replayOf();
+    replay.setView({
+      kind: "orbit",
+      azimuthDegrees: 0,
+      elevationDegrees: 45,
+      distanceMetres: 2_000,
+    });
+    replay.play();
+    runFor(500);
+
+    expect(replay.timeSeconds).toBeGreaterThan(replay.startSeconds);
+  });
+
+  it("lets the clock go when the chart is left part way through it", () => {
+    const replay = playFromTheTop();
+    runFor(500);
+    expect(replay.timeSeconds, "held while the chart flies in").toBe(replay.startSeconds);
+
+    replay.setView({ kind: "bridge", actorId: "A" });
+    runFor(500);
+    expect(replay.timeSeconds).toBeGreaterThan(replay.startSeconds);
+  });
+
   it("gets out of the way as soon as the view is touched", () => {
     const replay = playFromTheTop();
     runFor(500);

@@ -372,6 +372,9 @@ export class Replay {
   }
 
   setView(view: ViewSelection): void {
+    // Leaving the chart part way through its opening leaves the clock held by a camera move
+    // nobody can see any more. The picture it belonged to is gone; so is it.
+    if (pictureOf(view) !== "chart") this.opening = null;
     this.view = view;
     this.update();
   }
@@ -436,15 +439,22 @@ export class Replay {
   }
 
   /**
-   * Only from the top, and only over a frame nobody has taken charge of.
+   * Only from the top, only over a frame nobody has taken charge of, and only over a chart.
    *
    * Resuming after a pause is not an opening, and flying out to a thousand kilometres in
    * the middle of an encounter loses the reader's place rather than giving them one. A
    * chosen scale or a dragged centre is somebody having said where they want to be looking,
    * which this must not overrule.
+   *
+   * **And it is the chart's camera that flies in - `openingExtent` feeds `frameOverhead`
+   * and nothing else.** Started over a viewpoint in the world it holds the clock for three
+   * and a half seconds while nothing whatever moves on screen, which does not read as a
+   * camera move: it reads as a Play button that does not work, and then as a Pause button
+   * that does not work either, because every press from the top starts the hold again.
    */
   private wantsOpening(): boolean {
     return (
+      pictureOf(this.view) === "chart" &&
       this.fixedExtentMetres === null &&
       this.fixedCentre === null &&
       this.currentSeconds === this.startSeconds
