@@ -615,8 +615,17 @@ vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
     float carries = smoothstep( 0.0, 1.0, wavelength / ( 3.0 * away * pixel + 1e-6 ) );
     if ( carries <= 0.0 ) continue;
 
+    // **Only the octaves that are there.** uRipple.y counts them from the band's short end
+    // down to a centimetre, and it can be fewer than this loop is long - a sea whose
+    // shortest drawn wave is 8 cm has three. Drawing four of them anyway would spend
+    // four thirds of the missing variance, hand four thirds of it back to the lobe, and
+    // generate gravity ripples below the centimetre this stops at. The last one is a
+    // fraction, so the weight is what is left of it. Found reviewing #75.
+    float within = clamp( uRipple.y - octave, 0.0, 1.0 );
+    if ( within <= 0.0 ) continue;
+
     float k = 6.2831853 / wavelength;
-    float share = perOctave * carries / ${RIPPLE_BEARINGS}.0;
+    float share = perOctave * carries * within / ${RIPPLE_BEARINGS}.0;
     // Slope amplitude from the variance each carries: var = (a k)^2 / 2.
     float steep = sqrt( 2.0 * share );
 
@@ -629,8 +638,9 @@ vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
         + octave * 2.3 + float( j ) * 1.7;
       slope += unit * steep * cos( phase );
     }
-    // **Handed back**, so the lobe narrows by what the surface took up.
-    gCarriedSlope += perOctave * carries;
+    // **Handed back**, so the lobe narrows by what the surface took up - the same weight,
+    // or the two stop being the same variance.
+    gCarriedSlope += perOctave * carries * within;
   }
   return slope;
 }
@@ -743,6 +753,9 @@ float gSlopeSquared = 0.0;
 // The same variance as gCarriedSlope without the ripples, which is the surface the foam's
 // level was fitted to. See where it is taken.
 float gBreakingSlope = 0.0;
+// How much of the sea this fragment is drawing at all, kept so that a whitecap's history is
+// judged on the same surface as its present. See the foam block.
+float gSlopeFade = 1.0;
 uniform vec3 uFoam;
 ${RIPPLE_GLSL}
 ${FOAM_GLSL}
@@ -915,6 +928,7 @@ const NORMALS = `
   // gCarriedSlope was faded before the ripples, which are added at their own range and must
   // not be faded twice.
   gSlopeSquared *= fade * fade;
+  gSlopeFade = fade;
 }
 `;
 
@@ -972,7 +986,12 @@ const REFLECTION = `
   float breaking = foamAt( gSlopeSquared, gBreakingSlope, uFoam.y );
   for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
     float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
-    vec2 was = steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle );
+    // **The same fade as the present**, which steepnessAt does not apply: it drops each
+    // component at its own range, as the shading loop does, but not the whole surface's
+    // fade to flat. Left off, the past is measured on a sea the picture is no longer
+    // drawing while the level is measured on the faded one, so through the fade's own
+    // transition the history claims foam that is not breaking. Found reviewing #75.
+    vec2 was = steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle ) * gSlopeFade;
     float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
     breaking = max( breaking, foamAt( dot( was, was ), gBreakingSlope, uFoam.y ) * left );
   }

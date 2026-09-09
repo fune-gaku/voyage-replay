@@ -681,6 +681,50 @@ describe("the texture below the drawn band", () => {
    * with two sea states in it, by range. Found reviewing #75; the numerator was already
    * being taken before the ripples for exactly this reason, and only half the pair was.
    */
+  /**
+   * **A whitecap's history has to be measured on the sea the picture is drawing now.**
+   * `steepnessAt` drops each component at its own range, as the shading loop does, but not
+   * the whole surface's fade to flat - so through the fade's transition the past was
+   * measured on a fuller sea than the level it was compared against, and claimed foam that
+   * was not breaking. Found reviewing #75.
+   */
+  it("fades a whitecap's history with the surface it was breaking on", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      "steepnessAt( vWaveParam, uWaveTime - age, away, uPixelAngle ) * gSlopeFade",
+    );
+    const set = shader.fragmentShader.indexOf("gSlopeFade = fade");
+    const used = shader.fragmentShader.indexOf("* gSlopeFade");
+    expect(set, "set where the present is faded").toBeGreaterThan(0);
+    expect(set, "before the foam reads it").toBeLessThan(used);
+  });
+
+  /**
+   * **The octave count is a real number of octaves, and the loop is a constant.** `uRipple.y`
+   * counts from the band's short end down to a centimetre, and a sea whose shortest drawn
+   * wave is a few centimetres has fewer than the four the loop is long - the share is
+   * `missing / uRipple.y`, so drawing four of three spends four thirds of the missing
+   * variance, hands four thirds of it back to the lobe, and generates gravity ripples below
+   * the centimetre this stops at. Reachable: a 20 cm sea's shortest drawn wave is under 16
+   * cm. Found reviewing #75.
+   */
+  it("draws only the octaves that are there, and hands back only those", () => {
+    // A metre of sea on a one-second period - short and steep, and a file may state it -
+    // has its band's short end at 2 cm, so there is barely one octave under it.
+    const steep = drawable(waveComponents(seawayOf(1, 1)));
+    expect(rippleOctaves(shortestDrawnMetres(steep))).toBeLessThan(4);
+
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+    expect(shader.fragmentShader).toContain("float within = clamp( uRipple.y - octave, 0.0, 1.0 )");
+    expect(shader.fragmentShader).toContain("perOctave * carries * within / 3.0");
+    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries * within");
+  });
+
   it("judges a whitecap against the waves it breaks from, not the texture over them", () => {
     const material = new MeshStandardMaterial();
     applyWaves(material, makeWaveUniforms());
@@ -738,7 +782,7 @@ describe("the texture below the drawn band", () => {
     applyWaves(material, makeWaveUniforms());
     const shader = compile(material);
 
-    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries;");
+    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries * within");
     // And it is asked for the missing slope, not for the sea's whole slope.
     expect(shader.fragmentShader).toContain("max( uSeaSlope - gCarriedSlope, 0.0 )");
   });
