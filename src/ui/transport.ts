@@ -12,10 +12,56 @@
  */
 
 import { formatClock } from "../core/time.js";
-import type { ViewSelection } from "../render/view.js";
+import { clampElevation, type ViewSelection } from "../render/view.js";
 
 /** How many positions the scrub bar has between the start and the end of the tracks. */
 const SCRUB_STEPS = 1000;
+
+/**
+ * What the pointer does over the picture, which is not quite the same list as the viewpoints.
+ *
+ * The chart is dragged and zoomed and the sea view is orbited and ranged. A bridge is
+ * neither - `placeBridgeCamera` faces the bow and holds the horizon level, and both of those
+ * are claims about what a watchkeeper saw rather than camera settings - and a `free` eye is
+ * stated outright by whoever built it, so a drag would have nowhere to write. Hence `fixed`
+ * for the two of them: the name says what the pointer can do, because that is what this is.
+ */
+type Mode = "chart" | "orbit" | "fixed";
+
+/** Where the eye stands relative to the action. See `render/view.ts`. */
+interface Orbit {
+  azimuthDegrees: number;
+  elevationDegrees: number;
+  distanceMetres: number;
+}
+
+interface Viewpoint {
+  mode: Mode;
+  orbit: Orbit;
+}
+
+/**
+ * Degrees of orbit per pixel dragged. About twelve hundred pixels for a full turn, which is
+ * a wide canvas end to end - far enough that a small correction is possible, near enough
+ * that getting to the other side is one drag rather than four.
+ */
+const ORBIT_DEGREES_PER_PIXEL = 0.3;
+const ORBIT_NEAREST_METRES = 50;
+const ORBIT_FURTHEST_METRES = 1_000_000;
+
+/**
+ * Where the sea view opens, the first time it is asked for.
+ *
+ * The eye due SOUTH of the action, so it looks north and north is away from the reader -
+ * which is where north is on the chart it was just switched from. Half way up, because
+ * either end is a special case: the zenith is the chart again without the chart's furniture,
+ * and the surface is a bridge without a ship under it.
+ *
+ * The range is taken from what the chart was showing rather than fixed, so the first frame
+ * out at sea holds what the frame before it held. A 55 degree lens covers 1.04 times its
+ * distance vertically, so the extent IS the distance to within a rounding.
+ */
+const ORBIT_OPENING = { azimuthDegrees: 180, elevationDegrees: 45 };
 
 /** The scale option that hands the plan view back to following the ships. */
 const AUTO_SCALE = "auto";
@@ -69,6 +115,17 @@ export interface TransportParts {
   scale: HTMLSelectElement;
   /** Hands the plan view back to following the ships after it has been dragged. */
   recentre: HTMLButtonElement;
+  /**
+   * Everything above that belongs to the chart alone, so it can leave the bar when the
+   * chart does.
+   *
+   * **Hidden rather than disabled.** They were disabled, which is the same statement to a
+   * screen reader and a different one to an eye: a control that is present and does nothing
+   * reads as broken, and both of these are meaningless from a wheelhouse rather than
+   * temporarily unavailable. What is left when they go is what playback needs - the views,
+   * play, the speed, the clock and the bar.
+   */
+  chartControls: HTMLElement;
   views: HTMLElement;
   /** The zone the source report's own times are in. */
   timeZone: string;
@@ -84,11 +141,13 @@ export interface Transport {
 export function wireTransport(parts: TransportParts): Transport {
   const paint = painter(parts);
   const startFollowing = follower(parts.replay, paint);
+  // Zero range says the sea view has not been opened yet, which is what `enter` seeds from.
+  const viewpoint: Viewpoint = { mode: "chart", orbit: { ...ORBIT_OPENING, distanceMetres: 0 } };
 
-  wireViews(parts);
+  wireViews(parts, viewpoint);
   wireSpeed(parts);
-  wireScale(parts);
-  wireDrag(parts);
+  wireScale(parts, viewpoint);
+  wireDrag(parts, viewpoint);
   wirePlayPause(parts, paint, startFollowing);
   wireScrub(parts, paint);
 
@@ -137,33 +196,102 @@ function follower(replay: TransportPlayback, paint: () => void): () => void {
   };
 }
 
-function wireViews({ replay, views, scale, recentre, canvas }: TransportParts): void {
+/**
+ * The three viewpoints: the chart, the sea around the action, and each ship's wheelhouse.
+ *
+ * "Sea" rather than "free" or "orbit" because the label answers a reader's question rather
+ * than naming the mechanism - it is the view from off the ship, out on the water, and the
+ * two names for how the camera gets there are this file's business.
+ */
+function wireViews(parts: TransportParts, viewpoint: Viewpoint): void {
   const buttons: { button: HTMLButtonElement; view: ViewSelection }[] = [];
 
   const add = (label: string, view: ViewSelection): void => {
     const button = document.createElement("button");
     button.textContent = label;
     button.addEventListener("click", () => {
-      replay.setView(view);
-      // Both belong to the plan view. Left live from a wheelhouse they are controls that
-      // change nothing on screen, which reads as ones that are broken - and a canvas
-      // offering to be dragged when dragging it does nothing is the same promise.
-      const chart = view.kind === "chart";
-      scale.disabled = !chart;
-      recentre.disabled = !chart;
-      canvas.style.cursor = chart ? "grab" : "";
+      enter(parts, viewpoint, view);
       for (const entry of buttons) {
         entry.button.setAttribute("aria-pressed", String(entry.view === view));
       }
     });
-    views.append(button);
+    parts.views.append(button);
     buttons.push({ button, view });
   };
 
   add("Chart", { kind: "chart" });
-  for (const id of replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
+  // The stored numbers are a placeholder: `enter` rebuilds the view from the live orbit,
+  // whose range is not known until the button is pressed. Identity is all this copy is for.
+  add("Sea", { kind: "orbit", ...ORBIT_OPENING, distanceMetres: 0 });
+  for (const id of parts.replay.actorIds) add(`${id} bridge`, { kind: "bridge", actorId: id });
+
   buttons[0]?.button.setAttribute("aria-pressed", "true");
-  canvas.style.cursor = "grab";
+  parts.canvas.style.cursor = "grab";
+}
+
+/** Take up a viewpoint: tell the replay, and leave the bar carrying what that view can use. */
+function enter(parts: TransportParts, viewpoint: Viewpoint, view: ViewSelection): void {
+  viewpoint.mode = modeFor(view);
+  if (view.kind === "orbit") {
+    // Seeded once, from what the chart was framing, and remembered afterwards: a reader who
+    // has moved the sea view and then glanced at the chart has not asked to lose it.
+    if (viewpoint.orbit.distanceMetres === 0) {
+      viewpoint.orbit = { ...viewpoint.orbit, distanceMetres: openingRange(parts) };
+    }
+    parts.replay.setView(orbitView(viewpoint.orbit));
+  } else {
+    parts.replay.setView(view);
+  }
+
+  parts.chartControls.hidden = view.kind !== "chart";
+  // A canvas that offers to be dragged where dragging does nothing makes the same promise a
+  // dead button does. The bridge is the one view with nothing to move.
+  parts.canvas.style.cursor = view.kind === "bridge" ? "" : "grab";
+}
+
+function modeFor(view: ViewSelection): Mode {
+  if (view.kind === "chart") return "chart";
+  return view.kind === "orbit" ? "orbit" : "fixed";
+}
+
+function openingRange(parts: TransportParts): number {
+  return clampRange(parts.replay.planExtentMetres);
+}
+
+function orbitView(orbit: Orbit): ViewSelection {
+  return { kind: "orbit", ...orbit };
+}
+
+function clampRange(metres: number): number {
+  return Math.min(Math.max(metres, ORBIT_NEAREST_METRES), ORBIT_FURTHEST_METRES);
+}
+
+/**
+ * Turn the eye round the action, and raise or lower it.
+ *
+ * **Both signs are "grab the world"**, which is what the chart's drag already means: pull to
+ * the right and the sea turns to the right under the eye, so the eye has gone the other way
+ * round; pull down and the far side comes up, so the eye has climbed. The elevation is
+ * clamped where it is held rather than only where it is used, or dragging past the top and
+ * back leaves the picture dead until the surplus is unwound.
+ */
+function orbitBy(parts: TransportParts, viewpoint: Viewpoint, dx: number, dy: number): void {
+  const orbit = viewpoint.orbit;
+  viewpoint.orbit = {
+    ...orbit,
+    azimuthDegrees: orbit.azimuthDegrees + dx * ORBIT_DEGREES_PER_PIXEL,
+    elevationDegrees: clampElevation(orbit.elevationDegrees + dy * ORBIT_DEGREES_PER_PIXEL),
+  };
+  parts.replay.setView(orbitView(viewpoint.orbit));
+}
+
+/** Move the eye in or out along the same bearing. The wheel's other job. */
+function rangeBy(parts: TransportParts, viewpoint: Viewpoint, factor: number): void {
+  viewpoint.orbit = {
+    ...viewpoint.orbit,
+    distanceMetres: clampRange(viewpoint.orbit.distanceMetres * factor),
+  };
+  parts.replay.setView(orbitView(viewpoint.orbit));
 }
 
 function wireSpeed({ replay, speed }: TransportParts): void {
@@ -182,7 +310,7 @@ function wireSpeed({ replay, speed }: TransportParts): void {
  * looked at. A stated scale is also the only way two frames can be compared: a distance
  * read off a picture whose zoom moved on its own means nothing.
  */
-function wireScale(parts: TransportParts): void {
+function wireScale(parts: TransportParts, viewpoint: Viewpoint): void {
   const { replay, scale } = parts;
   const manual = document.createElement("option");
   manual.value = MANUAL_SCALE;
@@ -197,7 +325,7 @@ function wireScale(parts: TransportParts): void {
   scale.addEventListener("change", apply);
   apply();
 
-  wireWheel(parts, (metres: number): void => {
+  wireWheel(parts, viewpoint, (metres: number): void => {
     manualMetres = metres;
     manual.textContent = `Scale: ${formatScale(metres)}`;
     scale.value = MANUAL_SCALE;
@@ -214,7 +342,8 @@ function wireScale(parts: TransportParts): void {
  * scale the picture is at. This view exists to have distances read off it, and a scale
  * nothing states is worse than no scale.
  */
-function wireWheel({ replay, scale, canvas }: TransportParts, zoomTo: (m: number) => void): void {
+function wireWheel(parts: TransportParts, viewpoint: Viewpoint, zoomTo: (m: number) => void): void {
+  const { replay, scale, canvas } = parts;
   const ladder = ladderOf(scale);
   const closest = ladder[0] ?? 200;
   const widest = ladder.at(-1) ?? 1_000_000;
@@ -222,16 +351,17 @@ function wireWheel({ replay, scale, canvas }: TransportParts, zoomTo: (m: number
   canvas.addEventListener(
     "wheel",
     (event: WheelEvent) => {
-      // The same question the menu already answers: from a bridge the scale cannot be
-      // changed, so the wheel is left alone and the page scrolls as it normally would.
-      if (scale.disabled) return;
+      // From a bridge there is no range to change: the eye is where the ship's eye was.
+      // The wheel is left alone so the page scrolls as it normally would.
+      if (viewpoint.mode === "fixed") return;
       event.preventDefault();
 
-      // From what is on screen, not from what was last chosen: on automatic nothing has
-      // been chosen, and the first turn would otherwise jump to an end of the range.
-      // Away from the reader is a bigger number, which is which way round a map works.
+      // Away from the reader is further off, which is which way round both a map and a
+      // camera work. From what is on screen, not from what was last chosen: on automatic
+      // nothing has been chosen, and the first turn would otherwise jump to an end.
       const factor = WHEEL_ZOOM_PER_NOTCH ** (event.deltaY / WHEEL_NOTCH);
-      zoomTo(Math.min(Math.max(replay.planExtentMetres * factor, closest), widest));
+      if (viewpoint.mode === "orbit") rangeBy(parts, viewpoint, factor);
+      else zoomTo(Math.min(Math.max(replay.planExtentMetres * factor, closest), widest));
     },
     // Refused otherwise: a wheel listener is passive by default, and a passive one cannot
     // stop the page scrolling underneath the zoom.
@@ -268,12 +398,14 @@ function formatScale(metres: number): string {
  * leaving the canvas: without it, dragging past the edge stops the pan there and the map
  * sticks to the pointer when it comes back.
  */
-function wireDrag({ replay, canvas, scale, recentre }: TransportParts): void {
+function wireDrag(parts: TransportParts, viewpoint: Viewpoint): void {
+  const { replay, canvas, recentre } = parts;
   let last: { x: number; y: number } | null = null;
 
   canvas.addEventListener("pointerdown", (event: PointerEvent) => {
-    // `disabled` is the same question asked once: from a bridge there is nothing to drag.
-    if (scale.disabled) return;
+    // From a bridge there is nothing to drag: where the eye stands and which way it faces
+    // are the ship's, and moving them would be answering a different question.
+    if (viewpoint.mode === "fixed") return;
     event.preventDefault();
     last = { x: event.clientX, y: event.clientY };
     canvas.setPointerCapture(event.pointerId);
@@ -282,13 +414,17 @@ function wireDrag({ replay, canvas, scale, recentre }: TransportParts): void {
 
   canvas.addEventListener("pointermove", (event: PointerEvent) => {
     if (!last) return;
-    replay.panByPixels(event.clientX - last.x, event.clientY - last.y);
+    const dx = event.clientX - last.x;
+    const dy = event.clientY - last.y;
+    // The chart slides; the sea turns. One gesture, and what it moves is the picture's.
+    if (viewpoint.mode === "chart") replay.panByPixels(dx, dy);
+    else orbitBy(parts, viewpoint, dx, dy);
     last = { x: event.clientX, y: event.clientY };
   });
 
   const release = (): void => {
     last = null;
-    canvas.style.cursor = scale.disabled ? "" : "grab";
+    canvas.style.cursor = viewpoint.mode === "fixed" ? "" : "grab";
   };
   canvas.addEventListener("pointerup", release);
   canvas.addEventListener("pointercancel", release);

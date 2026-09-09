@@ -77,6 +77,14 @@
         gap: 0.25rem;
         align-items: center;
       }
+      /*
+        The `hidden` attribute is a UA rule, and the rule above is an author one, so without
+        this the chart's controls stay on the bar while the code says they have gone - the
+        picture and the page disagreeing about what is on screen, quietly.
+      */
+      #controls .group[hidden] {
+        display: none;
+      }
       button,
       select {
         font: inherit;
@@ -161,7 +169,12 @@
               <option value="60">60&times;</option>
             </select>
           </label>
-          <label class="group">
+          <!--
+            The chart's own controls, which leave the bar with the chart. What stays behind
+            is what playback needs whichever view is up: the views, play, the speed, the
+            clock and the bar.
+          -->
+          <span class="group" id="chartControls">
             <!--
               Metres of sea from the top of the plan view to the bottom. Height rather than
               width because it does not move when the window is resized, and a scale that
@@ -193,13 +206,13 @@
               <option value="500000">Scale: 500 km</option>
               <option value="1000000">Scale: 1000 km</option>
             </select>
-          </label>
-          <button
-            id="recentre"
-            title="Plan view: follow the ships again after dragging the picture"
-          >
-            Recentre
-          </button>
+            <button
+              id="recentre"
+              title="Plan view: follow the ships again after dragging the picture"
+            >
+              Recentre
+            </button>
+          </span>
           <span id="clock">&mdash;</span>
           <input id="scrub" type="range" min="0" max="1000" value="0" />
           <button id="record">Record</button>

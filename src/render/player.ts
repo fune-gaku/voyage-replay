@@ -46,7 +46,7 @@ import { floats } from "../actors/mark/mooring.js";
 import { buildHull } from "./hull.js";
 import { showingAt } from "../core/light-character.js";
 import { ASSUMED_MARK, buildMark, LAMP_COLOURS, type MarkParts } from "./mark.js";
-import { pictureOf, type Picture, type ViewSelection } from "./view.js";
+import { orbitEye, pictureOf, type Picture, type ViewSelection } from "./view.js";
 import {
   buildNavigationLights,
   type LampAudience,
@@ -146,6 +146,21 @@ interface Eye {
    * back an observer for all of them, which is what `LampAudience` already meant.
    */
   aboard: Cast | null;
+  /**
+   * How far below the horizontal it looks. Zero on a bridge, where a watchkeeper is looking
+   * at the horizon.
+   *
+   * **Here rather than worked out again beside the camera.** It was: `facing()` asked the
+   * view what kind it was and returned zero for anything it did not recognise, so a viewpoint
+   * added without touching it came out level - placed correctly, pointed wrongly, and moving
+   * smoothly enough to look deliberate. An aim that travels with the eye cannot be forgotten.
+   */
+  depressionDegrees?: number;
+}
+
+/** Which way an eye that is not on a bridge looks. Level unless it was given a depression. */
+function facingOf(eye: Eye): { headingDegreesTrue: number; depressionDegrees: number } {
+  return { headingDegreesTrue: eye.heading, depressionDegrees: eye.depressionDegrees ?? 0 };
 }
 
 /**
@@ -568,9 +583,36 @@ export class Replay {
         heading: this.view.headingDegreesTrue,
         eyeHeightMetres: this.view.heightMetres,
         aboard: null,
+        depressionDegrees: this.view.depressionDegrees ?? 0,
       };
     }
+    if (this.view.kind === "orbit") return this.orbitingEye(this.view);
     return this.bridgeEye();
+  }
+
+  /**
+   * An eye standing off the action at an angle and a range, aboard nobody.
+   *
+   * **Round the same centre the chart frames on**, which is why this asks the player rather
+   * than working it out: `frameOverhead` is the chart's alone - it also settles which ground
+   * the basemap fetches - and a second answer to "where is the action" would let the picture
+   * turn about a point the frame does not agree with. Issue #65.
+   *
+   * **Never null.** A bridge eye can be missing, because a ship's own track need not reach
+   * this instant, and `activeCamera` falls back to the overhead camera when it is. That
+   * fallback is a chart's camera: taken while the picture is still the world, it would draw a
+   * curved earth in parallel projection, which is a picture nobody designed. An orbit always
+   * has somewhere to stand - the last centre, or the origin, if the cast has nothing to say.
+   */
+  private orbitingEye(view: Extract<ViewSelection, { kind: "orbit" }>): Eye {
+    const eye = orbitEye(view, this.centreOfAction() ?? this.planCentre);
+    return {
+      position: eye.at,
+      heading: eye.headingDegreesTrue,
+      eyeHeightMetres: eye.heightMetres,
+      aboard: null,
+      depressionDegrees: eye.depressionDegrees,
+    };
   }
 
   /** The watchkeeper's eyes, or nothing where her own track has not reached this instant. */
@@ -751,13 +793,30 @@ export class Replay {
     );
   }
 
+  /**
+   * Where the action is: what the chart frames on, and what an orbit turns about.
+   *
+   * **One answer, asked in two places.** The chart's framing and the orbit's centre are the
+   * same question, and the alternative - the control that drives the orbit working it out for
+   * itself - is two answers that drift apart. What is NOT shared is the rest of
+   * `frameOverhead`: the extent it settles on also decides which ground the basemap fetches,
+   * and a viewpoint in the world sending the map after a rectangle nothing draws is the
+   * failure #63 named. Issue #65.
+   *
+   * A dragged view has somewhere to be even at an instant no ship's track reaches; an
+   * undragged one has nothing to follow, so the caller keeps it where it was rather than
+   * jumping.
+   */
+  private centreOfAction(): LocalPosition | null {
+    const bounds = boundsToHold(this.stage.cast, this.currentSeconds);
+    return this.fixedCentre ?? (bounds ? midpointOf(bounds) : null);
+  }
+
   /** Follow whoever is on stage, wide enough to hold them all with room to read. */
   private frameOverhead(): void {
-    const bounds = boundsToHold(this.stage.cast, this.currentSeconds);
-    // A dragged view has somewhere to be even at an instant no ship's track reaches; an
-    // undragged one has nothing to follow, so it stays where it was rather than jumping.
-    const centre = this.fixedCentre ?? (bounds ? midpointOf(bounds) : null);
+    const centre = this.centreOfAction();
     if (!centre) return;
+    const bounds = boundsToHold(this.stage.cast, this.currentSeconds);
     this.planCentre = centre;
 
     const span = bounds ? spanOf(bounds) : 0;
@@ -783,22 +842,15 @@ export class Replay {
     // No eye means a bridge whose own track has not reached this instant. Nothing to stand on.
     if (!eye) return this.overhead;
 
-    // Which camera, on the other hand, is a question about the camera.
-    if (this.view.kind === "free") {
-      placeFreeCamera(this.free, eye.position, this.facing(), eye.eyeHeightMetres);
+    // Which camera, on the other hand, is a question about the camera. Both viewpoints that
+    // are not aboard a ship take the one that can be pointed down; a bridge takes the one
+    // that cannot, which is the claim `placeBridgeCamera` exists to make.
+    if (eye.aboard === null) {
+      placeFreeCamera(this.free, eye.position, facingOf(eye), eye.eyeHeightMetres);
       return this.free;
     }
     placeBridgeCamera(this.bridge, eye.position, eye.heading, eye.eyeHeightMetres);
     return this.bridge;
-  }
-
-  /** Which way the free camera looks, level unless it was told to look down. */
-  private facing(): { headingDegreesTrue: number; depressionDegrees: number } {
-    if (this.view.kind !== "free") return { headingDegreesTrue: 0, depressionDegrees: 0 };
-    return {
-      headingDegreesTrue: this.view.headingDegreesTrue,
-      depressionDegrees: this.view.depressionDegrees ?? 0,
-    };
   }
 
   /**

@@ -1549,3 +1549,98 @@ describe("a mark's light in the picture", () => {
     expect(colour.g).toBeGreaterThan(colour.b);
   });
 });
+
+/**
+ * **The viewpoint a reader asks for**, which is neither of the two the tool had: a place to
+ * stand off the action and turn round it, from nearly overhead down to nearly the surface.
+ *
+ * It is stated relative to what is happening rather than absolutely, and that is the whole
+ * of why it lives in the player: where the action is is already worked out here, for the
+ * chart's framing, and a second answer to it in whatever drives the control would let the
+ * picture turn about a point the frame does not agree with. Issue #65.
+ */
+describe("an orbit round the action", () => {
+  const ALOFT = {
+    kind: "orbit",
+    azimuthDegrees: 0,
+    elevationDegrees: 45,
+    distanceMetres: 2_000,
+  } as const;
+
+  /** Where the chart has its frame centred, read off the camera it framed. */
+  function chartCentre(replay: InstanceType<typeof Replay>): { east: number; north: number } {
+    replay.setView({ kind: "chart" });
+    const camera = lastFrame().camera as OrthographicCamera;
+    return { east: camera.position.x, north: -camera.position.z };
+  }
+
+  it("stands off the point the chart frames on, at the range and height asked for", () => {
+    const replay = replayOf();
+    const centre = chartCentre(replay);
+
+    replay.setView(ALOFT);
+    const eye = lastFrame().camera as PerspectiveCamera;
+    const away = 2_000 * Math.cos(Math.PI / 4);
+
+    expect(eye.position.y, "height").toBeCloseTo(2_000 * Math.sin(Math.PI / 4), 3);
+    // Bearing 000 from the action, so due north of it - and world z runs south.
+    expect(eye.position.x, "east").toBeCloseTo(centre.east, 3);
+    expect(-eye.position.z, "north").toBeCloseTo(centre.north + away, 3);
+    expect((eye.rotation.x * 180) / Math.PI, "looking down at it").toBeCloseTo(-45, 3);
+  });
+
+  /** It is a place, so the earth bends away from it as it does from a wheelhouse. */
+  it("draws the world rather than a chart seen from an angle", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const flat = ships(lastFrame().scene)[1]!.position.y;
+    replay.setView(ALOFT);
+
+    expect(flat, "a chart is drawn flat").toBeCloseTo(0, 6);
+    expect(ships(lastFrame().scene)[1]!.position.y).toBeLessThan(0);
+  });
+
+  /**
+   * The ships move and the eye stays with them, which is what makes this an orbit rather
+   * than a position: an eye that kept its metres would be left behind by an encounter that
+   * runs miles, and the whole point of standing off is to watch the geometry between them.
+   */
+  it("keeps up with the action instead of holding still", () => {
+    const replay = replayOf();
+    replay.setView(ALOFT);
+    const before = (lastFrame().camera as PerspectiveCamera).position.clone();
+
+    replay.seek(replay.endSeconds);
+    const after = (lastFrame().camera as PerspectiveCamera).position;
+
+    expect(after.distanceTo(before)).toBeGreaterThan(1);
+    expect(after.y, "and at the height it was left at").toBeCloseTo(before.y, 6);
+  });
+
+  /**
+   * **Never the chart's camera.** A bridge eye can be missing - a ship's own track need not
+   * reach this instant - and the fallback for that is the overhead camera, which is a
+   * parallel projection. Taken while the picture is still the world, it would draw a curved
+   * earth flat-on: a picture nobody designed. An orbit always has somewhere to stand.
+   */
+  /**
+   * A second ship's record beginning after the first is the ordinary case, not a corner:
+   * in the reference case B's AIS starts thirty minutes after A's.
+   */
+  function laterPoints(): TrackPoint[] {
+    return westboundPoints().map((point) => ({
+      ...point,
+      t: point.t.replace("T00:0", "T00:1"),
+    }));
+  }
+
+  it("has an eye at every instant, including before a ship's track begins", () => {
+    const replay = replayOf(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", laterPoints(), BIG_SHIP)]),
+    );
+    replay.setView(ALOFT);
+    replay.seek(replay.startSeconds);
+
+    expect(lastFrame().camera).toBeInstanceOf(PerspectiveCamera);
+  });
+});
