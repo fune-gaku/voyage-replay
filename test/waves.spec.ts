@@ -419,12 +419,14 @@ describe("what is too small to draw", () => {
   });
 
   /**
-   * A centimetre of sea is where this bites: only one component of the forty clears the
-   * floor, so without the rescaling the water would be drawn at 45 per cent of the height
-   * printed beside it - and nothing on the page would say which figure was the picture's.
+   * Two centimetres of sea is where this bites: 23 of the forty components clear the floor
+   * and seventeen do not, so without the rescaling the water would be drawn short of the
+   * height printed beside it - and nothing on the page would say which figure was the
+   * picture's. Below about thirteen millimetres nothing clears it at all, which the test
+   * after this one holds.
    */
   it("gives the survivors the share of the ones that went", () => {
-    const whole = waveComponents(seawayOf(0.01));
+    const whole = waveComponents(seawayOf(0.02));
     const shown = drawable(whole);
     expect(shown.length).toBeLessThan(whole.length);
     expect(shown.length).toBeGreaterThan(0);

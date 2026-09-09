@@ -194,7 +194,7 @@ describe("the path a body lays", () => {
     const towards = towardsBody(moon(191, 41));
 
     // Near the eye the normals carry the drawn sea's own slope; far out they carry none.
-    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
+    const drawn = Math.tan((6.0 * Math.PI) / 180) ** 2;
     // Dead centre both peak alike - a Gaussian's height does not depend on its width.
     expect(skyColourAt(towards, uniforms, 0).r).toBeCloseTo(
       skyColourAt(towards, uniforms, drawn).r,

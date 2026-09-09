@@ -120,7 +120,7 @@ describe("how much wider the reflected body has to be drawn", () => {
    * Munk rather than against the arithmetic that produced it.
    */
   it("makes up exactly what the drawn surface is missing", () => {
-    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
+    const drawn = Math.tan((6.0 * Math.PI) / 180) ** 2;
     const spread = glitterSpreadRadians(3, drawn) ?? 0;
     const measured = coxMunkSlopeVariance(windRaisingMetresPerSecond(3));
     expect(Math.hypot(rayFrom(drawn), spread)).toBeCloseTo(rayFrom(measured), 12);
@@ -146,8 +146,8 @@ describe("how much wider the reflected body has to be drawn", () => {
 
   /** And what is left for the body once the drawn normals have had their share. */
   it("leaves the body the part the drawn sea cannot supply", () => {
-    const drawn = Math.tan((5.4 * Math.PI) / 180) ** 2;
-    expect(((glitterSpreadRadians(3, drawn) ?? 0) * 180) / Math.PI).toBeCloseTo(18.9, 1);
+    const drawn = Math.tan((6.0 * Math.PI) / 180) ** 2;
+    expect(((glitterSpreadRadians(3, drawn) ?? 0) * 180) / Math.PI).toBeCloseTo(18.6, 1);
   });
 
   it("widens the path as the sea grows, because the wind that raised it did", () => {
