@@ -52,7 +52,7 @@ import {
   applyWaves,
   displacedFraction,
   drawable,
-  foamThreshold,
+  drawnFoam,
   makeWaveUniforms,
   meshCarries,
   setWaves,
@@ -418,8 +418,10 @@ function addWater(
   // **How much foam, from the wind - and only that.** Where it lands is `render/waves.ts`'s
   // choice; the amount is Monahan's measured relation, and a sea nothing states gets none
   // rather than a guess. The rough end, so it matches the sea the same water is drawn at.
-  const foam = whitecapsFrom(environment)?.mostFraction ?? 0;
-  waves.uFoam.value.set(foam, foamThreshold(components, foam), palette.foam);
+  // **And only onto a sea that is drawn**, which is `drawnFoam`'s business: with no
+  // components the far field would carry the fraction and the near field none.
+  const foam = drawnFoam(components, whitecapsFrom(environment)?.mostFraction ?? 0);
+  waves.uFoam.value.set(foam.coverage, foam.standardDeviations, palette.foam);
 
   // The sky goes in with the water because it IS the same sky: one set of uniforms, so the
   // two cannot come to describe different ones - which would show first at the waterline,

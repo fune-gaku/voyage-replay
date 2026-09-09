@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Environment, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
-import { seawayFrom, waveComponents } from "../src/core/seaway.js";
+import { seawayFrom, waveComponents, whitecapFraction } from "../src/core/seaway.js";
 import { drawable } from "../src/render/waves.js";
 import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
@@ -1283,6 +1283,36 @@ describe("the band the sea is drawn from", () => {
     expect(html).toContain("0.004 m");
     expect(html).toContain("nothing in this sea stands a millimetre high");
     expect(html).not.toContain("on a sea of no height");
+  });
+
+  /**
+   * **A wind gives a coverage whether or not there is a sea to break it.** The renderer
+   * spends that coverage on the slopes of the drawn components near to, and as a flat
+   * fraction beyond where they resolve - so with nothing drawn the water is glass in the
+   * foreground and four per cent foam at the horizon, and a page printing the wind's figure
+   * beside it would be describing a sea the picture has not got. Found reviewing #73.
+   */
+  it("says no whitecaps are drawn where there are no waves to break", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0, derivation: "measured" },
+      wind: { speedKnots: 30, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(whitecapFraction(30 * 0.514444)).toBeGreaterThan(0);
+    expect(html).toContain("no waves are drawn for it to break on");
+  });
+
+  it("says the same where nothing states a sea at all", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      wind: { speedKnots: 30, derivation: "measured" },
+    };
+
+    expect(panelsFor(subject)).toContain("there is no drawn sea here to break");
   });
 
   /**

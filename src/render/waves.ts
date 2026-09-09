@@ -331,6 +331,33 @@ function smoothstep(from: number, to: number, at: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** What the water is actually drawn carrying: the fraction, and the slope it starts at. */
+export interface DrawnFoam {
+  coverage: number;
+  standardDeviations: number;
+}
+
+/**
+ * How much foam the water carries and at what slope it begins, which have to be settled
+ * together and cannot be settled without the sea.
+ *
+ * **Whitecaps are waves breaking, so there have to be waves.** The shader spends the
+ * coverage two ways: on the steepest of the drawn components where a fragment resolves
+ * them, and as that flat fraction where it does not (`FOAM_GLSL`). With nothing drawn, the
+ * near field has no slope to put above any level and the far field still carries the
+ * fraction - so the same flat water is glass close to and four per cent foam at the
+ * horizon, a sea state that changes with range. A file stating a wind and no sea reaches
+ * exactly that, and so does one stating a sea of zero height beside a wind. Found reviewing
+ * #73.
+ *
+ * `ui/panels.ts` asks this same function what is drawn rather than reporting the wind's
+ * figure on its own, so the page and the picture cannot come apart over it.
+ */
+export function drawnFoam(components: WaveComponent[], coverage: number): DrawnFoam {
+  if (components.length === 0) return { coverage: 0, standardDeviations: 0 };
+  return { coverage, standardDeviations: foamThreshold(components, coverage) };
+}
+
 /**
  * How many standard deviations of slope leave the wind's coverage above them - **found by
  * running the drawn sea past the rule rather than by assuming a distribution for it.**

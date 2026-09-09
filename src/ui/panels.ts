@@ -33,7 +33,7 @@ import { lightingAt } from "../core/illumination.js";
 import { lightsForVessel } from "../actors/vessel/lights.js";
 import { SHADER_LAMPS } from "../render/lamps.js";
 import { isNight } from "../render/scene.js";
-import { drawable, FOAM_REFLECTANCE } from "../render/waves.js";
+import { drawable, drawnFoam, FOAM_REFLECTANCE } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   coxMunkSlopeVariance,
@@ -992,13 +992,20 @@ function seaSection(scenario: Scenario): string {
     ["Coming from", directionRow(sea)],
     ["Derivation", sea.derivation],
     ["Waves drawn", bandRow(drawn, sea.rough.significantHeightMetres > 0)],
-    ["Whitecaps", whitecapRow(scenario.environment)],
+    ["Whitecaps", whitecapRow(scenario.environment, drawn)],
   ];
   return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn), foamNote()]);
 }
 
-/** How much of the surface is drawn under foam, and out of which figure that came. */
-function whitecapRow(environment: Environment | undefined): string {
+/**
+ * How much of the surface is drawn under foam, and out of which figure that came.
+ *
+ * **Through `drawnFoam`, which is the renderer's own answer rather than a second one.** The
+ * wind gives a coverage whether or not there is a sea to break, and a page reporting that
+ * figure beside water carrying no foam is the picture and the prose disagreeing about the
+ * sea - the failure this section exists to catch. Found reviewing #73.
+ */
+function whitecapRow(environment: Environment | undefined, drawn: WaveComponent[]): string {
   const foam = whitecapsFrom(environment);
   if (!foam) return "not drawn - nothing states a wind or a sea";
 
@@ -1007,6 +1014,9 @@ function whitecapRow(environment: Environment | undefined): string {
     foam.leastFraction === foam.mostFraction
       ? most
       : `${(foam.leastFraction * 100).toFixed(2)}-${most}${foam.mostIsOpen ? " or more" : ""}`;
+  if (drawnFoam(drawn, foam.mostFraction).coverage === 0) {
+    return `${span} by the wind, but no waves are drawn for it to break on, so none is drawn`;
+  }
   return `${span} of the surface, ${FOAM_SOURCE[foam.from]}`;
 }
 
@@ -1278,7 +1288,9 @@ const DIRECTION_SOURCE: Record<SeaEstimate["directionFrom"], string> = {
 const NO_SEA =
   "The file states no sea, and the view therefore draws flat water - which is not a " +
   "neutral picture but the strongest claim available, that everything was in sight the " +
-  "whole time. An unstated sea is not a calm one.";
+  "whole time. An unstated sea is not a calm one. No whitecaps go on it either, whatever " +
+  "the wind: the coverage is a fraction of a sea breaking, and there is no drawn sea here " +
+  "to break.";
 
 /**
  * How much of the time a crest stood between the two.
