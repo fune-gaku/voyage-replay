@@ -230,11 +230,30 @@ vec3 skyTowards( vec3 towards, float carried ) {
  * regardless. And it is drawn at its own half degree rather than spread by the sea, because
  * nothing is spreading it - that is what a disc in the sky looks like.
  */
+/**
+ * **The dome writes the same gradient the water hands back, and has to leave it the same way.**
+ *
+ * A `ShaderMaterial` writes `gl_FragColor` itself, so nothing converts it: three's own
+ * materials end with `<colorspace_fragment>` inside `<opaque_fragment>`, and the water - a
+ * patched `MeshStandardMaterial` - goes through that. The dome did not. Both were fed the
+ * same linear colours from the same uniforms and only one of them was encoded, so the sky
+ * above the waterline was drawn DARK: measured, a direction where the gradient asks for
+ * sRGB (98, 143, 205) came out (32, 73, 158), which is that colour's linear triple written
+ * out raw.
+ *
+ * It is #53's failure arriving by another road. That issue put the gradient in one function
+ * so the sky and its reflection could not disagree; one function is not enough if the two
+ * ends of it leave through different pipelines.
+ *
+ * `colorspace_pars_fragment` is in three's fragment prefix unconditionally, so the include
+ * needs nothing declared alongside it.
+ */
 export const SKY_DOME_GLSL = `
 varying vec3 vSkyDirection;
 void main() {
   vec3 towards = normalize( vSkyDirection );
   gl_FragColor = vec4( skyGradient( towards ) + bodyGlow( towards, uSkyBodyLobe.y ), 1.0 );
+  #include <colorspace_fragment>
 }
 `;
 

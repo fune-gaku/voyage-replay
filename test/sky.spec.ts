@@ -1,8 +1,9 @@
-import { Color, Vector3 } from "three";
+import { Color, ShaderLib, Vector3, type ShaderMaterial } from "three";
 import { describe, expect, it } from "vitest";
 
 import type { Lit } from "../src/core/illumination.js";
 import {
+  buildSkyDome,
   makeSkyUniforms,
   setSkyBody,
   skyColourAt,
@@ -337,5 +338,32 @@ describe("the copy that runs on the card", () => {
     // a function, since the lamps reflect in the same water and must share the width.
     expect(SKY_GLSL).toContain("float lobeWidth( float carried, float radius )");
     expect(SKY_GLSL).toContain("max( uSeaSlope - carried, 0.0 )");
+  });
+});
+
+/**
+ * **One gradient function is not enough if its two ends leave through different pipelines.**
+ *
+ * The water is a patched `MeshStandardMaterial`, so it ends inside three's own
+ * `opaque_fragment`, which converts the linear colour it has been working in to whatever
+ * colour space the canvas wants. The dome writes `gl_FragColor` itself and nothing does that
+ * for it - so the same uniforms, through the same function, came out of the two ends
+ * differently: a direction asking for sRGB (98, 143, 205) was drawn (32, 73, 158), which is
+ * that colour's linear triple written out raw. The sky above the waterline was dark and the
+ * sea below it was not.
+ *
+ * Held by tying the dome to the chunk the water goes through rather than to a literal, since
+ * the claim is that the two agree and not that either says any particular thing.
+ */
+describe("the dome and the water leave by the same door", () => {
+  it("converts its colour the way three's own materials do", () => {
+    const dome = buildSkyDome(gradientSky());
+    const material = dome.material as ShaderMaterial;
+
+    expect(
+      ShaderLib.physical?.fragmentShader,
+      "which is the shader the water is patched into",
+    ).toContain("colorspace_fragment");
+    expect(material.fragmentShader).toContain("colorspace_fragment");
   });
 });
