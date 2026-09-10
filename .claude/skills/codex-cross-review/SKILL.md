@@ -98,8 +98,9 @@ git fetch -q origin "$BASE"
 
 # **自分のプロセスに締切を持たせる。** codex exec は遅くなるのではなく黙って止まることが
 # あり、そうなると上限まで待ち続ける。健全な review は 30 秒〜2 分。
-timeout --signal=TERM --kill-after=30s 300 \
-codex exec --sandbox workspace-write \
+# macOS には GNU の timeout が無い（gtimeout も入っていないことが多い）ので perl で代用する。
+perl -e 'alarm 300; exec @ARGV' \
+codex exec --model gpt-5.5 --sandbox workspace-write \
   "このリポジトリの変更をレビューしてください。
    diff は \`git diff origin/$BASE...HEAD\` で読み取ってください
    （\`gh pr diff\` は sandbox の network 制限で失敗します）。
@@ -229,5 +230,8 @@ Claude は push も merge も勝手にしない。
 | 観点 1〜9 で足りると思う | 足りない。太字の罠は 148 件あり 9 件は 6% |
 | stacked PR で `origin/main...HEAD` が下位 PR を全部含む | `gh pr view` の `baseRefName` から取る |
 | Codex が `npm test` を回して時間を払う | 実行しないよう明示する。CI が同じものを走らせる |
-| `codex exec` が遅くなるのではなく黙って止まる | `timeout 300` を掛け、止まったら人に上げる |
+| `codex exec` が遅くなるのではなく黙って止まる | 締切を掛け、止まったら人に上げる |
+| macOS に `timeout` が無い | `perl -e 'alarm 300; exec @ARGV'`。`gtimeout` も普通は入っていない |
+| モデルが CLI の既定に流れる | **`--model gpt-5.5` を明示する**（藤井さんの指定。既定は版で動き、2026-09 は `gpt-5.6-sol` だった） |
+| プロンプトを `$(cat file)` で渡して stdin 待ちになる | 引数として渡すか、確実に渡すなら `< /dev/null` を添える |
 | 生 LOG を review 本文として PR に投稿する | 本文が無ければ止める。trace は結論ではない |
