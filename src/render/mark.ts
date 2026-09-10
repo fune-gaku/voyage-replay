@@ -237,6 +237,10 @@ function withLamp(mark: Mark, group: Group, heightMetres: number, onAStaff: bool
       sizeAttenuation: false,
       transparent: true,
       depthWrite: false,
+      // A declared screen colour, like a ship's lamps and for the reason written there: the
+      // rhythm is what identifies the mark, and a tone-mapped lamp is white at the night
+      // exposure and black at the day one. `render/navlights.ts`, issue #78.
+      toneMapped: false,
     }),
   );
   lamp.name = `lamp:${mark.id}`;

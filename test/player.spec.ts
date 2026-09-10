@@ -1,5 +1,5 @@
 import type { AmbientLight } from "three";
-import { OrthographicCamera, PerspectiveCamera, Texture, Vector3 } from "three";
+import { OrthographicCamera, PerspectiveCamera, Texture, Vector3, type Color } from "three";
 
 import type { ViewSelection } from "../src/render/view.js";
 import type * as THREE from "three";
@@ -1581,6 +1581,47 @@ describe("a mark's light in the picture", () => {
     expect(lamp.visible).toBe(true);
     expect(colour.g).toBeGreaterThan(colour.r);
     expect(colour.g).toBeGreaterThan(colour.b);
+  });
+});
+
+/**
+ * **A chart is a drawing and the world is a place**, which is the split #63 made - and the
+ * hull's colour is one more thing that cannot be one answer. The chart's red and blue are
+ * the ones an investigator tells two ships apart with, chosen to be legible on white paper;
+ * as an albedo that red is 0.68 linear, more than any topcoat returns, and it clipped in
+ * sunlight and stayed visible under starlight once the light was in lux (#60). Taken the
+ * other way, the chart's hulls go dark and the identity goes with them.
+ */
+describe("what colour a hull is", () => {
+  function hullColour(): Color {
+    const ship = ships(lastFrame().scene)[0];
+    if (!ship) throw new Error("no ship on stage");
+    const mesh = partsOf(ship)[0]?.children[0] as Mesh;
+    return (mesh.material as MeshStandardMaterial).color;
+  }
+
+  it("keeps the chart's own colour on a chart and takes an albedo in the world", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const drawn = hullColour().clone();
+
+    replay.setView({ kind: "bridge", actorId: "B" });
+    const lit = hullColour().clone();
+
+    expect(drawn.r, "the chart keeps what was authored").toBeGreaterThan(lit.r);
+    expect(lit.r, "and the world takes something a paint could return").toBeLessThanOrEqual(0.36);
+  });
+
+  /** The same red, though: what identifies her is the hue and not the brightness. */
+  it("changes what it reflects and not which ship it is", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const drawn = hullColour().clone();
+    replay.setView({ kind: "bridge", actorId: "B" });
+    const lit = hullColour().clone();
+
+    expect(lit.g / lit.r).toBeCloseTo(drawn.g / drawn.r, 6);
+    expect(lit.b / lit.r).toBeCloseTo(drawn.b / drawn.r, 6);
   });
 });
 

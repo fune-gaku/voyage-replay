@@ -287,6 +287,16 @@ describe("the lamp a mark carries", () => {
     expect(buildMark(lit()).lamp?.visible).toBe(false);
   });
 
+  /**
+   * The rhythm is what identifies a mark, and a lamp that has been through the tone curve is
+   * white at the night exposure and black at the day one - so the point is a declared screen
+   * colour, as a ship's lamps are. `render/navlights.ts` has the measurements. Found
+   * reviewing #74.
+   */
+  it("keeps the lamp off the tone curve, as a ship's lamps are", () => {
+    expect(buildMark(lit()).lamp?.material.toneMapped).toBe(false);
+  });
+
   it("sits above the staff on a buoy that has one, and on top of a beacon", () => {
     const height = 3;
     const onPillar = buildMark(lit({ shape: "pillar", heightMetres: height }));

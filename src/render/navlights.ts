@@ -216,6 +216,18 @@ function lampPoints(light: NavigationLight, vessel: Vessel, freeboard: number): 
       sizeAttenuation: false,
       transparent: true,
       depthWrite: false,
+      // **The one thing in the world picture that is not on the photometric scale, and it
+      // has to be said out loud.** The light this lamp puts ON THE WATER is in candela and
+      // lux and goes through the tone curve with everything else; the lamp's own point does
+      // not. Left tone-mapped, the night exposure of 76 renders red, green, white and
+      // yellow at (255,245,245), (241,255,242), (255,254,253) and (255,252,245) - four
+      // lamps that a reader cannot tell apart, when the colour IS the identity - and the
+      // day exposure of 4.6e-5 renders all four black. Both measured. A 7-pixel sprite's
+      // radiance is a property of the sprite rather than of the lamp anyway: at any
+      // exposure that shows a moonlit sea, a lamp inside its nominal range saturates. So
+      // the point is a declared screen colour and the water it lights is calculated. See
+      // `plans/photometric-scale-60.md` and issue #78.
+      toneMapped: false,
     }),
   );
 }

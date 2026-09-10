@@ -33,8 +33,15 @@ const MARGIN_PIXELS = 10;
 /** Drawn at twice the size and shown at half, so it survives a high-density display. */
 const SUPERSAMPLE = 2;
 
-/** Which corner a caption is pinned to. Both are on the right; nothing is on the left yet. */
-export type Corner = "top-right" | "bottom-right";
+/**
+ * Which corner a caption is pinned to.
+ *
+ * The right-hand pair says what the frame IS - the clock, and whose tiles the ground came
+ * from. The left says what has been done TO it, which is the one thing that must not be
+ * possible to crop off a recording: a picture drawn at an exposure the condition did not
+ * choose has to carry that with it wherever it goes. See issue #56.
+ */
+export type Corner = "top-right" | "bottom-right" | "top-left";
 
 /**
  * How the words are set.
@@ -128,7 +135,13 @@ interface Frame {
 }
 
 function newPlaque(corner: Corner, family: string): Plaque {
-  const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ transparent: true }));
+  // **Not tone mapped.** The clock and the credits are lettering, not light: put through an
+  // exposure set for a moonless sea they would be unreadable, and through a day's they would
+  // be gone. Nothing in this pass is a radiance.
+  const mesh = new Mesh(
+    new PlaneGeometry(1, 1),
+    new MeshBasicMaterial({ transparent: true, toneMapped: false }),
+  );
   mesh.visible = false;
   return {
     corner,
@@ -206,11 +219,13 @@ function textureFor(plaque: Plaque, canvas: HTMLCanvasElement): CanvasTexture {
 }
 
 function place(plaque: Plaque, frame: Frame): void {
-  // Both corners are on the right, and clear of the edge by the same margin.
-  const x = frame.width - MARGIN_PIXELS - plaque.width / 2;
+  const x =
+    plaque.corner === "top-left"
+      ? MARGIN_PIXELS + plaque.width / 2
+      : frame.width - MARGIN_PIXELS - plaque.width / 2;
   const y =
-    plaque.corner === "top-right"
-      ? frame.height - MARGIN_PIXELS - plaque.height / 2
-      : MARGIN_PIXELS + plaque.height / 2;
+    plaque.corner === "bottom-right"
+      ? MARGIN_PIXELS + plaque.height / 2
+      : frame.height - MARGIN_PIXELS - plaque.height / 2;
   plaque.mesh.position.set(x, y, 0);
 }

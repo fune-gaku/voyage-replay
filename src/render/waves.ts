@@ -173,14 +173,12 @@ export interface WaveUniforms {
    * and is the only measured thing about the foam in this picture. The second is where that
    * much foam lands, which is this file's choice (`foamAt`, `foamThreshold`).
    *
-   * **The third is declared, and has to be until #60.** A whitecap's luminance is its albedo
-   * times the light falling on it - Koepke's 0.22 times sun and sky - and this renderer has
-   * no irradiance to multiply by: the lights were set to make the water look right against a
-   * hand-picked colour, and the sky is a screen value rather than a radiance. Computed from
-   * them as they stand, foam comes out four times DARKER than the sea it sits on and draws
-   * as dark streaks on the crests, which is not what a whitecap is. So it joins `ambient`,
-   * `bodyLobe`, `streak` and `luxToScreen` as a figure the palette states, and becomes
-   * computable when everything is on one photometric scale.
+   * **The third is Koepke's albedo, and it is computed now.** A whitecap's luminance is its
+   * albedo times the light falling on it, and #66 had to declare it because this renderer had
+   * no irradiance to multiply: the lights were set against a hand-picked water colour and the
+   * sky was a screen value. Computed from them as they stood, foam came out four times DARKER
+   * than the sea and drew as dark streaks along the crests. With the light in lux (#60) the
+   * shader takes the same illumination the water is under and puts it off this instead.
    */
   uFoam: { value: Vector3 };
   /**
@@ -728,7 +726,11 @@ const REFLECTION = `
   float away = distance( vWaveWorld.xz, uEye.xz );
   float resolved = smoothstep( 0.0, 1.0, ${FOAM_PATCH_METRES.toFixed(1)} / ( away * uPixelAngle + 1e-6 ) );
   float foam = uWaveScale * mix( uFoam.x, foamAt( gSlopeSquared, gCarriedSlope, uFoam.y ), resolved );
-  outgoingLight = mix( outgoingLight, vec3( uFoam.z ), foam );
+  // **The same light, off a surface of the foam's own albedo**, which is what dividing the
+  // diffuse term by the water's colour and multiplying by this leaves. It was a declared
+  // brightness while there was no irradiance to multiply (#66); there is one now (#60).
+  vec3 foamLight = totalDiffuse / max( diffuseColor.rgb, vec3( 1e-4 ) ) * uFoam.z;
+  outgoingLight = mix( outgoingLight, foamLight, foam );
 }
 #include <opaque_fragment>
 `;

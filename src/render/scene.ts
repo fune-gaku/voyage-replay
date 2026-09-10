@@ -46,13 +46,14 @@ import { toWorld } from "./coords.js";
 import { applyCurvature, makeCurvatureUniforms, type CurvatureUniforms } from "./curvature.js";
 import { setLamps, type LitLamp } from "./lamps.js";
 import type { Picture } from "./view.js";
-import { buildSkyDome, setSkyBody, towardsBody } from "./sky.js";
+import { buildSkyDome, FULL_MOON_LUX, setSkyBody, towardsBody } from "./sky.js";
 import { buildTerrain, type Terrain } from "./terrain.js";
 import {
   applyWaves,
   displacedFraction,
   drawable,
   drawnFoam,
+  FOAM_REFLECTANCE,
   makeWaveUniforms,
   meshCarries,
   setWaves,
@@ -110,6 +111,18 @@ export interface SceneParts {
    * makes a CHART's scale readable; it has no business in the night.
    */
   setDiagramView(picture: Picture): void;
+  /**
+   * How much of a candela per square metre draws as one on screen, or **null for a chart**.
+   *
+   * A chart is a drawing and not a photograph of anything: its colours are chosen for
+   * reading - the pale basemap, the track lines, the grid - and putting them through an
+   * exposure and a tone curve would compress a picture nobody is looking at as light. Null
+   * is the renderer's instruction to leave it alone, which is what it did before any of this.
+   *
+   * A number for the world, and it has to be per condition: a night sea and a day sky are
+   * ten million apart and no single mapping shows both. Issue #60.
+   */
+  exposureFor(picture: Picture): number | null;
   /**
    * Where the watchkeeper is standing and which way her bow points, or null for the plan
    * view and for a bridge whose own track has run out.
@@ -207,85 +220,81 @@ const GRID_LADDER = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 5000
  * spends its time undoing. Issue #15.
  */
 const NIGHT = {
-  sky: 0x05080e,
-  zenith: 0x02030a,
-  water: 0x0a121d,
-  land: 0x03050a,
-  ambient: 0.28,
-  foam: 0.05,
-  bodyLobe: 1,
+  sky: 0x8fa8cc,
+  zenith: 0x4a6690,
+  /** A clear moonless sky, in cd/m2 at the horizon. */
+  skyCandela: 2e-4,
+  exposure: 76,
   streak: 1,
-  lampPool: 0.03,
-  luxToScreen: 4,
 };
 const DAY = {
   sky: 0x9dc0e6,
   zenith: 0x3d7ac4,
-  water: 0x1d4360,
-  land: 0x6b7a5e,
-  ambient: 0.55,
-  foam: 0.88,
-  bodyLobe: 0.6,
+  /** A clear day, in cd/m2 at the horizon. */
+  skyCandela: 8000,
+  exposure: 4.6e-5,
   streak: 1,
-  lampPool: 0.03,
-  luxToScreen: 6e-6,
 };
 
 /**
- * **How bright a reflection may draw, which is a property of the CONDITION and not of what is
- * reflected.**
+ * **What the surfaces give back, which is a property of them and not of the hour.**
  *
- * `bodyLobe` is the sun's or a full moon's own peak. `streak` and `lampPool` are what a lamp
- * gives back off the water - the first its image in it, the second the light it lands ON it,
- * which is there from every bearing and is what makes a lamp look like a lamp. Both are now
- * REFLECTANCES rather than brightnesses: a lamp's candela comes out of Rule 22 by Annex I's
- * own relation, the lux on the water are computed from it, and `luxToScreen` is the single
- * figure per condition that says what a lux draws as.
+ * There were two of each, one per palette, because they were screen values: a night sea had
+ * to be painted dark and a day sea blue, and the same water needed two colours to do it.
+ * With the light in lux and an exposure over the top, one albedo serves both - the night is
+ * dark because there is a five-thousandth of a lux falling on it, not because it was
+ * painted so. That is what issue #60 means by the palettes becoming albedos.
  *
- * **It is chosen so the moon and the lamps land on one scale.** A full moon is about 0.25 lx
- * and draws at `bodyLobe`, so a lux draws at four - which puts a 6 mile masthead light, at
- * 0.00049 lx on the water a hundred metres off once Annex I's vertical spread is in, at a
- * five-hundredth of a full moon and a fortieth of the 41 per cent one the reference night
- * had. That is the relation the night actually has, and it is why a ship's own lights do not
- * light the sea ahead of her. What remains declared here is what happens to the light AFTER
- * it leaves the lamp - how much of it the sea throws back, and what a lux is worth on a
- * screen - because cloud is never in the file and this renderer is not photometrically
- * calibrated. The candela itself is no longer among them: Rule 22's range gives it through
- * Annex I section 8. What is computed is that, and the RATIO - the sun against a full moon,
- * one phase against another - and only the absolute scale is chosen here.
- *
- * **It has to be per condition, and once was not.** A night sky here is 0.003 and a day sky
- * 0.60, two hundred times apart; one number served both, and the middle of a daylight path
- * came out at 3.1 where 1.0 is white - clipped flat across a cone fifty degrees wide, which
- * is not a path but a hole. `ambient` above has been per condition all along and for exactly
- * the same reason.
- *
- * A full moon still clips at its very centre, which is what a full moon's glitter does to an
- * eye and to a camera. What must not happen is the clipping spreading over the water.
- *
- * **`foam` is the newest of them and the least defensible, which is why it is written down.**
- * A whitecap's luminance is Koepke's albedo times the light falling on it, and there is no
- * irradiance here to multiply: the two lights were set against a hand-picked water colour and
- * the sky is a screen value. Computed from them as they stand, foam comes out four times
- * darker than the sea and draws as dark streaks along the crests. So the amount of foam is
- * measured, where it lands is chosen, and how bright it is is declared - and the page says so.
+ * The water is a coastal one: a few per cent in the blue, less in the green, almost nothing
+ * in the red, which is why deep water is blue. It is the diffuse part only - the Fresnel
+ * reflection of the sky is on top of it and is most of what a sea looks like at a graze.
+ * What it does NOT carry is the water TYPE: chlorophyll, yellow substance and sediment
+ * decide the real number and no report states any of them, so this is one figure for one
+ * kind of water and the page has no business claiming otherwise.
  */
+const WATER_ALBEDO = 0x113044;
+const LAND_ALBEDO = 0x6b7a5e;
 
 /**
- * `sky` is the HORIZON's colour and `zenith` is overhead, and which is which matters twice.
+ * How much of the sky's own glow reaches a horizontal surface.
  *
- * A clear sky is deepest overhead and pales towards the horizon, because a grazing line of
- * sight runs through far more air - so the pair is not decoration, it is the one thing a
- * reflection off water mostly sees. Water reflects almost nothing head-on and almost
- * everything at a graze, which puts the paler end of the gradient exactly where the sea
- * meets the sky.
- *
- * **`sky` is the HORIZON's colour, not the sky's.** The frame above the waterline is covered
- * by the dome in `render/sky.ts`, drawn from this same pair, so what fills the background is
- * only what neither the dome nor anything else covers - the plan view, where a chart is not a
- * sky. Taking the horizon's colour for that fallback is what keeps the join at the waterline
- * from showing if the dome is ever off.
+ * `E = pi L` for a uniform hemisphere, and this sky is not uniform - so the mean of its two
+ * ends stands in for it. **Tied to the sky rather than declared beside it**, because they
+ * are the same sky: a night that was given its own ambient could be lit by one sky and
+ * reflect another, and nothing in the picture would say which was wrong.
  */
+function skyIlluminanceLux(palette: Palette): number {
+  const ends = [palette.sky, palette.zenith].map((hex) => brightnessOf(hex) / skyScale(palette));
+  return Math.PI * (((ends[0] ?? 0) + (ends[1] ?? 0)) / 2);
+}
+
+/** Rec. 709's weights, on the linear values a hex becomes once three has read it as sRGB. */
+function brightnessOf(hex: number): number {
+  const colour = new Color(hex);
+  return 0.2126 * colour.r + 0.7152 * colour.g + 0.0722 * colour.b;
+}
+
+/** The sky's two ends as radiances, which is what the water hands back and the dome draws. */
+function skyRadiance(hex: number, palette: Palette): Color {
+  return new Color(hex).multiplyScalar(1 / skyScale(palette));
+}
+
+/**
+ * How many of the palette's units make one candela per square metre.
+ *
+ * **A hex is not a level, and multiplying one by a luminance does not make it that
+ * luminance.** three reads `0x9dc0e6` into a linear triple whose Rec. 709 luminance is 0.506,
+ * so `colour * 8000` is a sky of 4045 cd/m2 - and the declared figure, the one `CLAUDE.md`
+ * and the plan and this file all call the horizon's luminance, was never what the horizon
+ * had. The scale is defined by the HORIZON, so the zenith keeps its ratio to it and the
+ * gradient is still the two hexes': the sky is a shape as well as a level.
+ *
+ * Found reviewing #74. The exposures moved with it - the sky renders exactly as it did, and
+ * what changed is everything measured against it.
+ */
+function skyScale(palette: Palette): number {
+  return brightnessOf(palette.sky) / palette.skyCandela;
+}
 
 /**
  * What the tiles are multiplied by - and it does NOT follow the light condition.
@@ -327,7 +336,7 @@ export function buildScene(
   const curvature = makeCurvatureUniforms();
   // Split rather than spread whole: the mesh is the scene's, the rest is the sea's.
   const { mesh: water, sky, ...sea } = addWater(scene, palette, curvature, environment);
-  const { terrain, basemap } = addGround(scene, palette, curvature, ground);
+  const { terrain, basemap } = addGround(scene, curvature, ground);
   const lights = addLighting(scene, palette, night);
 
   // Before the grid, so the scene's children keep the order they had when this was one
@@ -404,14 +413,14 @@ function addWater(
   // Rougher where nothing states a sea: with no waves to break it up, a glassy surface would
   // be one more thing claiming a calm.
   const material = new MeshStandardMaterial({
-    color: palette.water,
+    color: WATER_ALBEDO,
     roughness: sea ? 0.34 : 0.95,
     metalness: 0.1,
   });
   applyCurvature(material, curvature);
   const waves = makeWaveUniforms();
-  waves.sky.uSkyHorizon.value.setHex(palette.sky);
-  waves.sky.uSkyZenith.value.setHex(palette.zenith);
+  waves.sky.uSkyHorizon.value.copy(skyRadiance(palette.sky, palette));
+  waves.sky.uSkyZenith.value.copy(skyRadiance(palette.zenith, palette));
   applyWaves(material, waves);
   const components = drawnSea(sea);
   setWaves(waves, components);
@@ -421,7 +430,10 @@ function addWater(
   // **And only onto a sea that is drawn**, which is `drawnFoam`'s business: with no
   // components the far field would carry the fraction and the near field none.
   const foam = drawnFoam(components, whitecapsFrom(environment)?.mostFraction ?? 0);
-  waves.uFoam.value.set(foam.coverage, foam.standardDeviations, palette.foam);
+  // **Koepke's albedo, not a figure per condition.** #66 had to declare how bright a
+  // whitecap draws because there was no irradiance to multiply an albedo by; there is one
+  // now, and the shader turns it into a radiance the way it does for the water under it.
+  waves.uFoam.value.set(foam.coverage, foam.standardDeviations, FOAM_REFLECTANCE);
 
   // The sky goes in with the water because it IS the same sky: one set of uniforms, so the
   // two cannot come to describe different ones - which would show first at the waterline,
@@ -439,11 +451,10 @@ function addWater(
  */
 function addGround(
   scene: Scene,
-  palette: Palette,
   curvature: CurvatureUniforms,
   ground: Ground | undefined,
 ): { terrain: Terrain | null; basemap: Basemap | null } {
-  const terrain = addTerrain(scene, palette, curvature, ground);
+  const terrain = addTerrain(scene, curvature, ground);
   const basemap = ground ? buildBasemap(ground.origin, MAP_TINT, ground.onFirstTile) : null;
   if (basemap) scene.add(basemap.group);
   return { terrain, basemap };
@@ -452,12 +463,11 @@ function addGround(
 /** The land, if this scene knows where in the world it is. Hidden until a bridge asks. */
 function addTerrain(
   scene: Scene,
-  palette: Palette,
   curvature: CurvatureUniforms,
   ground: Ground | undefined,
 ): Terrain | null {
   if (!ground) return null;
-  const material = new MeshStandardMaterial({ color: palette.land, roughness: 1, metalness: 0 });
+  const material = new MeshStandardMaterial({ color: LAND_ALBEDO, roughness: 1, metalness: 0 });
   applyCurvature(material, curvature);
   const terrain = buildTerrain(ground.origin, material, ground.onFirstLandTile);
   terrain.group.visible = false;
@@ -509,6 +519,8 @@ function viewControls(
       // the part of the picture somebody is looking at rather than at the origin.
       centreSeaOn(parts, frame.centre);
     },
+    exposureFor: (picture: Picture): number | null =>
+      picture === "chart" ? null : palette.exposure,
     setDiagramView: (picture: Picture): void => {
       // **The picture, not which camera is up.** This is one of the eight decisions that used
       // to be read off `view.kind === "overhead"`, which had no answer for a viewpoint that
@@ -523,9 +535,22 @@ function viewControls(
 }
 
 /** What a lamp gives back off the water in this condition. See `Palette`. */
-function exposureOf(palette: Palette): { streak: number; pool: number; luxToScreen: number } {
-  return { streak: palette.streak, pool: palette.lampPool, luxToScreen: palette.luxToScreen };
+function exposureOf(): { streak: number; pool: number } {
+  return { streak: STREAK_REFLECTANCE, pool: brightnessOf(WATER_ALBEDO) / Math.PI };
 }
+
+/**
+ * How much of a lamp's own image the water hands back along the specular direction.
+ *
+ * The one figure left in the lamps that is chosen. Everything on the other side of it is
+ * computed now - Rule 22 gives the range, Annex I section 8 the candela, the inverse square
+ * and the vertical spread what lands on each patch of water, and the pool turns that into a
+ * radiance with the water's own albedo over pi, which is what Lambert's law is. What a rough
+ * mirror returns along one direction is a function of the slope distribution, and this
+ * renderer holds that distribution in the lobe's width rather than in a normalised density,
+ * so the height of the streak has nowhere to come from but here.
+ */
+const STREAK_REFLECTANCE = 1;
 
 /**
  * The three that answer to the water rather than to the camera: when it is, how finely it can
@@ -541,7 +566,7 @@ function seaControls(
 ): Pick<Controls, "setSeaClock" | "setPixelAngle" | "setSky" | "setLamps" | "drawnSurfaceAt"> {
   return {
     setLamps: (lamps: LitLamp[]): void => {
-      setLamps(parts.waves.lamps, lamps, exposureOf(palette));
+      setLamps(parts.waves.lamps, lamps, exposureOf());
     },
     setSky: (conditions: Conditions): void => {
       // The night the PICTURE is drawn in, not the one the sun is in: a file saying night
@@ -558,7 +583,7 @@ function seaControls(
       // one would be a picture of a sea seen from twelve kilometres up. `uWaveScale` is the
       // same flag the waves answer to, asked rather than worked out a second time.
       const drawnAsSea = parts.waves.uWaveScale.value > 0;
-      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null, palette.bodyLobe);
+      setSkyBody(parts.waves.sky, lit, drawnAsSea ? measuredOver(parts) : null);
     },
     setSeaClock: (secondsFromStart: number): void => {
       parts.waves.uWaveTime.value = secondsFromStart;
@@ -755,11 +780,20 @@ interface Lights {
 }
 
 function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
-  const ambient = new AmbientLight(0xffffff, palette.ambient);
+  // **Lux, not a number chosen against a hand-picked water colour.** The sky's own glow is
+  // whatever the sky it draws puts on a horizontal surface, and the body's is what is up
+  // there - a full moon's quarter of a lux, or four hundred thousand times it for the sun.
+  // **The ambient IS the sky, so it is the sky's colour and not white.** White ambient plus a
+  // warm sun is a light with no blue in it anywhere, and everything neutral in the frame -
+  // whitecaps first, being the only white thing in a sea - comes out tan.
+  // Both intensities are left to `apply` below, which is the one place that knows whether
+  // this is a chart or the world.
+  const ambient = new AmbientLight(palette.sky, 0);
   // A clear day is directional: most of the light from one place, little of it diffuse. The
   // warmth is the sun's and belongs to the day - what little a night has comes from a moon,
   // which is not warm, and tinting it would be inventing a sunset.
-  const key = new DirectionalLight(night ? 0xffffff : 0xfff4e2, night ? 0.25 : 1.75);
+  const keyColour = night ? 0xffffff : 0xfff4e2;
+  const key = new DirectionalLight(keyColour, 0);
   key.position.set(1, 2, 1);
   scene.add(ambient);
   scene.add(key);
@@ -767,16 +801,24 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
   // Both are held rather than read back off the light, because the two callers arrive in
   // either order within a frame and each has to leave the other's decision standing.
   let diagram = false;
-  // How much of the full figure the body is worth: one for the sun and for a full moon, less
-  // for every other phase, zero when nothing is up. The night's own 0.25 is therefore a FULL
-  // moon's, which is the same declaration `BRIGHTEST_LOBE` makes about the water.
-  let share = 1;
+  let lux = 0;
   const apply = (): void => {
-    ambient.intensity = diagram ? Math.max(palette.ambient, 1.35) : palette.ambient;
-    // A chart is lit for reading and answers to nothing in the sky; a bridge view is lit by
-    // whatever is up there, and by nothing at all when nothing is.
-    key.intensity = diagram ? 0.8 : (night ? 0.25 : 1.75) * share;
+    // **A chart is not a photograph and is not lit like one.** Its colours are chosen for
+    // reading, and `exposureFor` leaves it out of the tone mapping altogether - so the two
+    // figures that used to serve every view stay here, serving the one they were made for.
+    //
+    // **In the world, each is divided by its own colour's luminance, or the figure is not
+    // delivered.** three multiplies a light's colour by its intensity, so a sky hex of
+    // luminance 0.51 handed an illuminance in lux gives half the lux - and that illuminance
+    // was worked out FROM the same colour, so the sky's brightness went in twice. The
+    // chart's two figures were chosen against these hexes as they stand, and a diagram's
+    // light is not an illuminance to begin with. Found reviewing #74.
+    ambient.intensity = diagram
+      ? DIAGRAM_AMBIENT
+      : skyIlluminanceLux(palette) / brightnessOf(palette.sky);
+    key.intensity = diagram ? DIAGRAM_KEY : lux / brightnessOf(keyColour);
   };
+  apply();
 
   return {
     setDiagram: (on: boolean): void => {
@@ -786,12 +828,23 @@ function addLighting(scene: Scene, palette: Palette, night: boolean): Lights {
     // A directional light in three shines from its position towards the origin, so the
     // position IS the direction to the body - scaled up only to keep it clear of the scene.
     pointAt: (lit: Lit | null): void => {
-      share = lit ? Math.min(lit.relativeBrightness, 1) : 0;
+      lux = lit ? FULL_MOON_LUX * lit.relativeBrightness : 0;
       if (lit) key.position.copy(towardsBody(lit)).multiplyScalar(1000);
       apply();
     },
   };
 }
+
+/**
+ * What lights a drawing, which answers to nothing in the sky.
+ *
+ * Unchanged from before any of this, and deliberately: with the tone mapping off over a
+ * chart, an ambient of pi lux would put a material's albedo on the screen unaltered, and
+ * these two put it where the plan view has always had it. A chart that changed when the
+ * world's lighting became physical would be a drawing answering to the weather.
+ */
+const DIAGRAM_AMBIENT = 1.35;
+const DIAGRAM_KEY = 0.8;
 
 interface GridControl {
   setSpacing(viewExtentMetres: number): void;

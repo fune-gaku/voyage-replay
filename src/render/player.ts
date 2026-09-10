@@ -4,7 +4,17 @@
  */
 
 import type { PerspectiveCamera } from "three";
-import { Color, Group, Vector3, WebGLRenderer, type Camera, type OrthographicCamera } from "three";
+import {
+  Color,
+  Group,
+  NeutralToneMapping,
+  NoToneMapping,
+  Vector3,
+  WebGLRenderer,
+  type Camera,
+  type MeshStandardMaterial,
+  type OrthographicCamera,
+} from "three";
 
 import {
   hullCentreOffset,
@@ -65,6 +75,29 @@ import { TERRAIN_CREDIT } from "./terrain.js";
 /** Red for the first ship, blue for the second - the colours JTSB uses in its own charts. */
 const ACTOR_COLOURS = [0xd8443c, 0x3f7bd8, 0xd8b23c, 0x46b07a];
 
+/**
+ * The brightest a hull may be taken to reflect, once its colour is an albedo (#60).
+ *
+ * **An identity colour is not a measured paint.** The reds and blues above are the ones an
+ * investigator's chart uses to tell two ships apart, chosen to be legible on white paper -
+ * and the red's linear value is 0.68, which is more light than any paint returns. Left as an
+ * albedo it makes a hull that clips to a bright coral in full sun and stays plainly visible
+ * under starlight, both of which are claims about how she looked that nothing supports.
+ *
+ * A third is about the top of what a gloss topcoat manages. Scaling to it keeps the hue that
+ * identifies her - which is the whole job of the colour - and takes away the brightness,
+ * which was never doing any work. The chart's hulls darken with it, being the same material,
+ * and stay the same red and blue.
+ */
+const BRIGHTEST_PAINT = 0.35;
+
+/** An identity colour as something that could reflect light. See `BRIGHTEST_PAINT`. */
+function hullAlbedo(colour: number): Color {
+  const albedo = new Color(colour);
+  const brightest = Math.max(albedo.r, albedo.g, albedo.b);
+  return brightest > BRIGHTEST_PAINT ? albedo.multiplyScalar(BRIGHTEST_PAINT / brightest) : albedo;
+}
+
 const DEFAULT_VESSEL: Vessel = { loaMetres: 30, beamMetres: 8 };
 
 /**
@@ -90,6 +123,17 @@ interface Cast {
   group: Group;
   /** Holds the hull and the lamps, offset from the reported position to the hull's centre. */
   onHull: Group;
+  /**
+   * Her hull's material and the two colours it takes.
+   *
+   * **A chart is a drawing and the world is a place**, which is the split #63 made and the
+   * one `setDiagramView` already applies to the lighting, the map's tint and the grid. The
+   * chart wants the identity colour as authored, legible the way an investigator's chart is;
+   * the world wants an albedo, since a red of 0.68 linear is more than any paint returns and
+   * clips in sunlight (#60). One colour cannot be both, and choosing either everywhere loses
+   * something real - a washed-out hull in the sun, or a dark smudge on the chart.
+   */
+  painted: { material: MeshStandardMaterial; chart: Color; world: Color };
   lights: NavigationLightGroup;
   /** Her track on the water, split at wherever she has got to. */
   line: TrackLine;
@@ -156,6 +200,12 @@ interface Eye {
    * smoothly enough to look deliberate. An aim that travels with the eye cannot be forgotten.
    */
   depressionDegrees?: number;
+}
+
+/** What the corner of the frame says while the exposure is not the condition's own. */
+function stopsWord(stops: number): string {
+  const many = Math.abs(stops) === 1 ? "stop" : "stops";
+  return `Exposure ${stops > 0 ? "+" : "-"}${Math.abs(stops)} ${many} from this condition's own`;
 }
 
 /** Which way an eye that is not on a bridge looks. Level unless it was given a depression. */
@@ -249,6 +299,8 @@ export class Replay {
   private readonly overlay: Overlay;
   private readonly clock: Caption;
   private readonly credit: Caption;
+  /** Says what has been done TO the frame, which the other two never do. See `stops`. */
+  private readonly exposureNote: Caption;
   private readonly timeZone: string;
   /**
    * Whether the scene is the night, asked of `scene.ts` rather than of the scenario again.
@@ -291,6 +343,17 @@ export class Replay {
   /** Where it is actually looking, chosen or worked out. A drag starts from here. */
   private planCentre: LocalPosition = { east: 0, north: 0 };
   private currentSeconds: number;
+  /**
+   * How far the reader has moved the exposure from the one this condition draws at, in
+   * photographic stops - each one a doubling.
+   *
+   * **Zero is not a default that can be argued with; it is the condition's own figure.** A
+   * fixed exposure is what lets two frames of one scenario be compared, and it is also why
+   * a view that faces the sun is a white sheet: the glitter's peak is nineteen times a clear
+   * sky and no single mapping holds both (#71). So the reader may move it, and the picture
+   * carries a caption saying by how much for as long as it is moved.
+   */
+  private stops = 0;
   private playing = false;
   private speed = 20;
   private lastFrameMs: number | null = null;
@@ -305,6 +368,7 @@ export class Replay {
     this.overlay = buildOverlay();
     this.clock = this.overlay.caption("top-right", "figures");
     this.credit = this.overlay.caption("bottom-right", "text");
+    this.exposureNote = this.overlay.caption("top-left", "text");
     this.timeZone = scenario.meta.timeZone;
     this.night = isNight(scenario.environment?.lightCondition);
     this.stage = buildStage(scenario, this.tileArrivals());
@@ -381,6 +445,12 @@ export class Replay {
 
   setSpeed(multiplier: number): void {
     this.speed = multiplier;
+  }
+
+  /** Move the exposure off the one the condition draws at, in stops. Zero puts it back. */
+  setExposureStops(stops: number): void {
+    this.stops = stops;
+    this.update();
   }
 
   /**
@@ -531,6 +601,32 @@ export class Replay {
     this.renderer.dispose();
   }
 
+  /**
+   * What a candela per square metre draws as, in this picture.
+   *
+   * **Khronos's PBR Neutral rather than a filmic curve**, because this tool has no business
+   * grading anything: it leaves colours alone until they approach the top and then rolls
+   * them off instead of clipping, which is the whole of what is wanted - a full moon's
+   * glitter and a night sea are three orders of magnitude apart and both have to be on the
+   * screen at once.
+   *
+   * **And it is off over a chart.** A drawing is not a photograph, so its colours pass
+   * through untouched; the curve subtracts a small offset even from the dark end, so a plan
+   * view drawn through it would come out slightly and pointlessly wrong. Changing the mode
+   * makes three rebuild the programs it has cached, which is a hitch the first time each
+   * picture is drawn and nothing afterwards.
+   */
+  private expose(picture: Picture): void {
+    const measured = this.stage.sceneParts.exposureFor(picture);
+    this.renderer.toneMapping = measured === null ? NoToneMapping : NeutralToneMapping;
+    this.renderer.toneMappingExposure = measured === null ? 1 : measured * 2 ** this.stops;
+    // **A frame taken at an exposure the condition did not choose says so, in the picture.**
+    // The recording is `canvas.captureStream()`, so anything outside it is not in the film -
+    // and this is exactly the kind of change that must not be able to travel without its
+    // caption. Issue #56's requirement, arriving through #71.
+    this.exposureNote.set(measured === null || this.stops === 0 ? "" : stopsWord(this.stops));
+  }
+
   /** Place every ship at the current instant and draw one frame. */
   update(): void {
     // **Asked once, of the viewpoint, and handed down.** Every consumer below used to derive
@@ -546,6 +642,11 @@ export class Replay {
 
     this.stage.diagram.visible = picture === "chart";
     this.stage.sceneParts.setDiagramView(picture);
+    for (const member of this.stage.cast) {
+      const { material, chart, world } = member.painted;
+      material.color.copy(picture === "chart" ? chart : world);
+    }
+    this.expose(picture);
     this.stage.sceneParts.setSeaClock(this.currentSeconds - this.startSeconds);
     // Every frame, because the sky is the one part of the environment that moves: the
     // reference case runs eighty-seven minutes and nautical twilight ends eleven of them
@@ -1036,6 +1137,9 @@ function enterStage(
 
 function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
   const vessel = actor.vessel ?? DEFAULT_VESSEL;
+  // The track line keeps the identity colour as authored - it is a line on a drawing, not a
+  // surface with light falling on it - while the hull takes it as something that could
+  // reflect. See `BRIGHTEST_PAINT`.
   const hull = buildHull(vessel, colour);
   const lights = buildNavigationLights(vessel, hull.eyeHeightMetres * 0.4);
 
@@ -1056,6 +1160,7 @@ function castMember(actor: Actor, track: PreparedTrack, colour: number): Cast {
     vessel,
     group,
     onHull,
+    painted: { material: hull.painted, chart: new Color(colour), world: hullAlbedo(colour) },
     lights,
     line: buildTrackLine(track, colour),
     hullOffset: offsetMetres(
