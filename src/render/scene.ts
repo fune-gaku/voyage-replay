@@ -54,6 +54,8 @@ import {
   drawable,
   drawnFoam,
   FOAM_REFLECTANCE,
+  rippleOctaves,
+  shortestDrawnMetres,
   makeWaveUniforms,
   meshCarries,
   setWaves,
@@ -434,6 +436,9 @@ function addWater(
   // whitecap draws because there was no irradiance to multiply an albedo by; there is one
   // now, and the shader turns it into a radiance the way it does for the water under it.
   waves.uFoam.value.set(foam.coverage, foam.standardDeviations, FOAM_REFLECTANCE);
+  // Where the drawn band gives out, and over how many octaves what it cannot reach is spread.
+  const shortest = shortestDrawnMetres(components);
+  waves.uRipple.value.set(shortest, rippleOctaves(shortest));
 
   // The sky goes in with the water because it IS the same sky: one set of uniforms, so the
   // two cannot come to describe different ones - which would show first at the waterline,

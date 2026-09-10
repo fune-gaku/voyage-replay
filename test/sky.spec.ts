@@ -5,6 +5,8 @@ import type { Lit } from "../src/core/illumination.js";
 import {
   buildSkyDome,
   makeSkyUniforms,
+  shadowing,
+  SHADOW_GLSL,
   setSkyBody,
   skyColourAt,
   skyDomeColourAt,
@@ -394,5 +396,67 @@ describe("the dome and the water leave by the same door", () => {
       "which is the shader the water is patched into",
     ).toContain("colorspace_fragment");
     expect(material.fragmentShader).toContain("colorspace_fragment");
+  });
+});
+
+/**
+ * **Crests hide troughs, and near the horizon they hide most of them.** Without the term the
+ * far sea returns the whole sky right up to the waterline and melts into it, which is what an
+ * eye that has been to sea reads as wrong before anything else.
+ *
+ * Smith's (1967) geometric attenuation for a Gaussian surface - the same function a
+ * microfacet BRDF calls its shadowing term, and standard in ocean optics.
+ */
+describe("how much of a rough sea an eye can see", () => {
+  /** Cox and Munk's slope for the wind that raises a 2 m sea. */
+  const SEA = 0.0525;
+  const from = (degreesAboveTheWater: number): number =>
+    shadowing(((90 - degreesAboveTheWater) * Math.PI) / 180, SEA);
+
+  it("hides nothing at all from an eye looking down at the water", () => {
+    expect(shadowing(0, SEA)).toBe(1);
+    expect(from(90)).toBeCloseTo(1, 6);
+    expect(from(60), "and nothing worth counting well above the horizon").toBeCloseTo(1, 3);
+  });
+
+  /**
+   * It is a band along the horizon and nowhere else, which is where the fault was. Measured
+   * on this sea: nothing above ten degrees, three quarters at five, a quarter at one.
+   */
+  it("takes away more and more as the line of sight comes down to the water", () => {
+    expect(from(10)).toBeCloseTo(0.94, 2);
+    expect(from(5)).toBeCloseTo(0.74, 2);
+    expect(from(1)).toBeCloseTo(0.24, 2);
+    expect(from(0.5)).toBeLessThan(from(1));
+  });
+
+  it("never goes back up as the sight line comes down", () => {
+    let last = 1;
+    for (let above = 90; above >= 0.5; above -= 0.5) {
+      const now = from(above);
+      expect(now, `${above} deg`).toBeLessThanOrEqual(last + 1e-9);
+      last = now;
+    }
+  });
+
+  /**
+   * **The sea's slope, not the drawn surface's.** Real crests do the hiding, including the
+   * ones the band cannot draw - which is the argument `lobeWidth` already makes about the
+   * width of a reflection. A rougher sea hides more of itself at the same angle.
+   */
+  it("hides more of a rougher sea than of a smoother one", () => {
+    const grazing = (89 * Math.PI) / 180;
+    expect(shadowing(grazing, 0.09)).toBeLessThan(shadowing(grazing, 0.01));
+  });
+
+  /** No sea stated, nothing to hide behind: the same answer as a mirror. */
+  it("hides nothing where no sea is stated", () => {
+    expect(shadowing((89 * Math.PI) / 180, 0)).toBe(1);
+    expect(shadowing((89 * Math.PI) / 180, -1)).toBe(1);
+  });
+
+  it("is written once, and the shader has the copy", () => {
+    expect(SHADOW_GLSL).toContain("float shadowing( float cosFromVertical, float seaSlope )");
+    expect(SHADOW_GLSL).toContain("erfcApprox");
   });
 });

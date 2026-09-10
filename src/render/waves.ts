@@ -29,7 +29,7 @@ import { Vector2, Vector3, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
 import { LAMPS_GLSL, makeLampUniforms, type LampUniforms } from "./lamps.js";
-import { makeSkyUniforms, SKY_GLSL, type SkyUniforms } from "./sky.js";
+import { makeSkyUniforms, SHADOW_GLSL, SKY_GLSL, type SkyUniforms } from "./sky.js";
 import { DISC } from "./water.js";
 
 /**
@@ -182,6 +182,15 @@ export interface WaveUniforms {
    */
   uFoam: { value: Vector3 };
   /**
+   * The ripples below the drawn band: the shortest wavelength the spectrum reaches, and how
+   * many octaves of slope lie between it and where this stops pretending.
+   *
+   * **The one thing in this picture that is not in the sea it was given**, and it is here on
+   * the same terms as the whitecaps: the AMOUNT is Cox and Munk's measured slope minus what
+   * the band carries, and where it goes is this file's choice. See `RIPPLE_GLSL`.
+   */
+  uRipple: { value: Vector2 };
+  /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
    * Set from the frame, because a constant would make the drawn band depend on the window -
@@ -277,15 +286,39 @@ const FOAM_PATCH_METRES = 8;
 const FOAM_EDGE = 0.25;
 
 /**
+ * **How long a whitecap lasts, and why it has to last at all.**
+ *
+ * A threshold on the steepness of this instant gives foam no life: it appears where a crest
+ * is steep and vanishes when the crest passes, so a sea blinks rather than breaks. A real
+ * whitecap breaks, then lies there decaying while the wave runs out from under it - which is
+ * most of what tells an eye that the water is breaking rather than merely bright.
+ *
+ * Seconds is the published order for the decaying stage, and Monahan's coverage counts it -
+ * his W is the fraction under active AND decaying foam together, which is what makes this
+ * necessary rather than optional: drawing only the instant of breaking draws less foam than
+ * the relation says there is. Four seconds is the figure chosen inside that order.
+ *
+ * **And the coverage is re-fitted to it.** Foam that lingers covers more water than foam
+ * that blinks, so the level is found against the same union over time that the shader takes -
+ * otherwise persistence would quietly put more foam on the sea than Monahan allows, while the
+ * page went on printing his figure.
+ */
+const FOAM_LIFE_SECONDS = 4;
+
+/** How many instants back the shader looks. Three in all, counting now. */
+const FOAM_HISTORY = 2;
+
+/**
  * How finely the drawn slope field is sampled when the level is looked for, and how far the
  * search goes.
  *
- * A hundred and ninety-two squared is thirty-seven thousand points, so a coverage of half a
- * per cent is found off about two hundred of them - enough that the level is not noise, and
- * cheap enough to run once when the water is built. Six standard deviations is past anything
- * a sum of forty sinusoids reaches.
+ * A hundred and forty-four squared is twenty-one thousand points, and each is evaluated at
+ * every instant of a whitecap's life - so a coverage of half a per cent is found off about a
+ * hundred and fifty of them, which is enough that the level is not noise and cheap enough to
+ * run once when the water is built. Six standard deviations is past anything a sum of forty
+ * sinusoids reaches.
  */
-const FOAM_SAMPLES = 192;
+const FOAM_SAMPLES = 144;
 const FOAM_WIDEST_THRESHOLD = 6;
 const FOAM_BISECTIONS = 30;
 
@@ -321,6 +354,33 @@ export function foamAt(
     threshold * (1 + FOAM_EDGE),
     Math.sqrt(Math.max(slopeSquared, 0)),
   );
+}
+
+/**
+ * What is under foam now, given how steep this water has been over the whitecap's life.
+ *
+ * The strongest claim any instant makes, faded by how long ago it made it: a crest that broke
+ * three seconds back has left something, and one breaking now has left the most. Taken as a
+ * maximum rather than a sum, because two breakings of the same water are one patch of foam
+ * and not two.
+ *
+ * `steepness` is indexed from now backwards, one entry per instant the shader looks at.
+ */
+export function foamOver(
+  steepness: number[],
+  carriedSlopeVariance: number,
+  standardDeviations: number,
+): number {
+  let most = 0;
+  for (let back = 0; back < steepness.length; back += 1) {
+    const age = (back / FOAM_HISTORY) * FOAM_LIFE_SECONDS;
+    const left = 1 - age / (FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / FOAM_HISTORY);
+    most = Math.max(
+      most,
+      foamAt(steepness[back] ?? 0, carriedSlopeVariance, standardDeviations) * left,
+    );
+  }
+  return most;
 }
 
 /** GLSL's own, so the copy below and the function above cannot come apart. */
@@ -399,51 +459,194 @@ export function foamThreshold(components: WaveComponent[], coverage: number): nu
  * The spacing is deliberately not a round number: a grid commensurate with a wavelength
  * samples the same phase over and over and reports a sea far smoother or steeper than it is.
  */
-function normalisedSlopes(components: WaveComponent[]): number[] {
+/**
+ * The squared slope at every sample and every instant, in units of the sea's own variance.
+ */
+function normalisedSlopes(components: WaveComponent[]): number[][] {
   const variance = components.reduce(
     (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
     0,
   );
   if (variance <= 0) return [];
 
-  const scale = 1 / Math.sqrt(variance);
-  const out: number[] = [];
+  // Squared, because that is what `foamAt` takes and what saves a root per sample.
+  const scale = 1 / variance;
+  const out: number[][] = [];
   for (let i = 0; i < FOAM_SAMPLES; i += 1) {
     for (let j = 0; j < FOAM_SAMPLES; j += 1) {
-      out.push(Math.sqrt(slopeSquaredAt(components, i * 2.9, j * 3.7)) * scale);
+      // **Every instant the shader looks at, at the same point.** Foam lingers, so what is
+      // under it now is what has been steep at any time within a whitecap's life - and the
+      // level has to be found against that union or persistence quietly adds coverage.
+      const overTime: number[] = [];
+      for (let back = 0; back <= FOAM_HISTORY; back += 1) {
+        const age = (back / FOAM_HISTORY) * FOAM_LIFE_SECONDS;
+        overTime.push(slopeSquaredAt(components, i * 2.9, j * 3.7, -age) * scale);
+      }
+      out.push(overTime);
     }
   }
   return out;
 }
 
-/** The drawn surface's slope at one point, from the components themselves. */
-function slopeSquaredAt(components: WaveComponent[], east: number, north: number): number {
+/** The drawn surface's squared slope at one point and instant, from the components. */
+function slopeSquaredAt(
+  components: WaveComponent[],
+  east: number,
+  north: number,
+  secondsFromStart: number,
+): number {
   let alongEast = 0;
   let alongNorth = 0;
   for (const wave of components) {
     const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
     const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
-    const height = Math.cos(kx * east + ky * north + wave.phaseRadians) * wave.amplitudeMetres;
+    const phase =
+      kx * east +
+      ky * north -
+      wave.angularFrequencyPerSecond * secondsFromStart +
+      wave.phaseRadians;
+    const height = Math.cos(phase) * wave.amplitudeMetres;
     alongEast += kx * height;
     alongNorth += ky * height;
   }
   return alongEast * alongEast + alongNorth * alongNorth;
 }
 
-/** What fraction of that patch comes out foam at this level. The smoothed edge included. */
-function meanFoam(normalised: number[], standardDeviations: number): number {
+/** What fraction of that patch comes out foam at this level, over a whitecap's whole life. */
+function meanFoam(overTime: number[][], standardDeviations: number): number {
   let total = 0;
-  for (const slope of normalised) {
-    total += smoothstep(
-      standardDeviations * (1 - FOAM_EDGE),
-      standardDeviations * (1 + FOAM_EDGE),
-      slope,
-    );
-  }
-  return total / normalised.length;
+  for (const steepness of overTime) total += foamOver(steepness, 1, standardDeviations);
+  return total / overTime.length;
 }
 
-/** The same rule, for the fragment shader. Kept beside it so the two are edited together. */
+/**
+ * How many octaves of ripple are drawn, and where the pretending stops.
+ *
+ * **Four, because that is what a pixel can hold.** The longest is half the shortest wave the
+ * spectrum reaches - 0.57 m on a 2 m sea - and the shortest an eighth of that, 0.07 m, which
+ * ten metres from the eye is eight pixels across. Below that they are under a pixel at any
+ * useful range and belong in the lobe rather than on the surface, which is where they go.
+ *
+ * **A centimetre is where this stops.** Cox and Munk measured a real sea's whole slope,
+ * capillary ripples included, and a gravity relation has no business generating those - so
+ * the missing variance is spread over the octaves between the drawn band and a centimetre,
+ * about seven of them, and these four take their four shares. The rest stays in the width of
+ * the reflected body, which is what #37 put it in.
+ */
+const RIPPLE_OCTAVES = 4;
+
+/**
+ * How many bearings each octave is spread over.
+ *
+ * **One is a plaid.** Four octaves of one direction each carry more slope than the whole
+ * drawn spectrum - a real sea's slope IS mostly in its short waves - and four sinusoids
+ * carrying that much draw a regular cross-hatch, which is a worse lie than the smooth surface
+ * it replaced. Three bearings an octave, stepped by an angle that closes on nothing, is
+ * twelve components: enough that the eye stops finding the weave.
+ */
+const RIPPLE_BEARINGS = 3;
+const RIPPLE_FLOOR_METRES = 0.01;
+
+/**
+ * How the missing slope is shared out: over the octaves between the shortest wave the
+ * spectrum reaches and a centimetre.
+ *
+ * A slope density falling as one over omega puts the same variance in every octave, which is
+ * the whole reason the tail of a sea matters to its shading at all - so an octave's share is
+ * simply the missing variance over the count. About seven of them on a 2 m sea; the four the
+ * shading can hold take four of the shares and the rest stays in the lobe.
+ *
+ * **Zero where there is no sea drawn**, which the shader takes as "no ripples": a file that
+ * states no sea has no measured slope to be short of.
+ */
+export function rippleOctaves(shortestDrawnMetres: number): number {
+  if (shortestDrawnMetres <= RIPPLE_FLOOR_METRES) return 0;
+  return Math.log2(shortestDrawnMetres / RIPPLE_FLOOR_METRES);
+}
+
+/** The shortest wave a drawn sea reaches, which is where the ripples start. */
+export function shortestDrawnMetres(components: WaveComponent[]): number {
+  if (components.length === 0) return 0;
+  return Math.min(...components.map((wave) => (2 * Math.PI) / wave.wavenumberPerMetre));
+}
+
+/**
+ * The texture below the drawn band: **the only thing in this picture that is not in the sea
+ * the file describes.**
+ *
+ * Measured, the shortest wave the spectrum reaches is 1.14 m on a 2 m sea, which ten metres
+ * from the eye is 128 pixels across - so the water in front of a watchkeeper has no feature
+ * finer than that, where a real one carries centimetre ripples at one to eleven pixels. That
+ * gap is why near water reads as a moulded surface however right the spectrum is, and no
+ * amount of spectrum fixes it: the waves are outside the band, the mesh could not carry them,
+ * and JONSWAP does not describe them.
+ *
+ * So it is put in on the terms the whitecaps and the glitter lobe already use, which is the
+ * pattern this project has twice: **the amount is measured and the placement is chosen, and
+ * the page says which is which.** The amount is Cox and Munk's slope less what the band
+ * carries - the same difference #37 already computes - shared equally per octave, which is
+ * what a slope density falling as one over omega means.
+ *
+ * **And what it spends it hands back.** Every octave adds its own variance to
+ * `gCarriedSlope`, so the body's lobe narrows by exactly what the surface took up. Without
+ * that the picture would draw a sea rougher than Cox and Munk measured while the page printed
+ * their figure - the same water described twice, differently, which is the fault this whole
+ * project is arranged against.
+ *
+ * They are in the shading only. The mesh cannot carry a wave of half a metre past a few
+ * metres from the eye, and nothing floats on them: at these amplitudes - millimetres - a buoy
+ * riding them would be answering to noise.
+ */
+const RIPPLE_GLSL = `
+uniform vec2 uRipple;
+
+vec2 rippleSlope( vec2 at, float missing, float away, float pixel ) {
+  if ( missing <= 0.0 || uRipple.x <= 0.0 || uRipple.y <= 0.0 ) return vec2( 0.0 );
+  vec2 slope = vec2( 0.0 );
+  float perOctave = missing / uRipple.y;
+
+  for ( int i = 0; i < ${RIPPLE_OCTAVES}; i ++ ) {
+    float octave = float( i );
+    // Half the shortest wave the spectrum reaches, then halving.
+    float wavelength = uRipple.x * 0.5 * pow( 0.5, octave );
+    // **Stricter than the spectrum's own fade.** These are the shortest things in the frame
+    // and the ones with nothing under them to hide their aliasing, so they are asked for
+    // three times the pixels a drawn wave needs before they are drawn at all.
+    float carries = smoothstep( 0.0, 1.0, wavelength / ( 3.0 * away * pixel + 1e-6 ) );
+    if ( carries <= 0.0 ) continue;
+
+    // **Only the octaves that are there.** uRipple.y counts them from the band's short end
+    // down to a centimetre, and it can be fewer than this loop is long - a sea whose
+    // shortest drawn wave is 8 cm has three. Drawing four of them anyway would spend
+    // four thirds of the missing variance, hand four thirds of it back to the lobe, and
+    // generate gravity ripples below the centimetre this stops at. The last one is a
+    // fraction, so the weight is what is left of it. Found reviewing #75.
+    float within = clamp( uRipple.y - octave, 0.0, 1.0 );
+    if ( within <= 0.0 ) continue;
+
+    float k = 6.2831853 / wavelength;
+    float share = perOctave * carries * within / ${RIPPLE_BEARINGS}.0;
+    // Slope amplitude from the variance each carries: var = (a k)^2 / 2.
+    float steep = sqrt( 2.0 * share );
+
+    for ( int j = 0; j < ${RIPPLE_BEARINGS}; j ++ ) {
+      // **Spread wide on purpose.** Short waves answer to the local wind and to every wave
+      // they ride over, so they are far less directional than the swell underneath them.
+      float bearing = octave * 1.9 + float( j ) * 2.399963 + 0.7;
+      vec2 unit = vec2( sin( bearing ), cos( bearing ) );
+      float phase = k * dot( unit, at ) - sqrt( 9.80665 * k ) * uWaveTime
+        + octave * 2.3 + float( j ) * 1.7;
+      slope += unit * steep * cos( phase );
+    }
+    // **Handed back**, so the lobe narrows by what the surface took up - the same weight,
+    // or the two stop being the same variance.
+    gCarriedSlope += perOctave * carries * within;
+  }
+  return slope;
+}
+`;
+
+/** The same rules, for the fragment shader. Kept beside them so they are edited together. */
 const FOAM_GLSL = `
 float foamAt( float slopeSquared, float carried, float deviations ) {
   if ( deviations <= 0.0 || carried <= 0.0 ) return 0.0;
@@ -464,6 +667,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWaveScale: { value: 0 },
     uPixelAngle: { value: pixelAngle(55, 1080) },
     uFoam: { value: new Vector3() },
+    uRipple: { value: new Vector2() },
     sky: makeSkyUniforms(),
     lamps: makeLampUniforms(),
   };
@@ -523,11 +727,26 @@ varying vec2 vWaveParam;
 const FRAGMENT_DECLARATIONS = `${DECLARATIONS}
 uniform vec3 uEye;
 ${SKY_GLSL}
+${SHADOW_GLSL}
 ${LAMPS_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
 float gSlopeSquared = 0.0;
+// The same variance as gCarriedSlope without the ripples, which is the surface the foam's
+// level was fitted to. See where it is taken.
+float gBreakingSlope = 0.0;
+// How much of the sea this fragment is drawing at all, kept so that a whitecap's history is
+// judged on the same surface as its present. See the foam block. Zero until the shading
+// loop says otherwise, which is what a picture with no sea in it draws.
+float gSlopeFade = 0.0;
+// **What this water was doing, at each instant a whitecap's life reaches back over.**
+// Accumulated in the shading loop rather than by walking the components again: the only
+// thing that differs between the instants is the phase, and phase( t - age ) is
+// phase( t ) + omega * age. Everything else - the wavelength, the band limit, the dot
+// product - is the same work, and it was being done three times. Issue #79.
+vec2 gWas[ ${FOAM_HISTORY} ];
 uniform vec3 uFoam;
+${RIPPLE_GLSL}
 ${FOAM_GLSL}
 `;
 
@@ -582,6 +801,8 @@ vWaveParam = vWaveWorld.xz;
   vec2 carried = vec2( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
+    // The first empty slot is the end of the sea; see the shading loop.
+    if ( w.z <= 0.0 ) break;
     float length2 = length( w.xy );
     float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( ${SAMPLES_PER_WAVE}.0 * spacing ) );
@@ -629,7 +850,10 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
  */
 const NORMALS = `
 #include <normal_fragment_begin>
-{
+// **Nothing below is worth running where no sea is drawn.** A chart sets uWaveScale to zero
+// and every term here multiplies out to nothing - after 132 sinusoids a pixel have been
+// evaluated to find that out. Measured, a chart went from 67 ms a frame to 41. Issue #79.
+if ( uWaveScale > 0.0 ) {
   float fade = uWaveScale * ${FADE(SLOPE_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   vec2 slope = vec2( 0.0 );
@@ -638,8 +862,13 @@ const NORMALS = `
   // of two tangents rather than the height's gradient. (dDx/dx, dDx/dz, dDz/dz) - and the
   // mixed term is one number because the field is a gradient, so its Jacobian is symmetric.
   vec3 spread = vec3( 0.0 );
+  for ( int h = 0; h < ${FOAM_HISTORY}; h ++ ) gWas[ h ] = vec2( 0.0 );
+
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
+    // **The array is filled in order and the rest is zeroed**, so the first empty slot is
+    // the end of the sea: a file whose spectrum keeps 23 components was paying for 40.
+    if ( w.z <= 0.0 ) break;
     // **Each wave fades at its own range, not all of them at one.** A metre-long wave is
     // below a pixel by a few hundred metres and shimmers rather than shows, while the
     // hundred-metre swell under it is still the shape of the sea at ten kilometres. One
@@ -660,14 +889,37 @@ const NORMALS = `
     // to the body, so the lane keeps its measured width instead of narrowing with distance.
     float steep = carries * w.z * length2;
     gCarriedSlope += 0.5 * steep * steep;
+    // **And what this component was doing, over a whitecap's life.** Same component, same
+    // band limit, same dot product - only the phase moves, by omega times the age.
+    for ( int h = 0; h < ${FOAM_HISTORY}; h ++ ) {
+      float age = float( h + 1 ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
+      gWas[ h ] += carries * w.xy * w.z * cos( phase + w.w * age );
+    }
   }
   // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
   // the sky is a function of a world direction - so the reflection stage below would have to
   // undo the rotation to ask it anything. Mixed by the same fade, so the two agree about how
   // much of this sea is drawn where.
-  // **Kept for the foam**, which goes on the steepest water. The same slope the shading is
-  // made of, so the whitecaps are on the crests the picture actually drew.
+  // **Kept for the foam before the ripples are added**, and that order is the point: a
+  // whitecap is a gravity wave breaking, not a capillary ripple, and the level the coverage
+  // is fitted to is fitted to the spectrum's own components. Feeding it a slope the ripples
+  // had steepened would ask a question of one surface and answer it about another.
   gSlopeSquared = dot( slope, slope );
+
+  // **What the band cannot reach, as pattern rather than only as width.** The missing slope
+  // is what #37 already puts into the reflected body's lobe; the four octaves this can hold
+  // take their share of it here and hand it straight back, so the total is unchanged.
+  gCarriedSlope *= fade * fade;
+  // **And the variance the foam is judged against, taken here for the same reason.**
+  // rippleSlope hands its own variance back into gCarriedSlope - which is right for the
+  // reflection, where the question is how much roughness the surface is now drawing - but a
+  // whitecap is a gravity wave breaking. Judging the gravity slope above against a variance
+  // the ripples had raised compares two different surfaces: near to, where the missing
+  // roughness is largest, the ripples carry several times the gravity variance and the
+  // level rises with the square root of that, so the foam Monahan's coverage was fitted to
+  // vanishes from the foreground while the horizon keeps it. Found reviewing #75.
+  gBreakingSlope = gCarriedSlope;
+  slope += rippleSlope( vWaveParam, max( uSeaSlope - gCarriedSlope, 0.0 ), away, uPixelAngle );
   // The two tangents, then their cross product - z crossed with x, in that order, so the
   // normal comes out upwards. With no sideways carry it is exactly ( -slope.x, 1, -slope.y ),
   // which is what surfaceNormal in core/seaway.ts is held to.
@@ -678,8 +930,10 @@ const NORMALS = `
   vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
   // The whole surface fades to flat past a few kilometres as well, and slope goes with it.
-  gCarriedSlope *= fade * fade;
+  // gCarriedSlope was faded before the ripples, which are added at their own range and must
+  // not be faded twice.
   gSlopeSquared *= fade * fade;
+  gSlopeFade = fade;
 }
 `;
 
@@ -713,6 +967,12 @@ const REFLECTION = `
   vec3 lit;
   vec3 handed = skyTowards( back, gCarriedSlope )
     + lampsTowards( back, vWaveWorld, gWorldNormal, gCarriedSlope, lit );
+  // **Crests hide troughs, and near the horizon they hide most of them.** Without it the far
+  // sea returns the whole sky right up to the waterline and melts into it - the one thing an
+  // eye that has been to sea reads as wrong before anything else. Smith's term, off the SEA's
+  // own slope rather than the drawn surface's: real crests do the hiding, including the ones
+  // this band cannot draw, which is the argument lobeWidth already makes about the width.
+  handed *= shadowing( abs( look.y ), uSeaSlope );
   outgoingLight = mix( outgoingLight, handed, sky );
   // **And the water the lamps light, which is not a reflection and takes no Fresnel.** A
   // reflection is only where the geometry lines up; light landing on the sea is there from
@@ -725,7 +985,29 @@ const REFLECTION = `
   // the foam's own albedo, which is what dividing the diffuse term by the water's is.
   float away = distance( vWaveWorld.xz, uEye.xz );
   float resolved = smoothstep( 0.0, 1.0, ${FOAM_PATCH_METRES.toFixed(1)} / ( away * uPixelAngle + 1e-6 ) );
-  float foam = uWaveScale * mix( uFoam.x, foamAt( gSlopeSquared, gCarriedSlope, uFoam.y ), resolved );
+  // **The union over a whitecap's life**, which is what its coverage was fitted against:
+  // the strongest claim any instant makes, faded by how long ago it made it. Taken as a
+  // maximum, because two breakings of one piece of water are one patch of foam.
+  //
+  // **Nothing here can pass where the level is zero**, which is a sea with no components
+  // drawn or no wind to break them: foamAt returns nothing for it, after the whole history
+  // has been weighed. Issue #79.
+  float breaking = 0.0;
+  if ( uFoam.y > 0.0 ) {
+    breaking = foamAt( gSlopeSquared, gBreakingSlope, uFoam.y );
+    for ( int i = 1; i <= ${FOAM_HISTORY}; i ++ ) {
+      float age = float( i ) / ${FOAM_HISTORY}.0 * ${FOAM_LIFE_SECONDS}.0;
+      // **The same fade as the present**, which the shading loop does not apply as it
+      // accumulates: it drops each component at its own range, but not the whole surface's
+      // fade to flat. Left off, the past is measured on a sea the picture is no longer
+      // drawing while the level is measured on the faded one, so through the fade's own
+      // transition the history claims foam that is not breaking. Found reviewing #75.
+      vec2 was = gWas[ i - 1 ] * gSlopeFade;
+      float left = 1.0 - age / ${(FOAM_LIFE_SECONDS + FOAM_LIFE_SECONDS / 2).toFixed(1)};
+      breaking = max( breaking, foamAt( dot( was, was ), gBreakingSlope, uFoam.y ) * left );
+    }
+  }
+  float foam = uWaveScale * mix( uFoam.x, breaking, resolved );
   // **The same light, off a surface of the foam's own albedo**, which is what dividing the
   // diffuse term by the water's colour and multiplying by this leaves. It was a declared
   // brightness while there was no irradiance to multiply (#66); there is one now (#60).
@@ -755,6 +1037,7 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uWaveScale"] = uniforms.uWaveScale;
     shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
     shader.uniforms["uFoam"] = uniforms.uFoam;
+    shader.uniforms["uRipple"] = uniforms.uRipple;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
     shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", DRAWN_SURFACE);

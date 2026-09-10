@@ -13,12 +13,15 @@ import {
   displacedFraction,
   drawnFoam,
   foamAt,
+  foamOver,
   foamThreshold,
   makeWaveUniforms,
   drawable,
   meshCarries,
   pixelAngle,
+  rippleOctaves,
   setWaves,
+  shortestDrawnMetres,
   SHADER_COMPONENTS,
 } from "../src/render/waves.js";
 
@@ -499,16 +502,16 @@ describe("the sea a floating mark is given", () => {
  * Run over a real sea's own components on a grid, and count.
  */
 describe("how much of the sea comes out foam", () => {
-  /** The drawn slope at one point of the surface, from the components themselves. */
-  function slopeSquaredAt(components: WaveComponent[], x: number, y: number): number {
+  /** The drawn slope at one point of the surface and one instant, from the components. */
+  function slopeSquaredAt(components: WaveComponent[], x: number, y: number, when = 0): number {
     let east = 0;
     let north = 0;
     for (const wave of components) {
       const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
       const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
-      const along = Math.cos(kx * x + ky * y + wave.phaseRadians) * wave.amplitudeMetres;
-      east += kx * along;
-      north += ky * along;
+      const phase = kx * x + ky * y - wave.angularFrequencyPerSecond * when + wave.phaseRadians;
+      east += kx * Math.cos(phase) * wave.amplitudeMetres;
+      north += ky * Math.cos(phase) * wave.amplitudeMetres;
     }
     return east * east + north * north;
   }
@@ -526,13 +529,14 @@ describe("how much of the sea comes out foam", () => {
     const deviations = foamThreshold(components, wanted);
     let total = 0;
     let count = 0;
-    for (let i = 0; i < 300; i += 1) {
-      for (let j = 0; j < 300; j += 1) {
-        total += foamAt(
-          slopeSquaredAt(components, 811 + i * 4.3, 517 + j * 5.1),
-          variance,
-          deviations,
-        );
+    for (let i = 0; i < 160; i += 1) {
+      for (let j = 0; j < 160; j += 1) {
+        const east = 811 + i * 4.3;
+        const north = 517 + j * 5.1;
+        // The same union over a whitecap's life the shader takes: foam lingers, so what is
+        // under it now is what has been steep at any instant within that life.
+        const overTime = [0, -2, -4].map((when) => slopeSquaredAt(components, east, north, when));
+        total += foamOver(overTime, variance, deviations);
         count += 1;
       }
     }
@@ -561,6 +565,62 @@ describe("how much of the sea comes out foam", () => {
     const circular = Math.sqrt(-Math.log(wanted));
 
     expect(foamThreshold(components, wanted)).toBeGreaterThan(circular * 1.1);
+  });
+
+  /**
+   * **Foam has to last.** A threshold on this instant's steepness gives a whitecap no life -
+   * it appears where a crest is steep and vanishes when the crest passes, so the sea blinks
+   * rather than breaks. Monahan's coverage counts decaying foam as well as breaking water,
+   * which is what makes this necessary rather than decorative.
+   */
+  it("leaves foam where the water was steep a moment ago", () => {
+    const carried = 0.01;
+    const steep = carried * 9;
+    const level = 2;
+
+    // Steep now: full foam. Steep only a while back: less, but not nothing.
+    expect(foamOver([steep, 0, 0], carried, level)).toBeCloseTo(foamAt(steep, carried, level), 12);
+    const lingering = foamOver([0, steep, 0], carried, level);
+    expect(lingering).toBeGreaterThan(0);
+    expect(lingering).toBeLessThan(foamAt(steep, carried, level));
+  });
+
+  /** Two breakings of one piece of water are one patch of foam, not two. */
+  it("takes the strongest instant rather than adding them up", () => {
+    const carried = 0.01;
+    const steep = carried * 9;
+    expect(foamOver([steep, steep, steep], carried, 2)).toBeLessThanOrEqual(1);
+    expect(foamOver([steep, steep, steep], carried, 2)).toBeCloseTo(
+      foamOver([steep, 0, 0], carried, 2),
+      12,
+    );
+  });
+
+  /**
+   * And what lingers is inside the coverage rather than on top of it: the level is fitted
+   * against the same union, so persistence does not quietly put more foam on the sea than
+   * Monahan allows while the page goes on printing his figure.
+   */
+  it("asks more of the water now that foam lasts", () => {
+    const components = waveComponents(seawayOf(3));
+    const level = foamThreshold(components, 0.0076);
+    const variance = components.reduce(
+      (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
+      0,
+    );
+    // Whatever is under foam at any one instant is less than the coverage, because the rest
+    // of the coverage is water that broke earlier and has not finished fading.
+    let instant = 0;
+    for (let i = 0; i < 120; i += 1) {
+      for (let j = 0; j < 120; j += 1) {
+        instant += foamAt(
+          slopeSquaredAt(components, 811 + i * 4.3, 517 + j * 5.1),
+          variance,
+          level,
+        );
+      }
+    }
+    expect(instant / (120 * 120)).toBeLessThan(0.0076);
   });
 
   it("draws none at all where nothing states a wind or a sea", () => {
@@ -600,5 +660,164 @@ describe("how much of the sea comes out foam", () => {
     expect(drawn.coverage).toBe(wind);
     expect(drawn.standardDeviations).toBe(foamThreshold(components, wind));
     expect(drawn.standardDeviations).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * **The one thing drawn here that the file's sea does not contain.** Measured, the shortest
+ * wave the spectrum reaches is 1.14 m on a 2 m sea, which ten metres from the eye is 128
+ * pixels across - so the near water had no feature finer than that, where a real one carries
+ * centimetre ripples at one to eleven. Issue #70.
+ */
+describe("the texture below the drawn band", () => {
+  /**
+   * **A whitecap is a gravity wave breaking, so the level it is judged against has to be the
+   * gravity waves'.** `rippleSlope` hands its own variance back into `gCarriedSlope`, which
+   * is right for the reflection - the question there is how much roughness the surface is
+   * drawing now - and wrong for the foam, whose level `foamThreshold` fitted to the
+   * spectrum's own components. Near to, where the missing roughness is largest, the ripples
+   * carry several times the gravity variance and the level rises with its square root, so
+   * the foam vanishes from the foreground while the horizon keeps the flat fraction: one sea
+   * with two sea states in it, by range. Found reviewing #75; the numerator was already
+   * being taken before the ripples for exactly this reason, and only half the pair was.
+   */
+  /**
+   * **A whitecap's history has to be measured on the sea the picture is drawing now.** The
+   * shading loop drops each component at its own range as it accumulates the past, but not
+   * the whole surface's fade to flat - so through the fade's transition the past would be
+   * measured on a fuller sea than the level it is compared against, and claim foam that was
+   * not breaking. Found reviewing #75.
+   */
+  it("fades a whitecap's history with the surface it was breaking on", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain("vec2 was = gWas[ i - 1 ] * gSlopeFade");
+    const set = shader.fragmentShader.indexOf("gSlopeFade = fade");
+    const used = shader.fragmentShader.indexOf("* gSlopeFade");
+    expect(set, "set where the present is faded").toBeGreaterThan(0);
+    expect(set, "before the foam reads it").toBeLessThan(used);
+  });
+
+  /**
+   * **The past is the same sum at a different phase**, so it is accumulated beside the
+   * present rather than by walking the components again: `phase(t - age)` is
+   * `phase(t) + omega * age`, and the wavelength, the band limit and the dot product do not
+   * move. Two more cosines a component in place of two more passes over all of them, which
+   * was half the frame. Issue #79.
+   */
+  it("takes a whitecap's history from the loop that is already there", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      "gWas[ h ] += carries * w.xy * w.z * cos( phase + w.w * age )",
+    );
+    expect(shader.fragmentShader, "and the second pass is gone").not.toContain("steepnessAt");
+  });
+
+  /**
+   * A chart draws no sea: `uWaveScale` is zero there and every term multiplies out to
+   * nothing - after the whole sum has been evaluated to find that out. Measured, a chart
+   * went from 67 ms a frame to 41. And the array is filled in order with the rest zeroed,
+   * so a spectrum of 23 components was costing 40. Issue #79.
+   */
+  it("does not evaluate a sea where none is drawn", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain("if ( uWaveScale > 0.0 ) {");
+    expect(shader.fragmentShader).toContain("if ( w.z <= 0.0 ) break;");
+    expect(shader.vertexShader).toContain("if ( w.z <= 0.0 ) break;");
+    // And no foam is weighed where the level it would be weighed against is nothing.
+    expect(shader.fragmentShader).toContain("if ( uFoam.y > 0.0 ) {");
+  });
+
+  /**
+   * **The octave count is a real number of octaves, and the loop is a constant.** `uRipple.y`
+   * counts from the band's short end down to a centimetre, and a sea whose shortest drawn
+   * wave is a few centimetres has fewer than the four the loop is long - the share is
+   * `missing / uRipple.y`, so drawing four of three spends four thirds of the missing
+   * variance, hands four thirds of it back to the lobe, and generates gravity ripples below
+   * the centimetre this stops at. Reachable: a 20 cm sea's shortest drawn wave is under 16
+   * cm. Found reviewing #75.
+   */
+  it("draws only the octaves that are there, and hands back only those", () => {
+    // A metre of sea on a one-second period - short and steep, and a file may state it -
+    // has its band's short end at 2 cm, so there is barely one octave under it.
+    const steep = drawable(waveComponents(seawayOf(1, 1)));
+    expect(rippleOctaves(shortestDrawnMetres(steep))).toBeLessThan(4);
+
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+    expect(shader.fragmentShader).toContain("float within = clamp( uRipple.y - octave, 0.0, 1.0 )");
+    expect(shader.fragmentShader).toContain("perOctave * carries * within / 3.0");
+    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries * within");
+  });
+
+  it("judges a whitecap against the waves it breaks from, not the texture over them", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    const taken = shader.fragmentShader.indexOf("gBreakingSlope = gCarriedSlope");
+    const ripples = shader.fragmentShader.indexOf("slope += rippleSlope(");
+    expect(taken, "the variance is taken").toBeGreaterThan(0);
+    expect(taken, "before the ripples are added to it").toBeLessThan(ripples);
+
+    expect(shader.fragmentShader).toContain("foamAt( gSlopeSquared, gBreakingSlope, uFoam.y )");
+    expect(shader.fragmentShader).not.toContain("foamAt( gSlopeSquared, gCarriedSlope");
+    // And the whitecap's own history is judged against the same surface as the instant.
+    expect(shader.fragmentShader).not.toContain("dot( was, was ), gCarriedSlope");
+  });
+
+  it("starts where the spectrum's shortest wave ends", () => {
+    const components = waveComponents(seawayOf(2));
+    const lengths = components.map((c) => (2 * Math.PI) / c.wavenumberPerMetre);
+
+    expect(shortestDrawnMetres(components)).toBeCloseTo(Math.min(...lengths), 9);
+  });
+
+  /**
+   * A slope density falling as one over omega puts the same variance in every octave, so an
+   * octave's share is the missing variance over the count of them - and the count runs from
+   * the band's short end to a centimetre, below which a gravity relation has no business
+   * generating anything.
+   */
+  it("shares the missing slope over the octaves between the band and a centimetre", () => {
+    // 1.28 m is seven doublings above 0.01 m.
+    expect(rippleOctaves(1.28)).toBeCloseTo(7, 9);
+    expect(rippleOctaves(0.16)).toBeCloseTo(4, 9);
+  });
+
+  /**
+   * A file that states no sea has no measured slope to fall short of, and a band that is
+   * already at the floor has no octaves under it. Both must draw nothing rather than divide
+   * by nothing.
+   */
+  it("draws none where there is no band under which to draw it", () => {
+    expect(shortestDrawnMetres([])).toBe(0);
+    expect(rippleOctaves(0)).toBe(0);
+    expect(rippleOctaves(0.01)).toBe(0);
+  });
+
+  /**
+   * **What it spends it hands back.** Every octave adds its own variance to the carried
+   * slope, so the width of whatever is mirrored narrows by exactly what the surface took up.
+   * Without it the picture would draw a sea rougher than Cox and Munk measured while the page
+   * printed their figure - one water described twice, differently.
+   */
+  it("gives back to the lobe what it takes for the surface", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain("gCarriedSlope += perOctave * carries * within");
+    // And it is asked for the missing slope, not for the sea's whole slope.
+    expect(shader.fragmentShader).toContain("max( uSeaSlope - gCarriedSlope, 0.0 )");
   });
 });

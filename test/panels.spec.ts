@@ -1250,7 +1250,10 @@ describe("the band the sea is drawn from", () => {
 
     expect(html).toContain("of wavelength");
     expect(html).toContain("Cox and Munk");
-    expect(html).toContain("drawn flatter than it was");
+    // What the spectrum does not reach is drawn as texture near the eye rather than dropped,
+    // and the page has to say that it is this tool's placement of a measured amount.
+    expect(html).toContain("drawn as TEXTURE");
+    expect(html).toContain("not the pattern off the picture");
   });
 
   /** A sea of no height has no band, and printing a range of wavelengths over one is a lie. */
@@ -1364,7 +1367,7 @@ describe("the band the sea is drawn from", () => {
 
     expect(shown.length).toBeLessThan(40);
     expect(panelsFor(subject)).toContain(
-      `against ${((Math.atan(Math.sqrt(slope)) * 180) / Math.PI).toFixed(1)} here`,
+      `against ${((Math.atan(Math.sqrt(slope)) * 180) / Math.PI).toFixed(1)} from the waves`,
     );
   });
 

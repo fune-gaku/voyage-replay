@@ -1127,11 +1127,16 @@ function slopeNote(drawn: WaveComponent[]): string {
     `The drawn sea carries waves from ${band.shortest.toFixed(1)} m up. Most of a real sea's ` +
     "SLOPE is in shorter waves than that - Cox and Munk measured about " +
     `${measured.toFixed(0)} degrees rms for the wind that raises a sea this size, against ` +
-    `${rmsSlopeDegrees(drawn).toFixed(1)} here - so the water is drawn flatter than it was, ` +
-    "and the difference is in ripples this spectrum does not describe and no screen can " +
-    "draw. The same band decides how often the sea crosses a sight line, so the hidden " +
-    "fractions below move with it: it is one choice, made once, for the picture and the " +
-    "arithmetic together."
+    `${rmsSlopeDegrees(drawn).toFixed(1)} from the waves themselves - so the spectrum this ` +
+    "is built on describes only part of the slope, and the rest is in ripples it does not " +
+    "cover. That rest is not dropped, and neither is it a wave: near the eye it is drawn as " +
+    "TEXTURE, in four octaves below the band whose total slope is the measured shortfall " +
+    "shared out per octave, and past the range where those fall under a pixel it goes back " +
+    "into the width of whatever is mirrored in the water. So the amount is Cox and Munk's " +
+    "and where it lands is this tool's, the same division the whitecaps are drawn under - " +
+    "read the figures here, not the pattern off the picture. The band also decides how often " +
+    "the sea crosses a sight line, so the hidden fractions below move with it: it is one " +
+    "choice, made once, for the picture and the arithmetic together."
   );
 }
 
