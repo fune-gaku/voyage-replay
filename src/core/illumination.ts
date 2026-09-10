@@ -172,6 +172,22 @@ export function measuredSlopeVariance(significantHeightMetres: number | null): n
   return coxMunkSlopeVariance(windRaisingMetresPerSecond(significantHeightMetres));
 }
 
+/**
+ * The slope of a sea nobody stated, which is not nothing.
+ *
+ * **Cox and Munk's relation has an intercept, and the intercept is the point.** At no wind
+ * at all their fit gives `mss = 0.003` - an rms slope of 3.1 degrees - because that is what
+ * they measured on a calm: a sea surface is never a mirror. Zero is not a calm sea, it is a
+ * sheet of glass, and drawing one is a claim nobody made.
+ *
+ * So a file that states no sea gets this for its REFLECTION, while everything that needs a
+ * stated sea stays off: no glitter path, no lamp streak, no waves in the geometry. What is
+ * left is a surface that hands back the sky slightly softened and hides a little of it near
+ * the horizon, which is the least this tool can draw without asserting either a sea or a
+ * mirror. `ui/panels.ts` says so. Issue #81.
+ */
+export const CALM_SLOPE_VARIANCE = coxMunkSlopeVariance(0);
+
 export function glitterSpreadRadians(
   significantHeightMetres: number | null,
   drawnSlopeVariance: number,

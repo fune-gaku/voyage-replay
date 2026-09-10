@@ -1,6 +1,7 @@
 import { MeshStandardMaterial, ShaderLib, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 
+import { CALM_SLOPE_VARIANCE } from "../src/core/illumination.js";
 import {
   DRAWN_COMPONENTS,
   seawayOf,
@@ -689,13 +690,33 @@ describe("the texture below the drawn band", () => {
    * the sea just under the waterline went from 0.16 of the sky to 0.62, and the step at the
    * waterline stayed (64 counts). Issue #81.
    */
+  /**
+   * **A file that states no sea does not state a mirror either.** `uSeaSlope` is negative
+   * where nothing is stated, which is the gate the glitter path and the lamp streaks answer
+   * to - they need a stated sea to have a width. The reflection does not: water reflects sky
+   * whatever the file says, and drawing it perfectly sharp is a second claim on top of the
+   * flat water. Cox and Munk's intercept is what a calm measures. Issue #81.
+   */
+  it("roughens a sea nobody stated by the calm Cox and Munk measured", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      `float rough = uSeaSlope < 0.0 ? ${CALM_SLOPE_VARIANCE.toFixed(4)} : uSeaSlope;`,
+    );
+    expect(shader.fragmentShader).toContain("float seen = shadowing( abs( look.y ), rough )");
+    // And the gates that need a stated sea are still asking the uniform itself.
+    expect(shader.fragmentShader).toContain("if ( uSeaSlope < 0.0 ) return sky;");
+  });
+
   it("fills what a crest hides with sky rather than with nothing", () => {
     const material = new MeshStandardMaterial();
     applyWaves(material, makeWaveUniforms());
     const shader = compile(material);
 
     expect(shader.fragmentShader).toContain(
-      "vec3 hidden = skyGradient( raisedBy( back, 2.0 * sqrt( max( uSeaSlope, 0.0 ) ) ) )",
+      "vec3 hidden = skyGradient( raisedBy( back, 2.0 * sqrt( rough ) ) )",
     );
     expect(shader.fragmentShader).toContain("handed = mix( hidden, handed, seen )");
     expect(shader.fragmentShader, "and never the bare multiply again").not.toContain(

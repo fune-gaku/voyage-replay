@@ -1302,7 +1302,10 @@ const NO_SEA =
   "neutral picture but the strongest claim available, that everything was in sight the " +
   "whole time. An unstated sea is not a calm one. No whitecaps go on it either, whatever " +
   "the wind: the coverage is a fraction of a sea breaking, and there is no drawn sea here " +
-  "to break.";
+  "to break. What the water does reflect is softened by the slope Cox and Munk measured on " +
+  "a calm - their relation's own intercept, 0.003, an rms slope of 3.1 degrees - because a " +
+  "sea surface is never a mirror, and drawing one would be a second claim on top of the " +
+  "flat water: nobody said it was glassy either.";
 
 /**
  * How much of the time a crest stood between the two.
