@@ -3,7 +3,7 @@ import type * as THREE from "three";
 import type { Group, Mesh } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { heightAt, SEA_METRES, thin } from "../src/render/dem.js";
+import { heightAt, thin } from "../src/render/dem.js";
 import {
   encodeHeights,
   settleTiles,
@@ -38,7 +38,7 @@ vi.mock("three", async (importOriginal) => {
   };
 });
 
-const { buildTerrain, heightField, wantedTiles, TERRAIN_CREDIT } =
+const { buildTerrain, gridIndices, heightField, wantedTiles, TERRAIN_CREDIT } =
   await import("../src/render/terrain.js");
 const { buildWater } = await import("../src/render/water.js");
 const { applyCurvature, makeCurvatureUniforms } = await import("../src/render/curvature.js");
@@ -79,7 +79,7 @@ describe("decoding one pixel", () => {
   });
 
   it("treats (128, 0, 0) as no data, which over the sea is most of the tile", () => {
-    expect(heightAt(new Uint8ClampedArray([128, 0, 0, 255]), 0)).toBe(SEA_METRES);
+    expect(heightAt(new Uint8ClampedArray([128, 0, 0, 255]), 0)).toBeNaN();
   });
 
   it("reads a pixel at an offset rather than only the first", () => {
@@ -110,7 +110,7 @@ describe("thinning a tile to the grid that is drawn", () => {
 
   it("has nothing above the sea in a tile that is all no-data", () => {
     const pixels = encodeHeights(Array.from({ length: 16 }, () => NaN));
-    expect(thin(pixels, 4, 2).highestMetres).toBe(SEA_METRES);
+    expect(thin(pixels, 4, 2).highestMetres).toBe(0);
   });
 });
 
@@ -371,5 +371,48 @@ describe("a scene that knows where in the world it is", () => {
   it("names the elevation tiles rather than the map they are not", () => {
     expect(TERRAIN_CREDIT).toContain("Geospatial Information Authority of Japan");
     expect(TERRAIN_CREDIT).toContain("elevation");
+  });
+});
+
+/**
+ * **The sea inside a coastal tile is not land, and drawing it as land is what put a
+ * chequerboard of olive blocks across the Suo-nada** when the sea view first stood a few
+ * kilometres up over it. The model has no data over water; that used to become a height a
+ * metre under the surface and be left to the depth buffer, which cannot tell a metre from
+ * nothing at twenty kilometres. Issue #68.
+ */
+describe("which triangles a tile actually gets", () => {
+  function grid(metres: number[]): { size: number; metres: Float32Array; highestMetres: number } {
+    const size = Math.round(Math.sqrt(metres.length));
+    return { size, metres: Float32Array.from(metres), highestMetres: 0 };
+  }
+
+  it("draws every quad of a tile the source gives throughout", () => {
+    // Three by three is four quads, two triangles each.
+    expect(gridIndices(grid([1, 2, 3, 4, 5, 6, 7, 8, 9])).length).toBe(4 * 6);
+  });
+
+  it("leaves out a quad the source does not give all four corners of", () => {
+    const withHole = gridIndices(grid([1, 2, 3, 4, 5, 6, 7, 8, NaN]));
+    expect(withHole.length, "the one quad touching it goes").toBe(3 * 6);
+    expect([...withHole], "and nothing refers to the corner").not.toContain(8);
+  });
+
+  /**
+   * Which is the ordinary case: over open water the server publishes no tile at all, and a
+   * tile that IS published can still be mostly sea.
+   */
+  it("draws nothing at all where the source gives no corner", () => {
+    expect(gridIndices(grid([NaN, NaN, NaN, NaN])).length).toBe(0);
+  });
+
+  /**
+   * A hole rather than a pit. Inland missing data reads the same as sea, and the failure
+   * this replaces was reading it as a height - so where the source says nothing, nothing is
+   * drawn and the reader sees through to whatever is behind.
+   */
+  it("makes an inland gap a hole, not a hollow at sea level", () => {
+    const around = [100, 100, 100, 100, NaN, 100, 100, 100, 100];
+    expect(gridIndices(grid(around)).length, "all four quads touch the gap").toBe(0);
   });
 });

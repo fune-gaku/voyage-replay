@@ -167,7 +167,7 @@ function tileMesh(tile: Tile, grid: HeightGrid, origin: LatLon, material: Materi
   const width = northEast.east - southWest.east;
   const depth = northEast.north - southWest.north;
   geometry.setAttribute("position", new BufferAttribute(heightField(grid, width, depth), 3));
-  geometry.setIndex(new BufferAttribute(gridIndices(grid.size), 1));
+  geometry.setIndex(new BufferAttribute(gridIndices(grid), 1));
   geometry.computeVertexNormals();
 
   const mesh = new Mesh(geometry, material);
@@ -192,29 +192,47 @@ export function heightField(grid: HeightGrid, width: number, depth: number): Flo
     for (let column = 0; column < grid.size; column += 1) {
       const at = (row * grid.size + column) * 3;
       vertices[at] = -width / 2 + (width * column) / last;
-      vertices[at + 1] = grid.metres[row * grid.size + column] ?? 0;
+      // Zero rather than the no-data NaN, which would put a NaN in a bounding sphere and in
+      // every normal that touched it. The quads that would use these are not indexed at all,
+      // so the value is never drawn - it only has to be a number.
+      const height = grid.metres[row * grid.size + column] ?? 0;
+      vertices[at + 1] = Number.isNaN(height) ? 0 : height;
       vertices[at + 2] = z;
     }
   }
   return vertices;
 }
 
-function gridIndices(size: number): Uint32Array {
-  const indices = new Uint32Array((size - 1) * (size - 1) * 6);
-  let at = 0;
+/**
+ * The triangles, leaving out every quad the source does not give all four corners of.
+ *
+ * **This is what stops the sea being drawn as land.** A coastal tile covers water as well as
+ * ground, and over the water the model has no data - so the sheet used to be laid at a metre
+ * below the surface and left to the depth buffer, which cannot tell a metre from nothing at
+ * twenty kilometres. See `NO_HEIGHT`.
+ *
+ * All four rather than any one, so the drawn land stops at the last cell that is known
+ * throughout rather than reaching into a cell it only half knows. What that costs is a
+ * fringe one cell wide along every shore - 60 m at the near zoom, 300 m at the far one,
+ * which is under a pixel at the range that zoom is used for.
+ */
+export function gridIndices(grid: HeightGrid): Uint32Array {
+  const size = grid.size;
+  const indices: number[] = [];
+  const known = (at: number): boolean => !Number.isNaN(grid.metres[at] ?? NaN);
+
   for (let row = 0; row < size - 1; row += 1) {
     for (let column = 0; column < size - 1; column += 1) {
       const topLeft = row * size + column;
       const bottomLeft = topLeft + size;
-      indices[at++] = topLeft;
-      indices[at++] = bottomLeft;
-      indices[at++] = topLeft + 1;
-      indices[at++] = topLeft + 1;
-      indices[at++] = bottomLeft;
-      indices[at++] = bottomLeft + 1;
+      if (!known(topLeft) || !known(topLeft + 1) || !known(bottomLeft) || !known(bottomLeft + 1)) {
+        continue;
+      }
+      indices.push(topLeft, bottomLeft, topLeft + 1);
+      indices.push(topLeft + 1, bottomLeft, bottomLeft + 1);
     }
   }
-  return indices;
+  return Uint32Array.from(indices);
 }
 
 /** Every tile of every ring that falls in its band and inside the wedge ahead. */

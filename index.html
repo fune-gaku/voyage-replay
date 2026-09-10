@@ -77,6 +77,15 @@
         gap: 0.25rem;
         align-items: center;
       }
+      /*
+        The `hidden` attribute is a UA rule and the ones above are author rules, so without
+        this a control stays on the bar while the code says it has gone - the picture and the
+        page disagreeing about what is on screen, quietly. Everything in the bar, not only
+        the groups: the buttons have an author rule of their own.
+      */
+      #controls [hidden] {
+        display: none;
+      }
       button,
       select {
         font: inherit;
@@ -161,7 +170,14 @@
               <option value="60">60&times;</option>
             </select>
           </label>
-          <label class="group">
+          <!--
+            The chart's own control, which leaves the bar with the chart. Recentre is NOT in
+            here: standing off a fixed place is when a stated way back to the ships is most
+            wanted, so it stays up in the sea view too and goes only on a bridge. What is
+            left whichever view is up is what playback needs - the views, play, the speed,
+            the clock and the bar.
+          -->
+          <span class="group" id="chartControls">
             <!--
               Metres of sea from the top of the plan view to the bottom. Height rather than
               width because it does not move when the window is resized, and a scale that
@@ -193,10 +209,10 @@
               <option value="500000">Scale: 500 km</option>
               <option value="1000000">Scale: 1000 km</option>
             </select>
-          </label>
+          </span>
           <button
             id="recentre"
-            title="Plan view: follow the ships again after dragging the picture"
+            title="Back to the ships: the chart follows them again, and the sea view is stood over them as they are now"
           >
             Recentre
           </button>

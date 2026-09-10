@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headingToRotationY, toWorld } from "../src/render/coords.js";
 import { toLatLon } from "../src/core/geodesy.js";
+import { dropMetres } from "../src/core/horizon.js";
 import { prepareActor, sampleAt } from "../src/core/track.js";
 import type { Actor, Scenario, TrackPoint } from "../src/core/types.js";
 import {
@@ -1216,6 +1217,39 @@ describe("the opening shot", () => {
     expect(replay.planExtentMetres).toBeCloseTo(4000, 6);
   });
 
+  /**
+   * **The camera that flies in is the chart's**, so over a viewpoint in the world there is
+   * nothing to fly: the hold would stop the clock for three and a half seconds while the
+   * screen sat still. That does not read as a camera move. It reads as a Play button that
+   * does not work - and then as a Pause button that does not either, because every press
+   * from the top starts the hold again and the clock never leaves the first instant.
+   */
+  it("does not hold the clock over a viewpoint the camera cannot fly in to", () => {
+    vi.useFakeTimers();
+    const replay = replayOf();
+    replay.setView({
+      kind: "orbit",
+      centre: { east: 0, north: 0 },
+      azimuthDegrees: 0,
+      elevationDegrees: 45,
+      distanceMetres: 2_000,
+    });
+    replay.play();
+    runFor(500);
+
+    expect(replay.timeSeconds).toBeGreaterThan(replay.startSeconds);
+  });
+
+  it("lets the clock go when the chart is left part way through it", () => {
+    const replay = playFromTheTop();
+    runFor(500);
+    expect(replay.timeSeconds, "held while the chart flies in").toBe(replay.startSeconds);
+
+    replay.setView({ kind: "bridge", actorId: "A" });
+    runFor(500);
+    expect(replay.timeSeconds).toBeGreaterThan(replay.startSeconds);
+  });
+
   it("gets out of the way as soon as the view is touched", () => {
     const replay = playFromTheTop();
     runFor(500);
@@ -1547,5 +1581,131 @@ describe("a mark's light in the picture", () => {
     expect(lamp.visible).toBe(true);
     expect(colour.g).toBeGreaterThan(colour.r);
     expect(colour.g).toBeGreaterThan(colour.b);
+  });
+});
+
+/**
+ * **The viewpoint a reader asks for**, which is neither of the two the tool had: a place to
+ * stand off the action and turn round it, from nearly overhead down to nearly the surface.
+ *
+ * It is stated relative to what is happening rather than absolutely, and that is the whole
+ * of why it lives in the player: where the action is is already worked out here, for the
+ * chart's framing, and a second answer to it in whatever drives the control would let the
+ * picture turn about a point the frame does not agree with. Issue #65.
+ */
+describe("an orbit round the action", () => {
+  const CENTRE = { east: 300, north: -200 };
+  const ALOFT = {
+    kind: "orbit",
+    centre: CENTRE,
+    azimuthDegrees: 0,
+    elevationDegrees: 45,
+    distanceMetres: 2_000,
+  } as const;
+
+  it("stands off the place it was given, at the range and height asked for", () => {
+    const replay = replayOf();
+    const centre = CENTRE;
+
+    replay.setView(ALOFT);
+    const eye = lastFrame().camera as PerspectiveCamera;
+    const away = 2_000 * Math.cos(Math.PI / 4);
+
+    expect(eye.position.y, "height").toBeCloseTo(2_000 * Math.sin(Math.PI / 4), 3);
+    // Bearing 000 from the action, so due north of it - and world z runs south.
+    expect(eye.position.x, "east").toBeCloseTo(centre.east, 3);
+    expect(-eye.position.z, "north").toBeCloseTo(centre.north + away, 3);
+    // A shade past 45: a world picture sinks everything by how far the surface has fallen
+    // away from the eye, so the centre AS DRAWN is below the flat-plane one. See `orbitEye`.
+    const aim =
+      (Math.atan2(2_000 * Math.sin(Math.PI / 4) + dropMetres(away), away) * 180) / Math.PI;
+    expect(aim).toBeGreaterThan(45);
+    expect((eye.rotation.x * 180) / Math.PI, "looking down at it").toBeCloseTo(-aim, 3);
+  });
+
+  /** It is a place, so the earth bends away from it as it does from a wheelhouse. */
+  it("draws the world rather than a chart seen from an angle", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const flat = ships(lastFrame().scene)[1]!.position.y;
+    replay.setView(ALOFT);
+
+    expect(flat, "a chart is drawn flat").toBeCloseTo(0, 6);
+    expect(ships(lastFrame().scene)[1]!.position.y).toBeLessThan(0);
+  });
+
+  /**
+   * **Nothing here moves the eye.** It orbited whatever the chart was framing, which follows
+   * the ships - so a viewpoint set up to be read drifted while it was being read, and the
+   * angle and range a reader had chosen were measured from somewhere that had moved. An
+   * investigator picks a place and stays there while the ships come past. Issue #67.
+   */
+  it("holds still while the ships run", () => {
+    const replay = replayOf();
+    replay.setView(ALOFT);
+    const before = (lastFrame().camera as PerspectiveCamera).position.clone();
+
+    replay.seek(replay.endSeconds);
+    const after = (lastFrame().camera as PerspectiveCamera).position;
+
+    expect(after.distanceTo(before)).toBeCloseTo(0, 6);
+  });
+
+  /**
+   * And the place it is told about is where the chart was looking, which is how the sea view
+   * opens on what the frame before it held - asked for once rather than followed.
+   */
+  it("can be told where the action is, once", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const framed = lastFrame().camera as OrthographicCamera;
+
+    expect(replay.actionCentre.east).toBeCloseTo(framed.position.x, 6);
+    expect(replay.actionCentre.north).toBeCloseTo(-framed.position.z, 6);
+  });
+
+  /**
+   * Clicking the chart is how the place is chosen, and the frame goes to it so the choice is
+   * visible. The ground it was has to come back, or the sea view would have to work out a
+   * second time which spot the chart had just centred on.
+   */
+  it("takes the ground under a point of the picture, and says which ground that was", () => {
+    const replay = replayOf();
+    replay.setView({ kind: "chart" });
+    const before = replay.actionCentre;
+    const metresPerPixel = replay.planExtentMetres / 400;
+
+    const chosen = replay.lookAtPixels(100, -50);
+
+    expect(chosen.east).toBeCloseTo(before.east + 100 * metresPerPixel, 3);
+    expect(chosen.north).toBeCloseTo(before.north + 50 * metresPerPixel, 3);
+    expect(replay.actionCentre.east, "and the frame is on it").toBeCloseTo(chosen.east, 6);
+  });
+
+  /**
+   * **Never the chart's camera.** A bridge eye can be missing - a ship's own track need not
+   * reach this instant - and the fallback for that is the overhead camera, which is a
+   * parallel projection. Taken while the picture is still the world, it would draw a curved
+   * earth flat-on: a picture nobody designed. An orbit always has somewhere to stand.
+   */
+  /**
+   * A second ship's record beginning after the first is the ordinary case, not a corner:
+   * in the reference case B's AIS starts thirty minutes after A's.
+   */
+  function laterPoints(): TrackPoint[] {
+    return westboundPoints().map((point) => ({
+      ...point,
+      t: point.t.replace("T00:0", "T00:1"),
+    }));
+  }
+
+  it("has an eye at every instant, including before a ship's track begins", () => {
+    const replay = replayOf(
+      scenario([actor("A", northboundPoints(), COASTER), actor("B", laterPoints(), BIG_SHIP)]),
+    );
+    replay.setView(ALOFT);
+    replay.seek(replay.startSeconds);
+
+    expect(lastFrame().camera).toBeInstanceOf(PerspectiveCamera);
   });
 });
