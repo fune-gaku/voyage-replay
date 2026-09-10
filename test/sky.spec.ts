@@ -1,10 +1,11 @@
 import { Color, ShaderLib, Vector3, type ShaderMaterial } from "three";
 import { describe, expect, it } from "vitest";
 
-import type { Lit } from "../src/core/illumination.js";
+import { CALM_SLOPE_VARIANCE, type Lit } from "../src/core/illumination.js";
 import {
   buildSkyDome,
   makeSkyUniforms,
+  raisedBy,
   shadowing,
   SHADOW_GLSL,
   setSkyBody,
@@ -400,6 +401,53 @@ describe("the dome and the water leave by the same door", () => {
 });
 
 /**
+ * **What the hiding takes away has to go somewhere, and it is not black.**
+ *
+ * Applied on its own, the shadowing put the water at the waterline at a sixth of the sky over
+ * it and made the sea DARKEST at the horizon and brighter below - upside down, since Fresnel
+ * climbs steeply past sixty degrees and a sea is at its brightest just under the horizon
+ * (Cox and Munk's statistics, as the Ocean Optics Web Book puts them). Leaving the term out
+ * is the other error: the horizon then has nothing to make it, which is the whole subject of
+ * Saunders (1967), "Shadowing on the ocean and the existence of the horizon".
+ *
+ * What an eye sees where a crest hides the mirror direction is the sky the tilted facets DO
+ * reflect. A facet tilted by an angle turns its ray by twice that, so the fill is the sky
+ * about two rms slopes above the mirror direction - deeper blue, and darker. Issue #81.
+ */
+describe("where the light goes that a crest hides", () => {
+  const uniforms = makeSkyUniforms();
+  uniforms.uSkyHorizon.value.setRGB(0.5, 0.62, 0.8);
+  uniforms.uSkyZenith.value.setRGB(0.1, 0.24, 0.6);
+
+  it("lifts a direction by the angle asked, and leaves its bearing alone", () => {
+    const level = new Vector3(0, 0, -1);
+    const lifted = raisedBy(level, Math.PI / 6);
+
+    expect(Math.asin(lifted.y), "thirty degrees up").toBeCloseTo(Math.PI / 6, 6);
+    expect(Math.atan2(lifted.x, -lifted.z), "due north still").toBeCloseTo(0, 6);
+    expect(lifted.length(), "and still a direction").toBeCloseTo(1, 6);
+    expect(raisedBy(level, 0).y, "nothing asked, nothing lifted").toBeCloseTo(0, 6);
+  });
+
+  /**
+   * The fill has to be darker than the mirror direction it replaces, or the hiding would
+   * brighten the sea - and it has to be sky rather than nothing, or the horizon goes black.
+   */
+  it("fills with sky that is deeper than the horizon, and not with nothing", () => {
+    const grazing = new Vector3(0, 0.005, -1).normalize();
+    const rms = Math.sqrt(0.0525);
+
+    const mirror = skyGradientAt(grazing, uniforms);
+    const fill = skyGradientAt(raisedBy(grazing, 2 * rms), uniforms);
+
+    const brightness = (c: { r: number; g: number; b: number }): number =>
+      0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    expect(brightness(fill)).toBeLessThan(brightness(mirror));
+    expect(brightness(fill) / brightness(mirror)).toBeGreaterThan(0.3);
+  });
+});
+
+/**
  * **Crests hide troughs, and near the horizon they hide most of them.** Without the term the
  * far sea returns the whole sky right up to the waterline and melts into it, which is what an
  * eye that has been to sea reads as wrong before anything else.
@@ -447,6 +495,24 @@ describe("how much of a rough sea an eye can see", () => {
   it("hides more of a rougher sea than of a smoother one", () => {
     const grazing = (89 * Math.PI) / 180;
     expect(shadowing(grazing, 0.09)).toBeLessThan(shadowing(grazing, 0.01));
+  });
+
+  /**
+   * **A file that states no sea is not a file that states a mirror.** The reflection is
+   * roughened by Cox and Munk's own intercept instead - 0.003, what they measured on a calm -
+   * so the shadowing has something to work with and the horizon exists. The gate that stays
+   * is the one the glitter path and the lamp streaks answer to, which need a stated sea to
+   * have a width at all. `render/waves.ts` picks between them; this is the value it picks.
+   */
+  it("has a calm to fall back on, which is not a sheet of glass", () => {
+    expect(CALM_SLOPE_VARIANCE).toBeCloseTo(0.003, 12);
+    expect(Math.sqrt(CALM_SLOPE_VARIANCE), "3.1 degrees of rms slope").toBeCloseTo(0.0548, 4);
+
+    const grazing = (89.5 * Math.PI) / 180;
+    expect(shadowing(grazing, CALM_SLOPE_VARIANCE), "and it hides some of itself").toBeLessThan(1);
+    expect(shadowing(grazing, CALM_SLOPE_VARIANCE), "but far less than a sea does").toBeGreaterThan(
+      shadowing(grazing, 0.0525),
+    );
   });
 
   /** No sea stated, nothing to hide behind: the same answer as a mirror. */

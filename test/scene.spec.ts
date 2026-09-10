@@ -1,14 +1,6 @@
-import { Box3, LineDashedMaterial } from "three";
-import type { Mesh, MeshStandardMaterial, Vector3, WebGLRenderer } from "three";
-import type {
-  AmbientLight,
-  Color,
-  DirectionalLight,
-  Fog,
-  GridHelper,
-  Line,
-  LineBasicMaterial,
-} from "three";
+import { Box3, LineDashedMaterial, type Color } from "three";
+import type { FogExp2, Mesh, MeshStandardMaterial, Vector3, WebGLRenderer } from "three";
+import type { AmbientLight, DirectionalLight, GridHelper, Line, LineBasicMaterial } from "three";
 import { describe, expect, it } from "vitest";
 
 import type { LocalPosition } from "../src/core/geodesy.js";
@@ -17,6 +9,7 @@ import { prepareTrack, sampleAt } from "../src/core/track.js";
 import type { Environment, Track } from "../src/core/types.js";
 import type { Frame } from "../src/render/basemap.js";
 import { toWorld } from "../src/render/coords.js";
+import { CLEAR_AIR_METRES, contrastAt, extinctionPerMetre } from "../src/render/haze.js";
 import { buildScene, buildTrackLine } from "../src/render/scene.js";
 import { displacedFraction } from "../src/render/waves.js";
 import { ORIGIN } from "./fixtures.js";
@@ -70,17 +63,42 @@ describe("light condition", () => {
 });
 
 describe("visibility", () => {
-  it("brings the fog in to the stated visibility", () => {
+  /**
+   * **Koschmieder's relation is what a stated visibility means**: a black object reaches the
+   * limit of sight when its contrast against the horizon is 2 per cent, so the extinction is
+   * `ln(50) / V`. The fog carries that as its density and the shader's exponent is linear in
+   * depth - see `render/haze.ts`, which replaces three's chunk to make it so.
+   */
+  it("takes its extinction from the stated visibility", () => {
     const { scene } = buildScene({ lightCondition: "night", visibilityMetres: 2000 }, 50000);
-    expect((scene.fog as Fog).far).toBe(2000);
+    const fog = scene.fog as FogExp2;
+
+    expect(fog.density).toBeCloseTo(extinctionPerMetre(2000), 12);
+    // Which is to say: 2 per cent of the contrast left at the figure the file states.
+    expect(contrastAt(2000, 2000)).toBeCloseTo(0.02, 6);
   });
 
-  // Where the report gives no figure the fog is pushed beyond the scene rather than
-  // invented, so nothing fades that the source did not say faded.
-  it("pushes it past everything when the source gives no figure", () => {
-    const extent = 5000;
-    const { scene } = buildScene({ lightCondition: "night" }, extent);
-    expect((scene.fog as Fog).far).toBeGreaterThan(extent);
+  /**
+   * **The size of the case is not a property of the air.** The fog used to be built from the
+   * span of the tracks, so a 2.55 km reconstruction drew a clear day that went opaque at
+   * 8.8 km and a 40.8 km one never fogged at all. Issue #81.
+   */
+  it("draws the declared clear air where the source gives no figure, whatever the scenario", () => {
+    const near = buildScene({ lightCondition: "night" }, 500);
+    const far = buildScene({ lightCondition: "night" }, 50_000);
+
+    for (const parts of [near, far]) {
+      expect((parts.scene.fog as FogExp2).density).toBeCloseTo(
+        extinctionPerMetre(CLEAR_AIR_METRES),
+        12,
+      );
+    }
+    // And a far shore keeps its ranges apart rather than collapsing into one silhouette.
+    expect(contrastAt(15_000, CLEAR_AIR_METRES)).toBeGreaterThan(
+      contrastAt(25_000, CLEAR_AIR_METRES) * 1.5,
+    );
+    // And the terrain the renderer draws - out to 46 km - is not wholly gone into it.
+    expect(contrastAt(46_000, CLEAR_AIR_METRES)).toBeGreaterThan(0.02);
   });
 
   /**
@@ -95,13 +113,50 @@ describe("visibility", () => {
     parts.setDiagramView("chart");
     expect(parts.scene.fog).toBeNull();
     parts.setDiagramView("world");
-    expect((parts.scene.fog as Fog).far).toBe(2000);
+    expect((parts.scene.fog as FogExp2).density).toBeCloseTo(extinctionPerMetre(2000), 12);
   });
 
   it("treats an explicit null the same as an absent figure", () => {
     const stated = buildScene({ lightCondition: "night", visibilityMetres: null }, 5000);
     const absent = buildScene({ lightCondition: "night" }, 5000);
-    expect((stated.scene.fog as Fog).far).toBe((absent.scene.fog as Fog).far);
+    expect((stated.scene.fog as FogExp2).density).toBe((absent.scene.fog as FogExp2).density);
+  });
+
+  /**
+   * **Haze is the sky scattered towards the eye, so it fades towards the sky - but three
+   * mixes fog AFTER the tone curve and the colour-space encoding**, so what it wants is what
+   * the screen shows for that sky and not the radiance. Handed the radiance the sea goes
+   * white a few hundred metres out; handed the palette's hex, which is what it was before
+   * #81, it fades towards a linear 0.33 in an sRGB buffer - darker than the sky, which is
+   * what turned the horizon into a dark band under the sky's brightest part.
+   */
+  it("fades towards the sky as the screen shows it, condition by condition", () => {
+    const day = buildScene({ lightCondition: "day" }, 1000).scene.fog as FogExp2;
+    const night = buildScene({ lightCondition: "night" }, 1000).scene.fog as FogExp2;
+
+    // A display value: nothing that comes off the tone curve and the encoding exceeds one.
+    expect(day.color.g).toBeGreaterThan(0.3);
+    expect(day.color.g).toBeLessThanOrEqual(1);
+    // And a night's haze is a night's: the hex on its own would have drawn this at 0.66.
+    expect(night.color.g).toBeLessThan(0.25);
+    expect(night.color.g).toBeLessThan(day.color.g);
+  });
+
+  /**
+   * The reader can move the exposure (#71), and a fog colour worked out once would then be
+   * the only thing in the frame that did not move with it - a band of yesterday's sky along
+   * the horizon.
+   */
+  it("moves the haze with the exposure, because the exposure moves the sky", () => {
+    const parts = buildScene({ lightCondition: "day" }, 1000);
+    const fog = parts.scene.fog as FogExp2;
+
+    parts.hazeAt(4.6e-5);
+    const own = fog.color.clone();
+    parts.hazeAt(4.6e-5 * 4);
+    expect(fog.color.g, "two stops up is brighter").toBeGreaterThan(own.g);
+    parts.hazeAt(4.6e-5 / 4);
+    expect(fog.color.g, "and two stops down is darker").toBeLessThan(own.g);
   });
 });
 

@@ -1,6 +1,7 @@
 import { MeshStandardMaterial, ShaderLib, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 
+import { CALM_SLOPE_VARIANCE } from "../src/core/illumination.js";
 import {
   DRAWN_COMPONENTS,
   seawayOf,
@@ -681,6 +682,48 @@ describe("the texture below the drawn band", () => {
    * with two sea states in it, by range. Found reviewing #75; the numerator was already
    * being taken before the ripples for exactly this reason, and only half the pair was.
    */
+  /**
+   * **The hiding is a mix, not a multiply.** Multiplied straight in, Smith's term takes the
+   * water at the waterline to a sixth of the sky over it and leaves the sea darkest AT the
+   * horizon - upside down. What a crest hides is filled with the sky the tilted facets do
+   * reflect, two rms slopes above the mirror direction. Measured either side, on a 5 m sea:
+   * the sea just under the waterline went from 0.16 of the sky to 0.62, and the step at the
+   * waterline stayed (64 counts). Issue #81.
+   */
+  /**
+   * **A file that states no sea does not state a mirror either.** `uSeaSlope` is negative
+   * where nothing is stated, which is the gate the glitter path and the lamp streaks answer
+   * to - they need a stated sea to have a width. The reflection does not: water reflects sky
+   * whatever the file says, and drawing it perfectly sharp is a second claim on top of the
+   * flat water. Cox and Munk's intercept is what a calm measures. Issue #81.
+   */
+  it("roughens a sea nobody stated by the calm Cox and Munk measured", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      `float rough = uSeaSlope < 0.0 ? ${CALM_SLOPE_VARIANCE.toFixed(4)} : uSeaSlope;`,
+    );
+    expect(shader.fragmentShader).toContain("float seen = shadowing( abs( look.y ), rough )");
+    // And the gates that need a stated sea are still asking the uniform itself.
+    expect(shader.fragmentShader).toContain("if ( uSeaSlope < 0.0 ) return sky;");
+  });
+
+  it("fills what a crest hides with sky rather than with nothing", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      "vec3 hidden = skyGradient( raisedBy( back, 2.0 * sqrt( rough ) ) )",
+    );
+    expect(shader.fragmentShader).toContain("handed = mix( hidden, handed, seen )");
+    expect(shader.fragmentShader, "and never the bare multiply again").not.toContain(
+      "handed *= shadowing(",
+    );
+  });
+
   /**
    * **A whitecap's history has to be measured on the sea the picture is drawing now.** The
    * shading loop drops each component at its own range as it accumulates the past, but not

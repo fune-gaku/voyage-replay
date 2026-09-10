@@ -33,6 +33,7 @@ import { lightingAt } from "../core/illumination.js";
 import { lightsForVessel } from "../actors/vessel/lights.js";
 import { SHADER_LAMPS } from "../render/lamps.js";
 import { isNight } from "../render/scene.js";
+import { CLEAR_AIR_METRES } from "../render/haze.js";
 import { drawable, drawnFoam, FOAM_REFLECTANCE } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
@@ -475,7 +476,12 @@ function restrictedSky({ visibilityMetres }: Conditions): string {
 }
 
 function visibilityText({ visibilityMetres }: Conditions): string {
-  if (visibilityMetres === null) return "not stated";
+  if (visibilityMetres === null) {
+    // **The picture cannot decline to have air in it**, so what it draws has to be said. The
+    // haze is Koschmieder's out of this figure, the same relation a stated visibility means.
+    const clear = `${(CLEAR_AIR_METRES / 1000).toFixed(0)} km`;
+    return `not stated - the view is drawn through ${clear} of air, which is this tool's choice`;
+  }
   return `${visibilityMetres} m (${(visibilityMetres / 1852).toFixed(1)} NM)`;
 }
 
@@ -1296,7 +1302,10 @@ const NO_SEA =
   "neutral picture but the strongest claim available, that everything was in sight the " +
   "whole time. An unstated sea is not a calm one. No whitecaps go on it either, whatever " +
   "the wind: the coverage is a fraction of a sea breaking, and there is no drawn sea here " +
-  "to break.";
+  "to break. What the water does reflect is softened by the slope Cox and Munk measured on " +
+  "a calm - their relation's own intercept, 0.003, an rms slope of 3.1 degrees - because a " +
+  "sea surface is never a mirror, and drawing one would be a second claim on top of the " +
+  "flat water: nobody said it was glassy either.";
 
 /**
  * How much of the time a crest stood between the two.

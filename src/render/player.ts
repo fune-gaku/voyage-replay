@@ -620,6 +620,8 @@ export class Replay {
     const measured = this.stage.sceneParts.exposureFor(picture);
     this.renderer.toneMapping = measured === null ? NoToneMapping : NeutralToneMapping;
     this.renderer.toneMappingExposure = measured === null ? 1 : measured * 2 ** this.stops;
+    // The haze fades towards the sky as the SCREEN shows it, so it follows the exposure.
+    this.stage.sceneParts.hazeAt(this.renderer.toneMappingExposure);
     // **A frame taken at an exposure the condition did not choose says so, in the picture.**
     // The recording is `canvas.captureStream()`, so anything outside it is not in the film -
     // and this is exactly the kind of change that must not be able to travel without its

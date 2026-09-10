@@ -27,6 +27,7 @@
 
 import { Vector2, Vector3, Vector4, type Material } from "three";
 
+import { CALM_SLOPE_VARIANCE } from "../core/illumination.js";
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
 import { LAMPS_GLSL, makeLampUniforms, type LampUniforms } from "./lamps.js";
 import { makeSkyUniforms, SHADOW_GLSL, SKY_GLSL, type SkyUniforms } from "./sky.js";
@@ -972,7 +973,24 @@ const REFLECTION = `
   // eye that has been to sea reads as wrong before anything else. Smith's term, off the SEA's
   // own slope rather than the drawn surface's: real crests do the hiding, including the ones
   // this band cannot draw, which is the argument lobeWidth already makes about the width.
-  handed *= shadowing( abs( look.y ), uSeaSlope );
+  //
+  // **And what it hides is not black.** Multiplied straight in, this put the water at the
+  // waterline at a sixth of the sky over it and made the sea darkest AT the horizon and
+  // brighter below - upside down, since Fresnel climbs steeply past sixty degrees and a sea
+  // is at its brightest just under the horizon. What an eye sees where the mirror direction
+  // is hidden is the sky those tilted facets DO reflect, which is about two rms slopes
+  // higher and correspondingly deeper. See raisedBy, and issue #81 for the figures.
+  //
+  // **A sea nobody stated is not a mirror either.** uSeaSlope is negative where no sea is
+  // stated, which is the gate the glitter path and the lamp streaks answer to - they need a
+  // sea to have a width. The reflection does not: water reflects sky whatever the file says,
+  // and drawing it perfectly sharp asserts a sheet of glass. Cox and Munk's own relation
+  // says what a calm is - its intercept, 0.003, measured rather than assumed - so that is
+  // what the surface is roughened by when nobody said. See CALM_SLOPE_VARIANCE.
+  float rough = uSeaSlope < 0.0 ? ${CALM_SLOPE_VARIANCE.toFixed(4)} : uSeaSlope;
+  float seen = shadowing( abs( look.y ), rough );
+  vec3 hidden = skyGradient( raisedBy( back, 2.0 * sqrt( rough ) ) );
+  handed = mix( hidden, handed, seen );
   outgoingLight = mix( outgoingLight, handed, sky );
   // **And the water the lamps light, which is not a reflection and takes no Fresnel.** A
   // reflection is only where the geometry lines up; light landing on the sea is there from
