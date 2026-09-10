@@ -201,9 +201,11 @@ export function lobeWidth(
  * 0.24 at one. So it is a band along the horizon and nowhere else, which is where the fault
  * was.
  *
- * **What it takes away is not put back.** A hidden trough is not black - it sees other water,
- * which sees the sky - and accounting for that needs a multiple-scattering term this does not
- * have. Single scattering is the usual first answer and it errs towards a darker horizon.
+ * **What it takes away has to go somewhere, and it is not black.** Applied on its own this
+ * term put the water at the waterline at a sixth of the sky over it, and made the sea DARKEST
+ * at the horizon and brighter below - which is upside down: Fresnel climbs steeply past sixty
+ * degrees, so a sea is at its brightest just under the horizon. See `raisedBy` for where the
+ * light goes instead, and issue #81 for the measurements.
  */
 export function shadowing(viewFromVerticalRadians: number, seaSlopeVariance: number): number {
   if (seaSlopeVariance <= 0) return 1;
@@ -218,6 +220,28 @@ export function shadowing(viewFromVerticalRadians: number, seaSlopeVariance: num
 
 /** Past this the function is one to a part in ten thousand, and the exponential underflows. */
 const SHADOW_UNHIDDEN = 4;
+
+/**
+ * The same direction, lifted by an angle.
+ *
+ * **What the water hands back where a crest has hidden the mirror direction.** The facets an
+ * eye can still see at a graze are the ones tilted TOWARDS it, and a facet tilted by an angle
+ * turns the ray it reflects by twice that - so what those facets show is the sky about
+ * `2 sqrt(mss)` higher than the mirror direction, which on a clear day is a deeper blue than
+ * the horizon and darker. That is the sea at the horizon: bright, because Fresnel is nearly
+ * one there, but not the sky itself.
+ *
+ * A stand-in for the hidden geometry as well, which sees other water and through it the sky
+ * again. Doing that properly is a multiple-scattering term; this errs bright where that would
+ * err dark, and the whole of it is worth 0.5 to 0.9 of the sky rather than the 0.16 the bare
+ * shadowing gave or the 0.93 that leaving it out gave. Issue #81.
+ */
+export function raisedBy(towards: Vector3, radians: number): Vector3 {
+  const ground = Math.hypot(towards.x, towards.z);
+  const angle = Math.atan2(towards.y, ground) + radians;
+  const along = Math.cos(angle) / Math.max(ground, 1e-6);
+  return new Vector3(towards.x * along, Math.sin(angle), towards.z * along);
+}
 
 /** Abramowitz and Stegun 7.1.26, good to 1.5e-7 - which is far better than the input. */
 function erfc(x: number): number {
@@ -238,6 +262,14 @@ float erfcApprox( float x ) {
   float series = t * ( 0.254829592 + t * ( -0.284496736 + t * ( 1.421413741
     + t * ( -1.453152027 + t * 1.061405429 ) ) ) );
   return series * exp( -x * x );
+}
+
+vec3 raisedBy( vec3 towards, float radians ) {
+  // Not 'flat': that is an interpolation qualifier in GLSL ES 3.00 and will not compile.
+  float ground = length( towards.xz );
+  float angle = atan( towards.y, ground ) + radians;
+  float along = cos( angle ) / max( ground, 1e-6 );
+  return vec3( towards.x * along, sin( angle ), towards.z * along );
 }
 
 float shadowing( float cosFromVertical, float seaSlope ) {

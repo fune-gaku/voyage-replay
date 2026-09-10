@@ -682,6 +682,28 @@ describe("the texture below the drawn band", () => {
    * being taken before the ripples for exactly this reason, and only half the pair was.
    */
   /**
+   * **The hiding is a mix, not a multiply.** Multiplied straight in, Smith's term takes the
+   * water at the waterline to a sixth of the sky over it and leaves the sea darkest AT the
+   * horizon - upside down. What a crest hides is filled with the sky the tilted facets do
+   * reflect, two rms slopes above the mirror direction. Measured either side, on a 5 m sea:
+   * the sea just under the waterline went from 0.16 of the sky to 0.62, and the step at the
+   * waterline stayed (64 counts). Issue #81.
+   */
+  it("fills what a crest hides with sky rather than with nothing", () => {
+    const material = new MeshStandardMaterial();
+    applyWaves(material, makeWaveUniforms());
+    const shader = compile(material);
+
+    expect(shader.fragmentShader).toContain(
+      "vec3 hidden = skyGradient( raisedBy( back, 2.0 * sqrt( max( uSeaSlope, 0.0 ) ) ) )",
+    );
+    expect(shader.fragmentShader).toContain("handed = mix( hidden, handed, seen )");
+    expect(shader.fragmentShader, "and never the bare multiply again").not.toContain(
+      "handed *= shadowing(",
+    );
+  });
+
+  /**
    * **A whitecap's history has to be measured on the sea the picture is drawing now.** The
    * shading loop drops each component at its own range as it accumulates the past, but not
    * the whole surface's fade to flat - so through the fade's transition the past would be
