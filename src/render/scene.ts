@@ -7,14 +7,13 @@
  * and a reconstruction whose scale you cannot read is a cartoon.
  */
 
-import type { Mesh } from "three";
+import type { FogExp2, Mesh } from "three";
 import {
   AmbientLight,
   BufferAttribute,
   BufferGeometry,
   Color,
   DirectionalLight,
-  Fog,
   GridHelper,
   Group,
   Line,
@@ -27,6 +26,7 @@ import {
 import type { Conditions } from "../core/conditions.js";
 import type { LocalPosition } from "../core/geodesy.js";
 import { lightingAt, measuredSlopeVariance, type Lit } from "../core/illumination.js";
+import { buildHaze, hazeColour } from "./haze.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   seawayFrom,
@@ -125,6 +125,13 @@ export interface SceneParts {
    * ten million apart and no single mapping shows both. Issue #60.
    */
   exposureFor(picture: Picture): number | null;
+  /**
+   * Hand the haze the exposure the frame is being drawn at.
+   *
+   * three mixes fog after the tone curve, so the colour it fades towards is what the screen
+   * shows for the sky rather than the sky's radiance - and the reader can move the exposure.
+   */
+  hazeAt(exposure: number): void;
   /**
    * Where the watchkeeper is standing and which way her bow points, or null for the plan
    * view and for a bridge whose own track has run out.
@@ -332,7 +339,7 @@ export function buildScene(
   // What shows where nothing is drawn. The dome below covers the bridge view; this is what
   // the plan view sees, and a chart is not a sky.
   scene.background = new Color(palette.sky);
-  const fog = buildFog(palette, environment?.visibilityMetres, extentMetres);
+  const fog = buildFog(palette, environment?.visibilityMetres);
   scene.fog = fog;
 
   const curvature = makeCurvatureUniforms();
@@ -487,7 +494,7 @@ interface Switchable {
   basemap: Basemap | null;
   terrain: Terrain | null;
   water: Mesh;
-  fog: Fog;
+  fog: FogExp2;
   curvature: CurvatureUniforms;
   waves: WaveUniforms;
   sea: WaveComponent[];
@@ -526,6 +533,12 @@ function viewControls(
     },
     exposureFor: (picture: Picture): number | null =>
       picture === "chart" ? null : palette.exposure,
+    // **Fog is mixed after the tone curve**, so what it fades towards is a screen value and
+    // moves when the exposure does. The reader can move it (#71), so this is told rather
+    // than worked out once. See `render/haze.ts`.
+    hazeAt: (exposure: number): void => {
+      hazeColour(parts.fog, skyRadiance(palette.sky, palette), exposure);
+    },
     setDiagramView: (picture: Picture): void => {
       // **The picture, not which camera is up.** This is one of the eight decisions that used
       // to be read off `view.kind === "overhead"`, which had no answer for a viewpoint that
@@ -744,20 +757,18 @@ export function isNight(stated: Environment["lightCondition"]): boolean {
 }
 
 /**
- * In fog the far ship should fade, which is half the explanation in a restricted
- * visibility case. Where the report gives no figure, the fog is set far enough away to
- * be invisible rather than invented.
+ * In fog the far ship should fade, which is half the explanation in a restricted visibility
+ * case - and on a clear day the far shore still fades, which is how a reader tells one ridge
+ * from the one behind it.
+ *
+ * **Out of the visibility, not out of the size of the case.** See `render/haze.ts` for what
+ * the old figures did and for Koschmieder's relation, which is what a stated visibility
+ * means.
  */
-function buildFog(
-  palette: Palette,
-  visibilityMetres: number | null | undefined,
-  extentMetres: number,
-): Fog {
-  return new Fog(
-    palette.sky,
-    visibilityMetres ? visibilityMetres * 0.25 : extentMetres * 1.4,
-    visibilityMetres ?? extentMetres * 3,
-  );
+function buildFog(palette: Palette, visibilityMetres: number | null | undefined): FogExp2 {
+  const fog = buildHaze(visibilityMetres ?? null);
+  hazeColour(fog, skyRadiance(palette.sky, palette), palette.exposure);
+  return fog;
 }
 
 /** The two lights, the switch described on `setDiagramLighting`, and where the key points. */
