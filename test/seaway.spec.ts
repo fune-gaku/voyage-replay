@@ -24,7 +24,13 @@ import {
   seawayOf,
   SPREADING_EXPONENT,
   surfaceAt,
+  displacementAt,
+  parameterUnder,
+  type WaveComponent,
+  surfaceNormal,
   waveComponents,
+  whitecapFraction,
+  whitecapsFrom,
 } from "../src/core/seaway.js";
 
 /**
@@ -302,6 +308,71 @@ describe("a sea broken into sinusoids, for something that has to draw it", () =>
       );
       expect(Math.sqrt(variance)).toBeCloseTo(seaway.surfaceStdDevMetres, 6);
       expect(Math.sqrt(variance)).toBeCloseTo(hs / 4, 6);
+    }
+  });
+
+  /**
+   * **The band has to be populated, not merely declared.** Placing components by energy
+   * alone put ONE below a wavelength of 23 m on a 3 m sea - the tail holds half the slope
+   * and almost none of the height, so equal shares of the energy never go there - and one
+   * sinusoid of one wavelength travelling in one direction is not chop, it is corrugated
+   * iron. That is what the picture showed from a low viewpoint. Issue #50.
+   */
+  it("puts components in every octave of the band, not only where the energy is", () => {
+    const lengths = waveComponents(seawayOf(3)).map((c) => (2 * Math.PI) / c.wavenumberPerMetre);
+    const octaves = [
+      [1.7, 4],
+      [4, 8],
+      [8, 16],
+      [16, 32],
+      [32, 64],
+    ];
+    for (const [from, to] of octaves) {
+      const inside = lengths.filter((l) => l >= (from ?? 0) && l < (to ?? 0));
+      expect(inside.length, `${from}-${to} m`).toBeGreaterThanOrEqual(2);
+    }
+    expect(Math.min(...lengths), "and it reaches the bottom of the band").toBeLessThan(3);
+  });
+
+  /**
+   * **The strongest check there is on where the components sit**, because the two sides are
+   * computed by different routes: the drawn slope is summed over the components, and the
+   * band's is a ratio of spectral moments integrated over the same range. Equal-energy
+   * placement fell ten per cent short of it at Hs 3 and overshot at Hs 2 - one frequency
+   * standing for a bin over which `k^2` varies by a large factor is a poor estimator, in
+   * whichever direction the sample happens to land.
+   */
+  it("draws a sea whose slope is the band's, not one flattened by where the samples fell", () => {
+    for (const hs of [1, 2, 3, 6]) {
+      const seaway = seawayOf(hs);
+      const drawn = Math.sqrt(
+        waveComponents(seaway).reduce(
+          (total, c) => total + (c.amplitudeMetres * c.wavenumberPerMetre) ** 2 / 2,
+          0,
+        ),
+      );
+      const band = seaway.rmsWavenumberPerMetre * seaway.surfaceStdDevMetres;
+      expect(drawn / band, `${hs} m`).toBeGreaterThan(0.95);
+      expect(drawn / band, `${hs} m`).toBeLessThan(1.05);
+    }
+  });
+
+  /**
+   * **Both ends of the same rule.** No component may be so small that it costs a sine per
+   * vertex and draws nothing - the lowest bin used to produce one on every sea, sampled
+   * uniformly inside a range starting where a JONSWAP spectrum holds nothing at all - and
+   * none may be so large that it beats audibly against its neighbour, which is what spacing
+   * components geometrically across the band does.
+   */
+  it("wastes no component at one end and lets none dominate at the other", () => {
+    for (const hs of [1, 3, 6]) {
+      const seaway = seawayOf(hs);
+      const components = waveComponents(seaway);
+      const shares = components.map(
+        (c) => c.amplitudeMetres ** 2 / 2 / seaway.surfaceStdDevMetres ** 2,
+      );
+      expect(Math.min(...shares), `${hs} m`).toBeGreaterThan(0);
+      expect(Math.max(...shares), `${hs} m`).toBeLessThan(0.1);
     }
   });
 
@@ -1056,3 +1127,250 @@ describe("the wind's bounds, held to the schema's like the sea's", () => {
     }
   });
 });
+
+/**
+ * Monahan and O'Muircheartaigh (1980), the fit ocean-colour work still uses. Held against
+ * published counts at the winds this project meets rather than against a second writing of
+ * the same power law, which would agree with the implementation however wrong it was.
+ */
+describe("how much of the sea is under whitecaps", () => {
+  it("follows the measured relation, which is a steep power of the wind", () => {
+    const at = (knots: number): number => whitecapFraction(knots * 0.514444);
+
+    expect(at(10) * 100).toBeCloseTo(0.1, 1);
+    expect(at(18) * 100).toBeCloseTo(0.76, 1);
+    expect(at(25) * 100).toBeCloseTo(2.33, 1);
+    expect(at(34) * 100).toBeCloseTo(6.64, 1);
+  });
+
+  it("gives a calm none, and never more sea than there is", () => {
+    expect(whitecapFraction(0)).toBe(0);
+    expect(whitecapFraction(-5)).toBe(0);
+    expect(whitecapFraction(500)).toBe(1);
+  });
+
+  it("takes a stated speed as one figure", () => {
+    const foam = whitecapsFrom({ wind: { speedKnots: 18, derivation: "measured" } });
+    expect(foam?.from).toBe("speed");
+    expect(foam?.leastFraction).toBe(foam?.mostFraction);
+    expect((foam?.mostFraction ?? 0) * 100).toBeCloseTo(0.76, 1);
+  });
+
+  /** A force is a class, so the coverage is a range - and force 12 has no top. */
+  it("takes a stated force as the class it is", () => {
+    const foam = whitecapsFrom({ wind: { beaufortForce: 7, derivation: "measured" } });
+    expect(foam?.from).toBe("force");
+    expect(foam?.leastFraction).toBeLessThan(foam?.mostFraction ?? 0);
+    expect(foam?.mostIsOpen).toBe(false);
+
+    expect(whitecapsFrom({ wind: { beaufortForce: 12, derivation: "measured" } })?.mostIsOpen).toBe(
+      true,
+    );
+  });
+
+  /**
+   * A report states a sea far more often than it states a wind, and the wind that would have
+   * raised it is already what the glitter path's width is taken from. It is derived, and the
+   * page has to say so rather than reporting a wind nobody wrote down.
+   */
+  it("falls back to the wind that would have raised the sea, and says that is what it did", () => {
+    const foam = whitecapsFrom({
+      waves: { significantHeightMetres: 3, derivation: "inferred" },
+    });
+    expect(foam?.from).toBe("sea");
+    expect((foam?.mostFraction ?? 0) * 100).toBeGreaterThan(1);
+  });
+
+  it("has no answer where the file states neither a wind nor a sea", () => {
+    expect(whitecapsFrom(undefined)).toBeNull();
+    expect(whitecapsFrom({ lightCondition: "day" })).toBeNull();
+  });
+});
+
+/**
+ * **A sum of sinusoids is symmetric and no gravity wave is.** Crests are sharp and troughs
+ * are long and flat, because the water moves horizontally as well as vertically and that
+ * motion bunches it at the crest. Issue #69.
+ */
+describe("the water carried sideways", () => {
+  /** One wave running due east, so everything is on one axis and readable. */
+  function eastward(amplitude: number, wavelength: number): ReturnType<typeof waveComponents> {
+    const k = (2 * Math.PI) / wavelength;
+    return [
+      {
+        amplitudeMetres: amplitude,
+        wavenumberPerMetre: k,
+        angularFrequencyPerSecond: Math.sqrt(9.80665 * k),
+        directionRadians: Math.PI / 2,
+        phaseRadians: 0,
+      },
+    ];
+  }
+
+  /**
+   * **The sign is checkable rather than a matter of taste.** Water has to converge ON a
+   * crest: the divergence of the displacement is negative there. Flip it and crests flatten
+   * while troughs deepen, which is a sea upside down and looks nearly as plausible.
+   */
+  it("carries the water towards a crest and not away from it", () => {
+    const wave = eastward(1, 100);
+    // The crest of `a sin(kx)` is at a quarter wavelength.
+    const crest = 25;
+    const step = 1;
+    const behind = displacementAt(wave, { eastMetres: crest - step, northMetres: 0 }, 0);
+    const beyond = displacementAt(wave, { eastMetres: crest + step, northMetres: 0 }, 0);
+
+    expect(behind.eastMetres, "water behind the crest moves towards it").toBeGreaterThan(0);
+    expect(beyond.eastMetres, "water beyond it moves back towards it").toBeLessThan(0);
+  });
+
+  it("carries it along the wave's own direction and not across it", () => {
+    const carried = displacementAt(eastward(1, 100), { eastMetres: 0, northMetres: 0 }, 0);
+    expect(carried.northMetres).toBeCloseTo(0, 9);
+    expect(Math.abs(carried.eastMetres)).toBeGreaterThan(0.5);
+  });
+
+  /**
+   * The surface folds over itself once the summed steepness passes one, which is why nothing
+   * here is scaled down by a chosen factor. Measured over this project's own components it is
+   * 0.86 whatever the significant height, the seas being self-similar.
+   */
+  it("stays under the steepness at which the surface would fold over", () => {
+    for (const hs of [1, 3, 6]) {
+      const summed = waveComponents(seawayOf(hs)).reduce(
+        (total, w) => total + w.amplitudeMetres * w.wavenumberPerMetre,
+        0,
+      );
+      expect(summed, `${hs} m`).toBeLessThan(1);
+      expect(summed, `${hs} m`).toBeGreaterThan(0.5);
+    }
+  });
+
+  /**
+   * Anything floating needs the parameter that ENDS UP under it, or it rides water up to a
+   * metre from where it sits - #34 and #36 a third time.
+   */
+  it("finds the water that ends up under a place", () => {
+    const wave = eastward(1, 100);
+    const here = { eastMetres: 12, northMetres: 0 };
+    const parameter = parameterUnder(wave, here, 0, 1);
+    const carried = displacementAt(wave, parameter, 0);
+
+    expect(parameter.eastMetres + carried.eastMetres, "lands where it was asked").toBeCloseTo(
+      here.eastMetres,
+      3,
+    );
+    expect(parameter.eastMetres, "and is not simply the place itself").not.toBeCloseTo(12, 2);
+  });
+
+  /**
+   * **On the sea that is drawn, not on one wave.** The test above uses a single component of
+   * `ak` 0.063, where the iteration converges at once; the drawn sea is forty components
+   * summing to 0.86, and the bound alone would allow three folds to leave most of the error.
+   * What it actually leaves is measured here, at the sea states this tool has to draw, and it
+   * is the height under a floating mark that matters rather than the residual itself. Found
+   * reviewing #73.
+   */
+  it("closes on the water that arrives, over the whole drawn sea", () => {
+    for (const significantHeightMetres of [1, 3, 6, 9, 14]) {
+      const components = waveComponents(seawayOf(significantHeightMetres));
+      let worstResidual = 0;
+      let worstHeight = 0;
+
+      for (let east = 0; east < 20; east += 1) {
+        for (let north = 0; north < 20; north += 1) {
+          const at = { eastMetres: east * 3.3, northMetres: north * 2.9 };
+          const seconds = 3.7 + ((east * 20 + north) % 7) * 1.3;
+          const found = parameterUnder(components, at, seconds, 1);
+          const carried = displacementAt(components, found, seconds);
+          worstResidual = Math.max(
+            worstResidual,
+            Math.hypot(
+              found.eastMetres + carried.eastMetres - at.eastMetres,
+              found.northMetres + carried.northMetres - at.northMetres,
+            ),
+          );
+          worstHeight = Math.max(
+            worstHeight,
+            Math.abs(
+              surfaceAt(components, found, seconds).heightMetres -
+                surfaceAt(components, settled(components, at, seconds), seconds).heightMetres,
+            ),
+          );
+        }
+      }
+
+      expect(worstResidual, `${significantHeightMetres} m`).toBeLessThan(0.06);
+      expect(worstHeight, `${significantHeightMetres} m`).toBeLessThan(0.01);
+    }
+  });
+
+  it("leaves the parameter alone where the picture drew no displacement", () => {
+    const here = { eastMetres: 12, northMetres: -7 };
+    expect(parameterUnder(eastward(1, 100), here, 0, 0)).toEqual(here);
+  });
+});
+
+/**
+ * **The height gradient stops being the normal the moment the water moves sideways.** The
+ * surface is parametric, so its normal is the cross product of two tangents - and keeping the
+ * old expression leaves shading plainly wrong at a sharp crest, which is the one place the
+ * displacement exists to improve.
+ */
+describe("the normal of a surface that moves sideways", () => {
+  const NONE = { eastEast: 0, eastNorth: 0, northNorth: 0 };
+
+  it("is the height field's own normal where nothing is carried sideways", () => {
+    const slope = { east: 0.3, north: -0.2 };
+    const normal = surfaceNormal(slope, NONE);
+    const length = Math.hypot(-slope.east, 1, -slope.north);
+
+    expect(normal.east).toBeCloseTo(-slope.east / length, 12);
+    expect(normal.up).toBeCloseTo(1 / length, 12);
+    expect(normal.north).toBeCloseTo(-slope.north / length, 12);
+  });
+
+  it("points up on flat water", () => {
+    expect(surfaceNormal({ east: 0, north: 0 }, NONE)).toEqual({ east: 0, up: 1, north: 0 });
+  });
+
+  it("keeps pointing up, whatever is carried where", () => {
+    const normal = surfaceNormal(
+      { east: 0.4, north: 0.25 },
+      { eastEast: -0.6, eastNorth: 0.2, northNorth: -0.3 },
+    );
+    expect(normal.up).toBeGreaterThan(0);
+    expect(Math.hypot(normal.east, normal.up, normal.north)).toBeCloseTo(1, 12);
+  });
+
+  /**
+   * Where the water converges - the crest - the surface is steeper than the height gradient
+   * alone says, because the same rise is packed into less ground. That steepening IS the
+   * sharpened crest, and a normal that ignored it would shade a crest as though it were the
+   * rounded one the sinusoids describe.
+   */
+  it("leans further over where the water is bunched up", () => {
+    const slope = { east: 0.3, north: 0 };
+    const gentle = surfaceNormal(slope, NONE);
+    const bunched = surfaceNormal(slope, { eastEast: -0.5, eastNorth: 0, northNorth: 0 });
+
+    expect(Math.abs(bunched.east)).toBeGreaterThan(Math.abs(gentle.east));
+  });
+});
+
+/** The fixed point run until it stops moving, which is what three folds are measured against. */
+function settled(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+): { eastMetres: number; northMetres: number } {
+  let point = at;
+  for (let step = 0; step < 200; step += 1) {
+    const carried = displacementAt(components, point, secondsFromStart);
+    point = {
+      eastMetres: at.eastMetres - carried.eastMetres,
+      northMetres: at.northMetres - carried.northMetres,
+    };
+  }
+  return point;
+}

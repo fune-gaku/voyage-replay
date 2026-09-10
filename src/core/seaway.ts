@@ -67,10 +67,12 @@ const PEAK_ENHANCEMENT = 3.3;
  * the waves stop being drawable rather than where the slope comes right - and what is missing
  * is named on the page instead of being quietly integrated for.
  *
- * **The DRAWN slope is lower again**, 5.4 degrees against the band's 6.0: equal-energy bins
- * carry each bin's height variance exactly and its slope variance only approximately, since
- * one frequency has to stand for a bin over which `k^2` varies. More components narrow that;
- * nothing removes it.
+ * **The DRAWN slope used to be lower again** - 5.4 degrees against the band's 6.0 - because
+ * equal-energy bins carry each bin's height variance exactly and its slope variance only
+ * approximately: one frequency has to stand for a bin over which `k^2` varies, and the widest
+ * bin was the whole tail. Placing the components by slope as well as by energy closes it:
+ * 6.0 degrees drawn against 5.95 in the band, on the same sea. See
+ * `SLOPE_SHARE_OF_COMPONENTS` and issue #50.
  *
  * Frequency moments do not diverge, so the zero-crossing period is not affected.
  */
@@ -792,76 +794,146 @@ export function waveComponents(
     Array.from({ length: DRAWN_COMPONENTS }, (_, i) => spreadAngle((i + 0.5) / DRAWN_COMPONENTS)),
     random,
   );
-  const drawn = frequencyBins(peak).map((bin, index) => ({
-    ...bin,
+  const curve = placementCurve(peak);
+  const drawn = Array.from({ length: DRAWN_COMPONENTS }, (_, index) => ({
+    // Stratified: one sample in each equal share of the placement measure, taken at random
+    // WITHIN its share. Even shares would put the frequencies on a grid, which is the loop
+    // above; one sample per share is what keeps them spread over the whole band anyway.
+    ...frequencyAt(curve, (index + random()) / DRAWN_COMPONENTS),
     directionRadians: travelling + (angles[index] ?? 0),
     phaseRadians: random() * 2 * Math.PI,
-    sampled: bin.from + (bin.to - bin.from) * random(),
   }));
 
   return normalised(drawn, seaway.surfaceStdDevMetres, peak);
 }
 
 /**
- * Bins of EQUAL ENERGY, not of equal width.
+ * **How much of the component budget is spent resolving the sea's SLOPE rather than its
+ * height**, and why a picture needs both.
  *
- * The obvious version spaces them geometrically across the band and is badly wrong: the
- * band runs from a sixth of the peak frequency to nearly three times it, almost all of the
- * variance sits within a factor of two of the peak, and evenly spread components spend most
- * of themselves on frequencies that carry nothing. Measured on a 3 m sea, that left four
- * components holding 79 per cent of the variance and the first four holding none at all -
- * a sea that is four sine waves, whose two largest beat against each other on a 258-second
+ * Placing components by energy alone is the standard way to sample a spectrum and it is
+ * right about the water's shape: the alternative - spacing them geometrically across the
+ * band - leaves four components holding 79 per cent of the variance and the first four
+ * holding none at all, a sea of four sine waves whose two largest beat on a 258-second
  * cycle. It reads as a pulse, which no sea has.
  *
- * Cutting the spectrum into equal shares instead puts every component where there is
- * something to carry, so they come out at much the same amplitude and the sum reads as a
- * continuum. It is also the standard way to sample a spectrum, for this reason.
+ * **It is wrong about the water's texture, and by an order of magnitude.** Energy is where
+ * the swell is; slope is where the chop is, and slope density `k^2 S` falls as `1/omega`,
+ * so every octave of the tail carries the same slope and none of them carry any energy.
+ * Placing by energy alone therefore puts ONE component below a wavelength of 23 m on a 3 m
+ * sea - carrying half the slope by itself - and one sinusoid of one wavelength travelling
+ * in one direction is not chop, it is corrugated iron. That is what the picture showed.
+ * Issue #50.
+ *
+ * So the components are placed by a blend of the two, each normalised to unit total first
+ * so the fraction means what it says. A half is not a tuning: it is the statement that the
+ * two jobs are worth the same, the shape of the swell and the texture on it. Measured on
+ * the 3 m reference sea it puts about four components in each octave from 1.7 m up while
+ * leaving nineteen around the peak, and no component holds more than five per cent of the
+ * variance - well clear of the beating the equal-energy split was introduced to stop.
  */
-function frequencyBins(peak: number): { from: number; to: number }[] {
+export const SLOPE_SHARE_OF_COMPONENTS = 0.5;
+
+/** How finely the placement measure is tabulated before it is inverted. */
+const PLACEMENT_STEPS = 4000;
+
+/**
+ * The curve the components are placed along: what measure to spread them by, tabulated.
+ *
+ * `density` is the blend, `cumulative` its integral from the bottom of the band. The
+ * frequencies are stepped geometrically for the reason `moment` gives - the band spans two
+ * decades and the peak is a few per cent of it wide.
+ */
+interface Placement {
+  frequencies: number[];
+  density: number[];
+  cumulative: number[];
+}
+
+function placementCurve(peak: number): Placement {
+  const frequencies = bandFrequencies(peak);
+  const heights = frequencies.map((w) => density(w, peak));
+  // k = w^2/g in deep water, so a slope density is the height density times w^4/g^2.
+  const slopes = frequencies.map(
+    (w, i) => ((heights[i] ?? 0) * w ** 4) / GRAVITY_METRES_PER_SECOND_SQUARED ** 2,
+  );
+
+  const height = unitTotal(frequencies, heights);
+  const slope = unitTotal(frequencies, slopes);
+  const blend = height.map(
+    (share, i) =>
+      (1 - SLOPE_SHARE_OF_COMPONENTS) * share + SLOPE_SHARE_OF_COMPONENTS * (slope[i] ?? 0),
+  );
+  return { frequencies, density: blend, cumulative: runningIntegral(frequencies, blend) };
+}
+
+/** The band, stepped geometrically. The same one the truncated moments are taken over. */
+function bandFrequencies(peak: number): number[] {
   const lowest = peak / 6;
-  const highest = peak / TAIL_CUTOFF_FRACTION_OF_PEAK;
-  const steps = 4000;
-  const ratio = (highest / lowest) ** (1 / steps);
+  // From peak/6 to peak/cutoff, so the span is 6/cutoff - fifty, on this cutoff.
+  const ratio = (6 / TAIL_CUTOFF_FRACTION_OF_PEAK) ** (1 / PLACEMENT_STEPS);
+  return Array.from({ length: PLACEMENT_STEPS + 1 }, (_, i) => lowest * ratio ** i);
+}
 
-  const cumulative: { w: number; energy: number }[] = [{ w: lowest, energy: 0 }];
-  let running = 0;
-  let w = lowest;
-  for (let i = 0; i < steps; i += 1) {
-    const next = w * ratio;
-    running += density(w, peak) * (next - w);
-    cumulative.push({ w: next, energy: running });
-    w = next;
+/** The same densities, scaled so that each integrates to one over the band. */
+function unitTotal(frequencies: number[], values: number[]): number[] {
+  const total = runningIntegral(frequencies, values).at(-1) ?? 0;
+  return values.map((value) => value / total);
+}
+
+function runningIntegral(frequencies: number[], values: number[]): number[] {
+  const out = [0];
+  for (let i = 0; i < frequencies.length - 1; i += 1) {
+    out.push(
+      (out[i] ?? 0) + (values[i] ?? 0) * ((frequencies[i + 1] ?? 0) - (frequencies[i] ?? 0)),
+    );
   }
+  return out;
+}
 
-  const share = running / DRAWN_COMPONENTS;
-  const edges = [lowest];
+/**
+ * The frequency at a given fraction of the placement measure, and how dense the measure is
+ * there.
+ *
+ * **Both, from one search.** The density at the sampled point is what turns the sample back
+ * into an amplitude: a component stands for however much of the SPECTRUM its share of the
+ * PLACEMENT covers, which is `S(w) / placement(w)`. Looking it up separately would be a
+ * second answer to the same question.
+ *
+ * The comparison is strictly greater rather than "or equal", which is what keeps the density
+ * off zero: the bottom of a JONSWAP band underflows to nothing outright - `exp(-1620)` - so a
+ * search that could stop on the first step would divide by it.
+ */
+function frequencyAt(curve: Placement, fraction: number): { sampled: number; placed: number } {
+  const target = (curve.cumulative.at(-1) ?? 0) * fraction;
   let at = 0;
-  for (let i = 1; i <= DRAWN_COMPONENTS; i += 1) {
-    while (at < cumulative.length - 1 && (cumulative[at]?.energy ?? 0) < share * i) at += 1;
-    edges.push(cumulative[at]?.w ?? highest);
-  }
-  return Array.from({ length: DRAWN_COMPONENTS }, (_, i) => ({
-    from: edges[i] ?? lowest,
-    to: edges[i + 1] ?? highest,
-  }));
+  while (at < curve.cumulative.length - 1 && (curve.cumulative[at] ?? 0) <= target) at += 1;
+  return { sampled: curve.frequencies[at] ?? 0, placed: curve.density[at - 1] ?? 0 };
 }
 
 interface Drawn {
-  from: number;
-  to: number;
   sampled: number;
+  placed: number;
   directionRadians: number;
   phaseRadians: number;
 }
 
 /**
  * Amplitudes from the spectrum, then scaled so the whole sum has the variance the
- * significant height demands. The scaling is what keeps a truncated band honest: the
- * components left out carried some variance, and without it the drawn sea would be flatter
- * than the sea the panels are reasoning about.
+ * significant height demands.
+ *
+ * **`S / placement` is the whole of what makes the blend safe.** A component's share of the
+ * variance has to be what the spectrum says it is, whatever measure decided where to put it;
+ * weighting by the spectrum alone would hand the tail's components the peak's amplitudes and
+ * draw a sea several times too steep. Written this way the height variance is exactly right
+ * for any blend, and the placement only decides how finely each part of the band is resolved.
+ *
+ * The scaling to sigma is what keeps a truncated band honest besides: the components left
+ * out carried some variance, and without it the drawn sea would be flatter than the sea the
+ * panels are reasoning about.
  */
 function normalised(drawn: Drawn[], sigma: number, peak: number): WaveComponent[] {
-  const energies = drawn.map((c) => density(c.sampled, peak) * (c.to - c.from));
+  const energies = drawn.map((c) => density(c.sampled, peak) / c.placed);
   const total = energies.reduce((sum, e) => sum + e, 0);
   return drawn.map((c, i) => {
     const share = (energies[i] ?? 0) / total;
@@ -1011,6 +1083,133 @@ export function surfaceAt(
 
 /** The water itself: it is exactly where it is, and it is never late. */
 const FOLLOWS = { gain: 1, lagRadians: 0 };
+
+/**
+ * How far the water at a point has been carried SIDEWAYS, which is what sharpens a crest.
+ *
+ * **A sum of sinusoids is symmetric and no gravity wave is.** Real crests are sharp and real
+ * troughs are long and flat, because the water moves horizontally as well as vertically and
+ * that motion bunches it at the crest. The trochoidal (Gerstner) wave is not an embellishment
+ * of the linear one: it is an exact solution of the Euler equations for irrotational flow in
+ * deep water, and its horizontal part comes out of the same amplitudes and wavenumbers.
+ *
+ * **The sign is checkable rather than a matter of taste.** The divergence of this field is
+ * `-a k sin(phase)`, which is negative at a crest - water converging on it, which is the
+ * sharpening. Flip it and crests flatten while troughs deepen, which is a sea upside down and
+ * looks very nearly as plausible.
+ *
+ * **No choppiness factor.** The surface folds over itself once the summed steepness passes
+ * one, and measured over this project's own components it is 0.86 whatever the significant
+ * height - the seas are self-similar, since the period is assumed from the height. A factor
+ * below one would be hedging against something measured not to happen.
+ *
+ * Nothing floating is carried by this. A moored buoy answers to its mooring, not to the
+ * water's orbital motion; what it needs is the height of the drawn surface where it actually
+ * sits, which is `parameterUnder`.
+ */
+export function displacementAt(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+): { eastMetres: number; northMetres: number } {
+  let east = 0;
+  let north = 0;
+  for (const wave of components) {
+    const towardsEast = Math.sin(wave.directionRadians);
+    const towardsNorth = Math.cos(wave.directionRadians);
+    const along =
+      wave.wavenumberPerMetre * (at.eastMetres * towardsEast + at.northMetres * towardsNorth);
+    const phase = along - wave.angularFrequencyPerSecond * secondsFromStart + wave.phaseRadians;
+    const carried = wave.amplitudeMetres * Math.cos(phase);
+    east += carried * towardsEast;
+    north += carried * towardsNorth;
+  }
+  return { eastMetres: east, northMetres: north };
+}
+
+/**
+ * How many times the search below folds back on itself.
+ *
+ * It is a fixed point, `p = at - D(p)`, and it converges as fast as the displacement's own
+ * gradient is small. The bound is the summed steepness - 0.86 on every sea this spectrum
+ * draws, and reached only where every component crests at one point, which is not a sea. The
+ * ordinary case is the rms slope, 0.105, which needs two.
+ *
+ * **Three, measured rather than argued.** Over the forty components actually drawn, on 1600
+ * points of open water at each of five sea states from 1 m to 14 m, three folds leave at
+ * worst 5 cm between where the water arrives and where it was asked for, and 7 mm of height
+ * under whatever floats there - beside a buoy's metre of freeboard. A bound of 0.86 says
+ * three folds could leave 64 per cent of the error, and saying so is a statement about a sea
+ * nobody draws; `test/seaway.spec.ts` holds the measurement instead. Found reviewing #73.
+ */
+const INVERSION_STEPS = 3;
+
+/**
+ * Which point of the undisplaced sea ends up under this position.
+ *
+ * **Anything floating needs this and nothing else does.** The waves are a function of a
+ * parameter, and once the surface is carried sideways that parameter is no longer where the
+ * water ended up - so a buoy asked for "the height here" would be given the height of water
+ * up to a metre away. That is #34 and #36 a third time: a buoy riding a sea the picture does
+ * not draw is a buoy hovering.
+ *
+ * `drawnFraction` is how much of the displacement the picture actually applied, which falls
+ * to nothing at range as the mesh gives out. Inverting the full displacement where only a
+ * tenth was drawn would be as wrong as not inverting at all.
+ */
+export function parameterUnder(
+  components: WaveComponent[],
+  at: { eastMetres: number; northMetres: number },
+  secondsFromStart: number,
+  drawnFraction: number,
+): { eastMetres: number; northMetres: number } {
+  let point = at;
+  for (let step = 0; step < INVERSION_STEPS; step += 1) {
+    const carried = displacementAt(components, point, secondsFromStart);
+    point = {
+      eastMetres: at.eastMetres - drawnFraction * carried.eastMetres,
+      northMetres: at.northMetres - drawnFraction * carried.northMetres,
+    };
+  }
+  return point;
+}
+
+/**
+ * The surface's normal, once it is a parametric surface rather than a height field.
+ *
+ * **The height gradient stops being the answer the moment the water moves sideways.** A
+ * height field's normal is `(-dh/dx, 1, -dh/dz)`; a parametric one's is the cross product of
+ * its two tangents, and the tangents carry the horizontal displacement's own derivatives.
+ * Keeping the old expression leaves shading that is subtly wrong everywhere and plainly
+ * wrong at a sharp crest - which is the one place the displacement exists to improve.
+ *
+ * `spread` is that displacement's gradient: how much the eastward carry changes eastward and
+ * northward, and the northward carry northward. The mixed term is one number rather than two
+ * because it has to be - the field is a gradient, so its Jacobian is symmetric.
+ *
+ * **With no spread this is exactly the old expression**, which is what `test/seaway.spec.ts`
+ * holds it to. `render/waves.ts` writes the same thing in the scene's axes, where north is
+ * -z, and the two stay in step by eye since no test can compile GLSL.
+ */
+export function surfaceNormal(
+  slope: { east: number; north: number },
+  spread: { eastEast: number; eastNorth: number; northNorth: number },
+): { east: number; up: number; north: number } {
+  // The tangent along the eastward parameter, and the one along the northward parameter.
+  const eastwardE = 1 + spread.eastEast;
+  const eastwardUp = slope.east;
+  const eastwardN = spread.eastNorth;
+  const northwardE = spread.eastNorth;
+  const northwardUp = slope.north;
+  const northwardN = 1 + spread.northNorth;
+
+  // Northward crossed with eastward, in that order, so the normal comes out upwards.
+  const east = northwardUp * eastwardN - northwardN * eastwardUp;
+  const up = northwardN * eastwardE - northwardE * eastwardN;
+  const north = northwardE * eastwardUp - northwardUp * eastwardE;
+  const length = Math.hypot(east, up, north) || 1;
+  return { east: east / length, up: up / length, north: north / length };
+}
 
 /**
  * Beaufort, in knots. WMO's table, and the ranges are the point of it.
@@ -1210,6 +1409,66 @@ export function periodFromWindSeconds(speedKnots: number): number {
  * the ranges rather than the sea. Only a sea whose gentlest reading still exceeds the most
  * the wind could raise is worth a reader's attention.
  */
+/**
+ * The fraction of the surface under whitecaps at this wind.
+ *
+ * Monahan and O'Muircheartaigh (1980), `W = 3.84e-6 U^3.41` with `U` the wind at 10 m -
+ * the fit ocean-colour work still uses, from photographic counts. The power is the whole
+ * character of it: 10 knots covers a thousandth of the sea, 18 knots most of a per cent, 34
+ * knots six and a half.
+ *
+ * **This is the one part of a whitecap that is measured.** Where the foam lands is not: a
+ * linear sea is a sum of sinusoids and never breaks, and the drawn surface could not reach
+ * the slope at which water actually does - 6 degrees rms against a real sea's 14.2, the rest
+ * being in ripples the band cannot hold. So the picture takes the AMOUNT from here and the
+ * PLACEMENT from the steepest of what it drew, which is the same division the glitter path
+ * already makes. See `render/waves.ts`, and issue #66.
+ */
+export function whitecapFraction(windSpeedMetresPerSecond: number): number {
+  return Math.min(3.84e-6 * Math.max(windSpeedMetresPerSecond, 0) ** 3.41, 1);
+}
+
+/**
+ * How much foam a scenario's sea carries, and which figure the wind for it came out of.
+ *
+ * Three sources, in the order everything else in this module uses: a stated speed is one
+ * number, a stated force is a class and so is the coverage, and a file with neither falls
+ * back to the wind that would have raised the sea it does state - which is derived and has
+ * to be said to be, never reported as a wind. A file with none of the three has no answer
+ * and gets null rather than a calm.
+ */
+export interface Whitecaps {
+  leastFraction: number;
+  mostFraction: number;
+  /** Where `mostFraction` is a floor rather than a bound, the wind's class being open. */
+  mostIsOpen: boolean;
+  from: "speed" | "force" | "sea";
+}
+
+export function whitecapsFrom(environment: Environment | undefined): Whitecaps | null {
+  const wind = windFrom(environment);
+  if (wind && wind.source !== "direction-only") {
+    return {
+      leastFraction: whitecapFraction(wind.slowestKnots * METRES_PER_SECOND_PER_KNOT),
+      mostFraction: whitecapFraction(wind.fastestKnots * METRES_PER_SECOND_PER_KNOT),
+      mostIsOpen: wind.fastestIsOpen,
+      from: wind.source === "speed" ? "speed" : "force",
+    };
+  }
+
+  const sea = seawayFrom(environment);
+  if (!sea) return null;
+  const ends = [sea.calm, sea.rough].map((seaway) =>
+    whitecapFraction(windRaisingMetresPerSecond(seaway.significantHeightMetres)),
+  );
+  return {
+    leastFraction: ends[0] ?? 0,
+    mostFraction: ends[1] ?? 0,
+    mostIsOpen: sea.roughEndIsOpen,
+    from: "sea",
+  };
+}
+
 /**
  * Cox and Munk's mean square slope for a clean sea under this wind: `0.003 + 0.00512 U`.
  *

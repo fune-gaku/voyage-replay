@@ -432,24 +432,41 @@ integral at any other period describes a sea this tool never draws:
 centimetre waves get to eight degrees. The rest of a real sea's slope is in capillary–gravity
 ripples, which a JONSWAP gravity spectrum has no business describing and no renderer can draw.
 
-**The drawn slope is lower again than the band's** — 5.4° against 6.0° — because the components
-are equal-energy bins: each carries its bin's height variance exactly and its slope variance
-only approximately, one frequency standing for a range over which `k²` varies by a factor of a
-few. More components narrow that gap; nothing closes it.
+**The drawn slope used to be lower again than the band's** — 5.4° against 6.0° — because the
+components were placed in equal-energy bins: each carries its bin's height variance exactly and
+its slope variance only approximately, one frequency standing for a range over which `k²`
+varies, and the widest bin was the whole tail.
 
-**And equal-energy binning puts almost nothing in the widened part.** Counted on a 3 m sea:
-38 of the 40 components fall between 23 m and 174 m of wavelength, one falls at 1.9 m, and one
-comes out with no amplitude at all. The short one carries 0.07 per cent of the height and
-**half of the slope**; the dead one is the lowest bin, which runs from a sixth of the peak
-frequency — four kilometres of wavelength — where a JONSWAP spectrum holds nothing, sampled
-somewhere inside itself.
+**Equal-energy binning put almost nothing in the widened part.** Counted on a 3 m sea, one
+component fell below 23 m of wavelength — it carried 0.07 per cent of the height and **half of
+the slope** — and one came out with no amplitude at all: the lowest bin runs from a sixth of the
+peak frequency, four kilometres of wavelength, where a JONSWAP spectrum holds nothing, and it
+was sampled uniformly somewhere inside itself.
 
-That the slope survives on one sample is not luck: the slope density `k²S(ω)` falls as `ω⁻¹`,
+That the slope survived on one sample was not luck: the slope density `k²S(ω)` falls as `ω⁻¹`,
 so every octave of the tail contributes about the same, and where in the bin the sample lands
-hardly matters. What does not survive is the TEXTURE — one sinusoid at one wavelength and one
-bearing is a regular ripple, not a chop. The page prints the wavelengths that carry the sea
-rather than the bins' own edges, because a component of no amplitude is not a wave the picture
-has. Binning that gives the tail more than one component is issue #50.
+hardly matters. What did not survive is the TEXTURE — one sinusoid at one wavelength and one
+bearing is a regular ripple, not a chop, and from a low viewpoint the sea read as corrugated
+iron. That is what issue #50 was.
+
+**Components are now placed by a blend of the two densities**, half by height and half by
+slope, each normalised to unit total first (`SLOPE_SHARE_OF_COMPONENTS`). A component's share of
+the variance is `S(ω)/placement(ω)` — the importance-sampling weight — so the height spectrum is
+exactly right whatever the placement, and the placement only decides how finely each part of the
+band is resolved. Measured on the same seas:
+
+| | 1.7–4 m | 4–8 | 8–16 | 16–32 | 32–64 | 64–128 | 128 m+ | shortest | smallest amplitude | drawn slope |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Hs 2, was | 0 | 1 | 0 | 4 | 12 | 22 | 1 | 4.24 m | 44 mm | 6.24° |
+| Hs 2, now | 4 | 4 | 4 | 4 | 9 | 12 | 1 | 1.14 m | 6.0 mm | 5.96° |
+| Hs 3, was | 1 | 0 | 0 | 2 | 6 | 23 | 8 | 1.93 m | **0.01 mm** | 5.38° |
+| Hs 3, now | 4 | 4 | 4 | 3 | 6 | 14 | 5 | 1.99 m | 10.5 mm | 6.00° |
+
+The band's own slope is 5.95° for both, since a period assumed from the height makes these seas
+similar. **The drawn slope now matches it** rather than falling 10 per cent short or overshooting
+— an even placement is a better estimator of the same integral, not only a better texture — and
+no component is wasted: the dead one is gone, and the largest holds under 5 per cent of the
+variance, well clear of the beating equal-energy binning was introduced to stop.
 
 So the band is cut where waves stop being drawable rather than where the slope comes right, and
 **what is missing is named on the page rather than quietly integrated for**. A glitter path
@@ -472,16 +489,18 @@ on it. But the two disagree by construction, and what floats has to be given the
 
 | From the eye | Height variance the mesh carries | Slope variance | rms slope |
 |---:|---:|---:|---:|
-| 20 m | 99.9% | 51% | 3.8° |
-| 100 m | 91% | 29% | 2.9° |
-| 250 m | 42% | 8% | 1.5° |
-| 600 m | 3% | 0.5% | 0.4° |
+| 20 m | 99.5% | 60% | 4.7° |
+| 100 m | 89% | 23% | 2.9° |
+| 250 m | 42% | 6% | 1.5° |
+| 600 m | 3% | 0.4% | 0.4° |
 
-**Nearly all of the height and half of the slope**, and that split is the spectrum's own: the
-components are equal-energy, so each carries the same height variance and the short ones carry
-almost all of the slope. So a buoy alongside heaves to essentially the whole sea and leans to
-about two thirds of its steepness, and one at 250 m — where the range fade has not yet begun —
-rides less than half of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
+**Nearly all of the height and three fifths of the slope**, and that split is the placement's:
+half the components are spread by height density and half by slope density
+(`SLOPE_SHARE_OF_COMPONENTS`), so the short waves — which carry nearly all of the slope and
+almost none of the height — are numerous enough that the mesh alongside still has vertices for
+several of them. So a buoy alongside heaves to essentially the whole sea and leans to about
+four fifths of its steepness, and one at 250 m — where the range fade has not yet begun —
+rides a quarter of it. `render/scene.ts` gives her that sea, and the rule is mirrored in
 `render/waves.ts` because nothing in Node can compile a shader to ask it. Handing her the
 undrawn spectrum instead is #34's hovering buoy arriving by a second route.
 
@@ -981,11 +1000,12 @@ Handing the 28.3 to the lobe draws a lane half again too wide, and the page and 
 then describe different water. **The page prints the full width at half maximum**, because
 that is the one figure a reader could check against the screen.
 
-The drawn sea's slope is 5.4° at Hs 3 after #36 — a lobe of 7.7° against the sea's own 20.4 —
+The drawn sea's slope is 6.0° at Hs 3 after #36 and #50 — a lobe of 8.5° against the sea's own
+20.4 —
 so reflecting a point body off the drawn normals alone lays a lane a third of the width the
 sea lays: **water sharper than any that exists, asserted by a picture**. So the missing
 roughness goes into the body's own lobe. Slopes add in quadrature, so what is missing is
-`measured − drawn` as variances, and the body is given `sqrt(2 (measured − drawn))` = 18.9°,
+`measured − drawn` as variances, and the body is given `sqrt(2 (measured − drawn))` = 18.6°,
 which with what the normals already do comes back to 20.4°.
 
 **How much is missing is a per-fragment question, not a per-scene one.** The shading drops

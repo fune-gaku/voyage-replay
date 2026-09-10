@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prepareActor } from "../src/core/track.js";
 import type { Actor, Environment, Mark, Scenario, TrackPoint, Vessel } from "../src/core/types.js";
 import { formatClock, formatDate } from "../src/core/time.js";
-import { seawayFrom, waveComponents } from "../src/core/seaway.js";
+import { seawayFrom, waveComponents, whitecapFraction } from "../src/core/seaway.js";
 import { drawable } from "../src/render/waves.js";
 import { CHOSEN } from "../src/actors/mark/appearance.js";
 import { ASSUMED_MARK, buildMark } from "../src/render/mark.js";
@@ -1286,8 +1286,39 @@ describe("the band the sea is drawn from", () => {
   });
 
   /**
+   * **A wind gives a coverage whether or not there is a sea to break it.** The renderer
+   * spends that coverage on the slopes of the drawn components near to, and as a flat
+   * fraction beyond where they resolve - so with nothing drawn the water is glass in the
+   * foreground and four per cent foam at the horizon, and a page printing the wind's figure
+   * beside it would be describing a sea the picture has not got. Found reviewing #73.
+   */
+  it("says no whitecaps are drawn where there are no waves to break", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      waves: { significantHeightMetres: 0, derivation: "measured" },
+      wind: { speedKnots: 30, derivation: "measured" },
+    };
+    const html = panelsFor(subject);
+
+    expect(whitecapFraction(30 * 0.514444)).toBeGreaterThan(0);
+    expect(html).toContain("no waves are drawn for it to break on");
+  });
+
+  it("says the same where nothing states a sea at all", () => {
+    const subject = scenario();
+    subject.environment = {
+      lightCondition: "day",
+      wind: { speedKnots: 30, derivation: "measured" },
+    };
+
+    expect(panelsFor(subject)).toContain("there is no drawn sea here to break");
+  });
+
+  /**
    * **The row is the components the renderer draws, not the band they were cut from.** Each
-   * is sampled from inside its own equal-energy bin, so the bins' ends are not the sea's:
+   * is sampled from inside its own bin of the placement measure, so the bins' ends are not
+   * the sea's:
    * the lowest reaches a sixth of the peak frequency, which is four kilometres of wavelength
    * on a 3 m sea. Printing an edge would be the page describing a wave the picture has not
    * got - the failure this project keeps meeting, in its smallest form.
@@ -1312,19 +1343,19 @@ describe("the band the sea is drawn from", () => {
   });
 
   /**
-   * **The figures in the note come off the drawn set, not off a second reading of it.** A
-   * centimetre of sea keeps one component of the forty, so a note computed from all of them
-   * would describe a surface forty times better resolved than the one on screen - and the
-   * height it is scaled to would be the one the row above prints, which is the picture's.
+   * **The figures in the note come off the drawn set, not off a second reading of it.** Two
+   * centimetres of sea keeps 23 components of the forty, so a note computed from all of them
+   * would describe a surface better resolved than the one on screen - and the height it is
+   * scaled to would be the one the row above prints, which is the picture's.
    */
   it("takes the note's own figures from the components the water is made of", () => {
     const subject = scenario();
     subject.environment = {
       lightCondition: "day",
-      waves: { significantHeightMetres: 0.01, derivation: "measured" },
+      waves: { significantHeightMetres: 0.02, derivation: "measured" },
     };
     const sea = seawayFrom(subject.environment);
-    if (!sea) throw new Error("a stated centimetre of sea has to give an estimate");
+    if (!sea) throw new Error("a stated two centimetres of sea has to give an estimate");
     const shown = drawable(waveComponents(sea.rough, 0));
     const slope = shown.reduce(
       (total, wave) => total + (wave.amplitudeMetres * wave.wavenumberPerMetre) ** 2 / 2,

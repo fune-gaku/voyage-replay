@@ -124,9 +124,9 @@ export function lightingAt(conditions: Conditions, drawnAsNight: boolean): Lit |
  * **This is the declared part of the picture, and the whole reason #37 waited for #36.** A
  * sea's glitter path is about twice its rms slope across - tilt a facet by an angle and the
  * ray it reflects turns by twice that - so the path measures the slope directly. The drawn
- * surface's slope is 5.4 degrees for a 3 m sea and a real one's is 14.2, because the rest
+ * surface's slope is 6.0 degrees for a 3 m sea and a real one's is 14.2, because the rest
  * lives in ripples a gravity spectrum does not describe. Reflecting a point body off the
- * drawn normals alone therefore draws a path 11 degrees wide where the sea lays one of 28:
+ * drawn normals alone therefore draws a path 12 degrees wide where the sea lays one of 28:
  * water sharper than any that exists, asserted by a picture.
  *
  * So the missing roughness is put into the BODY instead, and this returns how much, **as the

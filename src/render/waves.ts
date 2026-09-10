@@ -25,7 +25,7 @@
  * thing in the picture telling the truth about time, which reads as the sea being still.
  */
 
-import { Vector2, Vector4, type Material } from "three";
+import { Vector2, Vector3, Vector4, type Material } from "three";
 
 import { DRAWN_COMPONENTS, type WaveComponent } from "../core/seaway.js";
 import { LAMPS_GLSL, makeLampUniforms, type LampUniforms } from "./lamps.js";
@@ -166,6 +166,24 @@ export interface WaveUniforms {
   /** The lamps reflected in the same water, each laying its own streak. See `render/lamps.ts`. */
   lamps: LampUniforms;
   /**
+   * The whitecaps: how much of the sea is under them, how steep the water has to be to be
+   * one, and how bright one draws. A coverage of zero draws none.
+   *
+   * The first is a measured relation - Monahan and O'Muircheartaigh, in `core/seaway.ts` -
+   * and is the only measured thing about the foam in this picture. The second is where that
+   * much foam lands, which is this file's choice (`foamAt`, `foamThreshold`).
+   *
+   * **The third is declared, and has to be until #60.** A whitecap's luminance is its albedo
+   * times the light falling on it - Koepke's 0.22 times sun and sky - and this renderer has
+   * no irradiance to multiply by: the lights were set to make the water look right against a
+   * hand-picked colour, and the sky is a screen value rather than a radiance. Computed from
+   * them as they stand, foam comes out four times DARKER than the sea it sits on and draws
+   * as dark streaks on the crests, which is not what a whitecap is. So it joins `ambient`,
+   * `bodyLobe`, `streak` and `luxToScreen` as a figure the palette states, and becomes
+   * computable when everything is on one photometric scale.
+   */
+  uFoam: { value: Vector3 };
+  /**
    * How much of the picture the shortest drawn wave has to fill, in radians: the vertical
    * field of view over the height in pixels, times the pixels a sinusoid needs to read as one.
    * Set from the frame, because a constant would make the drawn band depend on the window -
@@ -227,6 +245,219 @@ function varianceOf(components: WaveComponent[]): number {
   return components.reduce((total, wave) => total + wave.amplitudeMetres ** 2 / 2, 0);
 }
 
+/**
+ * **What a whitecap gives back**, and it is not a mirror.
+ *
+ * Foam is bubbles: a diffuse scatterer, bright from every bearing, which is why it reads as
+ * foam and not as a highlight and why it takes no Fresnel here. Koepke (1984) measured an
+ * EFFECTIVE albedo of 0.22 - fresh foam is nearer 0.5 but decays over the seconds a whitecap
+ * lasts, and 0.22 is the figure that belongs with Monahan's coverage, the two being what
+ * ocean-colour work uses together. Taking the fresh figure with a coverage that counts
+ * decaying foam would count the same water's brightness twice.
+ *
+ * **Not used to draw it yet**, because an albedo needs an irradiance to multiply and this
+ * renderer has none - see `uFoam`. Kept here as the figure the palette's own stands in for,
+ * and named on the page so the reader is told which of the two they are looking at.
+ */
+export const FOAM_REFLECTANCE = 0.22;
+
+/**
+ * How big a whitecap is taken to be, for the one question that needs a size: whether one is
+ * still a patch or has become a tint.
+ *
+ * Past the range where a whitecap is smaller than the pixels under it, no arrangement of
+ * patches is resolvable and the honest limit is the area average - the coverage itself,
+ * mixed in flat. That is not a fade-out; the sea goes on being that much foam, and a picture
+ * that dropped it would draw a calm horizon under a rough foreground.
+ *
+ * Eight metres is the order of a breaking crest in the seas this draws, and nothing rests on
+ * it beyond where the crossover sits.
+ */
+const FOAM_PATCH_METRES = 8;
+
+/** How soft the edge of a patch is, as a fraction of the slope that defines it. */
+const FOAM_EDGE = 0.25;
+
+/**
+ * How finely the drawn slope field is sampled when the level is looked for, and how far the
+ * search goes.
+ *
+ * A hundred and ninety-two squared is thirty-seven thousand points, so a coverage of half a
+ * per cent is found off about two hundred of them - enough that the level is not noise, and
+ * cheap enough to run once when the water is built. Six standard deviations is past anything
+ * a sum of forty sinusoids reaches.
+ */
+const FOAM_SAMPLES = 192;
+const FOAM_WIDEST_THRESHOLD = 6;
+const FOAM_BISECTIONS = 30;
+
+/**
+ * Where the foam goes, given how steep this piece of water is and how steep the sea is.
+ *
+ * **The amount is measured and the placement is not**, which is the same division the glitter
+ * path makes. `core/seaway.ts` has the coverage from the wind; this puts that much of the
+ * surface under foam, on the steepest of it, because breaking is a steepness phenomenon.
+ *
+ * It cannot use the slope at which water actually breaks. A linear sea never reaches it - a
+ * sum of sinusoids has a Gaussian slope and no limiting form - and the drawn surface could
+ * not either, its rms slope being 6 degrees against a real sea's 14.2. So the level is a
+ * QUANTILE of the drawn slope, and `foamThreshold` finds which one.
+ *
+ * **Against the CARRIED variance, not the sea's.** Every component is band-limited to what
+ * the fragment can resolve, so the far surface is smoother than the near one; a level set
+ * from the whole sea would put foam in the foreground only. Holding the level at a fixed
+ * number of standard deviations keeps the coverage at every range, which is what a horizon
+ * covered in whitecaps needs.
+ *
+ * Mirrored in GLSL below.
+ */
+export function foamAt(
+  slopeSquared: number,
+  carriedSlopeVariance: number,
+  standardDeviations: number,
+): number {
+  if (standardDeviations <= 0 || carriedSlopeVariance <= 0) return 0;
+  const threshold = standardDeviations * Math.sqrt(carriedSlopeVariance);
+  return smoothstep(
+    threshold * (1 - FOAM_EDGE),
+    threshold * (1 + FOAM_EDGE),
+    Math.sqrt(Math.max(slopeSquared, 0)),
+  );
+}
+
+/** GLSL's own, so the copy below and the function above cannot come apart. */
+function smoothstep(from: number, to: number, at: number): number {
+  const t = Math.min(Math.max((at - from) / (to - from), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+/** What the water is actually drawn carrying: the fraction, and the slope it starts at. */
+export interface DrawnFoam {
+  coverage: number;
+  standardDeviations: number;
+}
+
+/**
+ * How much foam the water carries and at what slope it begins, which have to be settled
+ * together and cannot be settled without the sea.
+ *
+ * **Whitecaps are waves breaking, so there have to be waves.** The shader spends the
+ * coverage two ways: on the steepest of the drawn components where a fragment resolves
+ * them, and as that flat fraction where it does not (`FOAM_GLSL`). With nothing drawn, the
+ * near field has no slope to put above any level and the far field still carries the
+ * fraction - so the same flat water is glass close to and four per cent foam at the
+ * horizon, a sea state that changes with range. A file stating a wind and no sea reaches
+ * exactly that, and so does one stating a sea of zero height beside a wind. Found reviewing
+ * #73.
+ *
+ * `ui/panels.ts` asks this same function what is drawn rather than reporting the wind's
+ * figure on its own, so the page and the picture cannot come apart over it.
+ */
+export function drawnFoam(components: WaveComponent[], coverage: number): DrawnFoam {
+  if (components.length === 0) return { coverage: 0, standardDeviations: 0 };
+  return { coverage, standardDeviations: foamThreshold(components, coverage) };
+}
+
+/**
+ * How many standard deviations of slope leave the wind's coverage above them - **found by
+ * running the drawn sea past the rule rather than by assuming a distribution for it.**
+ *
+ * The obvious version is analytic: a Gaussian slope field of total variance `V` has a
+ * Rayleigh magnitude, so the fraction above `t` is `exp(-t^2/V)` and the level follows in one
+ * line. **Measured, it puts out two and a half times the foam it should.** The step that
+ * fails is the isotropy: a sea is spread about ONE bearing - `SPREADING_EXPONENT` is 6, a
+ * narrow fan - so the slope has most of its variance along that bearing and almost none
+ * across, and the magnitude of such a field has a far heavier tail at a given multiple of
+ * `sqrt(V)` than a circular one. At the limit of a single direction the same level passes
+ * 2.7 per cent where the circular form says 0.76.
+ *
+ * The anisotropic form has no elementary quantile, and the drawn field is a sum of forty
+ * sinusoids rather than a Gaussian anyway. So the level comes out of the field itself: sample
+ * it on a grid, bisect for the level whose smoothed indicator averages to the coverage. It is
+ * the quantity the page prints, measured on the surface the page is printed beside.
+ *
+ * In standard deviations rather than in slope, so the shader can rescale it to whatever the
+ * fragment under it is carrying.
+ */
+export function foamThreshold(components: WaveComponent[], coverage: number): number {
+  if (coverage <= 0) return 0;
+  if (coverage >= 1) return 0.001;
+  const samples = normalisedSlopes(components);
+  if (samples.length === 0) return 0;
+
+  let low = 0;
+  let high = FOAM_WIDEST_THRESHOLD;
+  for (let i = 0; i < FOAM_BISECTIONS; i += 1) {
+    const mid = (low + high) / 2;
+    if (meanFoam(samples, mid) > coverage) low = mid;
+    else high = mid;
+  }
+  return (low + high) / 2;
+}
+
+/**
+ * The drawn slope magnitude over a patch of sea, in units of its own standard deviation.
+ *
+ * The spacing is deliberately not a round number: a grid commensurate with a wavelength
+ * samples the same phase over and over and reports a sea far smoother or steeper than it is.
+ */
+function normalisedSlopes(components: WaveComponent[]): number[] {
+  const variance = components.reduce(
+    (total, w) => total + (w.amplitudeMetres * w.wavenumberPerMetre) ** 2 / 2,
+    0,
+  );
+  if (variance <= 0) return [];
+
+  const scale = 1 / Math.sqrt(variance);
+  const out: number[] = [];
+  for (let i = 0; i < FOAM_SAMPLES; i += 1) {
+    for (let j = 0; j < FOAM_SAMPLES; j += 1) {
+      out.push(Math.sqrt(slopeSquaredAt(components, i * 2.9, j * 3.7)) * scale);
+    }
+  }
+  return out;
+}
+
+/** The drawn surface's slope at one point, from the components themselves. */
+function slopeSquaredAt(components: WaveComponent[], east: number, north: number): number {
+  let alongEast = 0;
+  let alongNorth = 0;
+  for (const wave of components) {
+    const kx = Math.sin(wave.directionRadians) * wave.wavenumberPerMetre;
+    const ky = Math.cos(wave.directionRadians) * wave.wavenumberPerMetre;
+    const height = Math.cos(kx * east + ky * north + wave.phaseRadians) * wave.amplitudeMetres;
+    alongEast += kx * height;
+    alongNorth += ky * height;
+  }
+  return alongEast * alongEast + alongNorth * alongNorth;
+}
+
+/** What fraction of that patch comes out foam at this level. The smoothed edge included. */
+function meanFoam(normalised: number[], standardDeviations: number): number {
+  let total = 0;
+  for (const slope of normalised) {
+    total += smoothstep(
+      standardDeviations * (1 - FOAM_EDGE),
+      standardDeviations * (1 + FOAM_EDGE),
+      slope,
+    );
+  }
+  return total / normalised.length;
+}
+
+/** The same rule, for the fragment shader. Kept beside it so the two are edited together. */
+const FOAM_GLSL = `
+float foamAt( float slopeSquared, float carried, float deviations ) {
+  if ( deviations <= 0.0 || carried <= 0.0 ) return 0.0;
+  float threshold = deviations * sqrt( carried );
+  return smoothstep(
+    threshold * ${(1 - FOAM_EDGE).toFixed(3)},
+    threshold * ${(1 + FOAM_EDGE).toFixed(3)},
+    sqrt( max( slopeSquared, 0.0 ) )
+  );
+}
+`;
+
 export function makeWaveUniforms(): WaveUniforms {
   return {
     uWave: { value: Array.from({ length: SHADER_COMPONENTS }, () => new Vector4()) },
@@ -234,6 +465,7 @@ export function makeWaveUniforms(): WaveUniforms {
     uWaveTime: { value: 0 },
     uWaveScale: { value: 0 },
     uPixelAngle: { value: pixelAngle(55, 1080) },
+    uFoam: { value: new Vector3() },
     sky: makeSkyUniforms(),
     lamps: makeLampUniforms(),
   };
@@ -274,6 +506,15 @@ uniform float uWaveTime;
 uniform float uWaveScale;
 uniform float uPixelAngle;
 varying vec3 vWaveWorld;
+/**
+ * Where this piece of water STARTED, which is what the waves are a function of.
+ *
+ * Once the surface is carried sideways, the position a fragment ends up at is no longer the
+ * parameter - so a fragment shader reading vWaveWorld.xz for its phases would take the slope
+ * of water up to a metre from the water it is shading. Geometry from one surface and shading
+ * from another, at exactly the range this was added to improve. See issue #69.
+ */
+varying vec2 vWaveParam;
 `;
 
 /**
@@ -287,6 +528,9 @@ ${SKY_GLSL}
 ${LAMPS_GLSL}
 vec3 gWorldNormal = vec3( 0.0, 1.0, 0.0 );
 float gCarriedSlope = 0.0;
+float gSlopeSquared = 0.0;
+uniform vec3 uFoam;
+${FOAM_GLSL}
 `;
 
 /**
@@ -327,18 +571,30 @@ vWaveWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 // The MEAN surface, and only the horizontal part of it is used from here: the phases below
 // and the ones in the fragment stage read .xz, which no vertical displacement touches. The
 // height is put back at DRAWN_SURFACE below, once everything that moves it has run.
+vWaveParam = vWaveWorld.xz;
 {
   float fade = uWaveScale * ${FADE(DISPLACEMENT_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   float spacing = away < ${DISC.innerMetres.toFixed(1)} ? ${DISC.innerMetres.toFixed(1)} : away * ${DISC.growth.toFixed(6)};
   float height = 0.0;
+  // **Sideways as well as up, which is what makes a crest a crest.** A sum of sinusoids is
+  // symmetric and no gravity wave is; the trochoidal solution carries the water horizontally
+  // and that motion bunches it at the crest. Same amplitudes, same wavenumbers, and the same
+  // per-component fade - a wave too short for the mesh to lift is too short for it to carry.
+  vec2 carried = vec2( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
-    float wavelength = 6.2831853 / length( w.xy );
+    float length2 = length( w.xy );
+    float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( ${SAMPLES_PER_WAVE}.0 * spacing ) );
-    height += carries * w.z * sin( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    float phase = dot( w.xy, vWaveParam ) - w.w * uWaveTime + uWavePhase[ i ];
+    height += carries * w.z * sin( phase );
+    // The empty slots have no wavenumber at all, and normalising that is a NaN which would
+    // take the whole sum with it - amplitude zero does not save a multiplication by NaN.
+    carried += carries * w.z * cos( phase ) * ( w.xy / max( length2, 1e-9 ) );
   }
   transformed.y += fade * height;
+  transformed.xz += fade * carried;
 }
 `;
 
@@ -379,6 +635,11 @@ const NORMALS = `
   float fade = uWaveScale * ${FADE(SLOPE_FADE_METRES)};
   float away = distance( vWaveWorld.xz, uEye.xz );
   vec2 slope = vec2( 0.0 );
+  // **The horizontal displacement's own gradient**, which the shading needs the moment the
+  // water moves sideways: the surface is parametric now, so its normal is the cross product
+  // of two tangents rather than the height's gradient. (dDx/dx, dDx/dz, dDz/dz) - and the
+  // mixed term is one number because the field is a gradient, so its Jacobian is symmetric.
+  vec3 spread = vec3( 0.0 );
   for ( int i = 0; i < ${SHADER_COMPONENTS}; i ++ ) {
     vec4 w = uWave[ i ];
     // **Each wave fades at its own range, not all of them at one.** A metre-long wave is
@@ -387,25 +648,40 @@ const NORMALS = `
     // fade for the lot either keeps the short ones until they crawl or drops the long ones
     // while they still carry the picture; this drops each where its own wavelength falls
     // below the few pixels a sinusoid needs to read as one.
-    float wavelength = 6.2831853 / length( w.xy );
+    float length2 = length( w.xy );
+    float wavelength = 6.2831853 / length2;
     float carries = smoothstep( 0.0, 1.0, wavelength / ( away * uPixelAngle + 1e-6 ) );
-    slope += carries * w.xy * w.z * cos( dot( w.xy, vWaveWorld.xz ) - w.w * uWaveTime + uWavePhase[ i ] );
+    // **The parameter, not where this fragment ended up.** Past the displacement the two are
+    // a metre apart, and taking the phase at the wrong one shades water that is not here.
+    float phase = dot( w.xy, vWaveParam ) - w.w * uWaveTime + uWavePhase[ i ];
+    slope += carries * w.xy * w.z * cos( phase );
+    spread -= ( carries * w.z * sin( phase ) / max( length2, 1e-9 ) )
+      * vec3( w.x * w.x, w.x * w.y, w.y * w.y );
     // **What this fragment's normals actually carry**, which is less than the sea has wherever
     // the band or the range has taken components out. The reflection gives the difference back
     // to the body, so the lane keeps its measured width instead of narrowing with distance.
-    float steep = carries * w.z * length( w.xy );
+    float steep = carries * w.z * length2;
     gCarriedSlope += 0.5 * steep * steep;
   }
   // **Kept in world axes as well.** The normal is about to become a VIEW space vector, and
   // the sky is a function of a world direction - so the reflection stage below would have to
   // undo the rotation to ask it anything. Mixed by the same fade, so the two agree about how
   // much of this sea is drawn where.
-  vec3 world = normalize( vec3( -slope.x, 1.0, -slope.y ) );
+  // **Kept for the foam**, which goes on the steepest water. The same slope the shading is
+  // made of, so the whitecaps are on the crests the picture actually drew.
+  gSlopeSquared = dot( slope, slope );
+  // The two tangents, then their cross product - z crossed with x, in that order, so the
+  // normal comes out upwards. With no sideways carry it is exactly ( -slope.x, 1, -slope.y ),
+  // which is what surfaceNormal in core/seaway.ts is held to.
+  vec3 alongX = vec3( 1.0 + spread.x, slope.x, spread.y );
+  vec3 alongZ = vec3( spread.y, slope.y, 1.0 + spread.z );
+  vec3 world = normalize( cross( alongZ, alongX ) );
   gWorldNormal = normalize( mix( vec3( 0.0, 1.0, 0.0 ), world, fade ) );
   vec3 waved = ( viewMatrix * vec4( world, 0.0 ) ).xyz;
   normal = normalize( mix( normal, waved, fade ) );
   // The whole surface fades to flat past a few kilometres as well, and slope goes with it.
   gCarriedSlope *= fade * fade;
+  gSlopeSquared *= fade * fade;
 }
 `;
 
@@ -444,6 +720,15 @@ const REFLECTION = `
   // reflection is only where the geometry lines up; light landing on the sea is there from
   // every bearing, which is the difference between a lamp shining at one observer and a lamp.
   outgoingLight += lit;
+
+  // **Foam last, because it is not water and does not reflect through.** A whitecap is a
+  // diffuse scatterer: no Fresnel, no glitter, bright from every bearing - which is exactly
+  // why it reads as foam rather than as a highlight. The same illumination off a surface of
+  // the foam's own albedo, which is what dividing the diffuse term by the water's is.
+  float away = distance( vWaveWorld.xz, uEye.xz );
+  float resolved = smoothstep( 0.0, 1.0, ${FOAM_PATCH_METRES.toFixed(1)} / ( away * uPixelAngle + 1e-6 ) );
+  float foam = uWaveScale * mix( uFoam.x, foamAt( gSlopeSquared, gCarriedSlope, uFoam.y ), resolved );
+  outgoingLight = mix( outgoingLight, vec3( uFoam.z ), foam );
 }
 #include <opaque_fragment>
 `;
@@ -467,6 +752,7 @@ export function applyWaves(material: Material, uniforms: WaveUniforms): void {
     shader.uniforms["uWaveTime"] = uniforms.uWaveTime;
     shader.uniforms["uWaveScale"] = uniforms.uWaveScale;
     shader.uniforms["uPixelAngle"] = uniforms.uPixelAngle;
+    shader.uniforms["uFoam"] = uniforms.uFoam;
     shader.vertexShader = DECLARATIONS + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", DISPLACEMENT);
     shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", DRAWN_SURFACE);

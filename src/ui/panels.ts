@@ -33,7 +33,7 @@ import { lightingAt } from "../core/illumination.js";
 import { lightsForVessel } from "../actors/vessel/lights.js";
 import { SHADER_LAMPS } from "../render/lamps.js";
 import { isNight } from "../render/scene.js";
-import { drawable } from "../render/waves.js";
+import { drawable, drawnFoam, FOAM_REFLECTANCE } from "../render/waves.js";
 import {
   ASSUMED_DIRECTION_DEGREES_TRUE,
   coxMunkSlopeVariance,
@@ -43,6 +43,7 @@ import {
   waveComponents,
   windRaisingMetresPerSecond,
   type SeaEstimate,
+  whitecapsFrom,
   type WaveComponent,
   type WindEstimate,
 } from "../core/seaway.js";
@@ -54,7 +55,7 @@ import {
   type PreparedTrack,
   type SampledState,
 } from "../core/track.js";
-import type { Actor, Mark, MarkPattern, Scenario, Vessel } from "../core/types.js";
+import type { Actor, Environment, Mark, MarkPattern, Scenario, Vessel } from "../core/types.js";
 
 export interface Prepared {
   actor: Actor;
@@ -991,8 +992,64 @@ function seaSection(scenario: Scenario): string {
     ["Coming from", directionRow(sea)],
     ["Derivation", sea.derivation],
     ["Waves drawn", bandRow(drawn, sea.rough.significantHeightMetres > 0)],
+    ["Whitecaps", whitecapRow(scenario.environment, drawn)],
   ];
-  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn)]);
+  return wind + keyValueTable(rows) + notes([seaCaveat(sea), slopeNote(drawn), foamNote()]);
+}
+
+/**
+ * How much of the surface is drawn under foam, and out of which figure that came.
+ *
+ * **Through `drawnFoam`, which is the renderer's own answer rather than a second one.** The
+ * wind gives a coverage whether or not there is a sea to break, and a page reporting that
+ * figure beside water carrying no foam is the picture and the prose disagreeing about the
+ * sea - the failure this section exists to catch. Found reviewing #73.
+ */
+function whitecapRow(environment: Environment | undefined, drawn: WaveComponent[]): string {
+  const foam = whitecapsFrom(environment);
+  if (!foam) return "not drawn - nothing states a wind or a sea";
+
+  const most = `${(foam.mostFraction * 100).toFixed(2)}%`;
+  const span =
+    foam.leastFraction === foam.mostFraction
+      ? most
+      : `${(foam.leastFraction * 100).toFixed(2)}-${most}${foam.mostIsOpen ? " or more" : ""}`;
+  if (drawnFoam(drawn, foam.mostFraction).coverage === 0) {
+    return `${span} by the wind, but no waves are drawn for it to break on, so none is drawn`;
+  }
+  return `${span} of the surface, ${FOAM_SOURCE[foam.from]}`;
+}
+
+/**
+ * Deliberately not worded "from the stated wind": that is the period row's phrase for a
+ * period DERIVED from a wind, and a page where the two read alike lets a test that holds the
+ * period honest pass on the strength of a sentence about foam.
+ */
+const FOAM_SOURCE: Record<NonNullable<ReturnType<typeof whitecapsFrom>>["from"], string> = {
+  speed: "out of the wind speed the file gives",
+  force: "out of the Beaufort force the file gives, which is a class",
+  sea: "out of the wind that would have raised this sea - none is stated",
+};
+
+/**
+ * **The amount of foam is measured and where it lands is not**, which is the same division
+ * the glitter path makes and has to be said for the same reason.
+ *
+ * A reader can check the coverage against Monahan; nothing lets them check the pattern, and
+ * the pattern is what they will actually look at.
+ */
+function foamNote(): string {
+  return (
+    "How much of the sea is under whitecaps comes from the wind by Monahan and " +
+    "O'Muircheartaigh's measured relation. WHERE they land does not: a sea drawn as a sum of " +
+    "sinusoids never breaks, and this surface could not reach the slope at which water does " +
+    "in any case, so the foam is put on the steepest of what was drawn - at whatever level " +
+    "leaves that much of it above. Nor is how bright they draw: a whitecap's luminance is its " +
+    `albedo - Koepke's effective ${FOAM_REFLECTANCE} - times the light falling on it, and this ` +
+    "renderer has no irradiance to multiply by, so the figure it draws at is one more of the " +
+    "declared ones. Read the amount off this page; do not read the pattern or the brightness " +
+    "off the picture."
+  );
 }
 
 /**
@@ -1023,7 +1080,8 @@ function drawnBand(drawn: WaveComponent[]): { shortest: number; longest: number 
  * water: it decides how steep the surface is and how often it crosses a sight line.
  *
  * **Measured off the components themselves rather than off the band's edges.** Each is
- * sampled from somewhere inside its own equal-energy bin, so the band's ends are not the
+ * sampled from somewhere inside its own bin of the placement measure - half energy, half
+ * slope density, see `SLOPE_SHARE_OF_COMPONENTS` - so the band's ends are not the
  * drawn sea's ends: the bins reach from a sixth of the peak frequency to eight times it,
  * while the waves that come out of them for a 3 m sea run from 1.9 m to 174 m. Printing the
  * edge would be the page describing a sea the picture does not have.
@@ -1231,7 +1289,9 @@ const DIRECTION_SOURCE: Record<SeaEstimate["directionFrom"], string> = {
 const NO_SEA =
   "The file states no sea, and the view therefore draws flat water - which is not a " +
   "neutral picture but the strongest claim available, that everything was in sight the " +
-  "whole time. An unstated sea is not a calm one.";
+  "whole time. An unstated sea is not a calm one. No whitecaps go on it either, whatever " +
+  "the wind: the coverage is a fraction of a sea breaking, and there is no drawn sea here " +
+  "to break.";
 
 /**
  * How much of the time a crest stood between the two.
